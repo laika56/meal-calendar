@@ -67,6 +67,14 @@ Codex는 이 파일을 직접 읽고, Claude는 `CLAUDE.md`에서 `@AGENTS.md`�
 - 백엔드: Firebase — Firestore(데이터) + Auth(익명 로그인) + Cloud Functions(키 프록시)
 - 호스팅: Firebase Hosting (HTTPS 필수 — PWA와 카메라 둘 다 요구)
 
+## 저장소
+
+**원격 없는 1인 로컬 저장소다.** 단일 `master` 브랜치.
+
+- **`master`에서 그대로 작업한다.** 브랜치·git worktree를 만들지 않는다 — 격리할 대상이 없다
+- Codex는 커밋하지 않는다. 파일만 남긴다
+- 개인 건강 데이터가 들어간다. 원격 추가 시 사용자 확인 필수
+
 ## 명령어
 
 실제로 돌려본 것만 적는다.
