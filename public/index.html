@@ -33,7 +33,9 @@
   body {
     background: var(--bg); color: var(--fg);
     font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
-    min-height: 100dvh; /* 100vh 금지 — iOS 주소창 때문에 잘린다 */
+    height: 100dvh; /* 100vh 금지 — iOS 주소창 때문에 잘린다 */
+    overflow: hidden; /* 캘린더 한 화면에 다 들어간다 — 스크롤 필요 없음 */
+    display: flex; flex-direction: column;
     padding:
       calc(env(safe-area-inset-top) + 12px)
       calc(env(safe-area-inset-right) + 10px)
@@ -42,6 +44,7 @@
   }
 
   header {
+    flex: 0 0 auto;
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 14px;
   }
@@ -53,18 +56,23 @@
   h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 
   #weekdays {
+    flex: 0 0 auto;
     display: grid; grid-template-columns: repeat(7, 1fr);
     color: var(--muted); font-size: 12px; font-weight: 600;
     text-align: center; margin-bottom: 6px;
   }
 
   .grid {
-    display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+    /* 남는 높이만큼만 차지하되(안 넘침), 셀은 늘리지 않고 위에서부터 채운다 —
+       5주짜리 달이면 아래에 빈 공간이 남는다. 그걸로 됐다. */
+    flex: 1 1 auto; min-height: 0; overflow: hidden;
+    display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: min-content;
+    align-content: start; gap: 4px;
   }
   .day {
     -webkit-appearance: none; appearance: none;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 2px; aspect-ratio: 1 / 1.05; min-height: 44px;
+    gap: 2px; aspect-ratio: 1 / 1.05; min-width: 0;
     border: 1px solid var(--line); border-radius: 10px;
     background: var(--card); color: var(--fg); font: inherit; padding: 4px 2px;
   }
@@ -122,10 +130,46 @@
   }
   .slot h3 { font-size: 14px; margin: 0 0 6px; }
   .slot-items { color: var(--muted); font-size: 13px; }
+
+  /* 모바일 기본: 래퍼가 레이아웃에 안 끼어든다 */
+  #app { display: contents; }
+  .sheet-inner { display: contents; }
+
+  /* 데스크톱 — 가운데 카드형 레이아웃. 폰만 "한 화면 고정"이고 여긴 일반 스크롤 허용 */
+  @media (min-width: 820px) {
+    body {
+      height: auto; min-height: 100vh; overflow: auto;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: var(--line);
+      padding: 40px 20px;
+    }
+    #app {
+      display: flex; flex-direction: column;
+      width: 100%; max-width: 640px;
+      background: var(--bg); border: 1px solid var(--line); border-radius: 16px;
+      padding: 28px; box-shadow: 0 10px 40px rgba(0, 0, 0, .12);
+    }
+    .day-num { font-size: 15px; }
+    .day-kcal { font-size: 12px; }
+    .day-badge { font-size: 10px; }
+
+    .sheet {
+      background: rgba(16, 18, 22, .5);
+      display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .sheet-inner {
+      display: block;
+      width: 100%; max-width: 520px; max-height: 85vh; overflow-y: auto;
+      background: var(--bg); border-radius: 16px; padding: 28px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+    }
+  }
 </style>
 </head>
 <body>
 
+<main id="app">
 <header>
   <button id="prevMonth" aria-label="이전 달">‹</button>
   <h1 id="monthLabel"></h1>
@@ -137,21 +181,24 @@
 </div>
 
 <div id="grid" class="grid"></div>
+</main>
 
 <div id="dayDetail" class="sheet" hidden>
-  <div class="sheet-header">
-    <button id="closeDetail" aria-label="캘린더로 돌아가기">‹ 캘린더</button>
-    <h2 id="detailDate"></h2>
-  </div>
-  <div class="totals">
-    <div class="total-row"><span>칼로리</span><b id="totalKcal">0 / 0 kcal</b></div>
-    <div class="bar"><div class="bar-fill" id="kcalBar"></div></div>
-  </div>
-  <div class="slots">
-    <section class="slot"><h3>아침</h3><div class="slot-items">— 아직 기록 없음</div></section>
-    <section class="slot"><h3>점심</h3><div class="slot-items">— 아직 기록 없음</div></section>
-    <section class="slot"><h3>저녁</h3><div class="slot-items">— 아직 기록 없음</div></section>
-    <section class="slot"><h3>간식</h3><div class="slot-items">— 아직 기록 없음</div></section>
+  <div class="sheet-inner">
+    <div class="sheet-header">
+      <button id="closeDetail" aria-label="캘린더로 돌아가기">‹ 캘린더</button>
+      <h2 id="detailDate"></h2>
+    </div>
+    <div class="totals">
+      <div class="total-row"><span>칼로리</span><b id="totalKcal">0 / 0 kcal</b></div>
+      <div class="bar"><div class="bar-fill" id="kcalBar"></div></div>
+    </div>
+    <div class="slots">
+      <section class="slot"><h3>아침</h3><div class="slot-items">— 아직 기록 없음</div></section>
+      <section class="slot"><h3>점심</h3><div class="slot-items">— 아직 기록 없음</div></section>
+      <section class="slot"><h3>저녁</h3><div class="slot-items">— 아직 기록 없음</div></section>
+      <section class="slot"><h3>간식</h3><div class="slot-items">— 아직 기록 없음</div></section>
+    </div>
   </div>
 </div>
 
