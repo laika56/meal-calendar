@@ -10,6 +10,9 @@ import {
 const fixture = JSON.parse(
   await readFile(new URL('./fixtures/mfds-sample.json', import.meta.url), 'utf8'),
 );
+const arrayShapeFixture = JSON.parse(
+  await readFile(new URL('./fixtures/mfds-search-array-shape.json', import.meta.url), 'utf8'),
+);
 const [firstItem, secondItem] = fixture.items;
 
 test('parses kcal from all six measured MFDS fixture items', () => {
@@ -89,6 +92,63 @@ test('keeps an MFDS response item array as an array', () => {
   assert.deepEqual(
     result.map(({ foodCode }) => foodCode),
     ['D101-004160000-0001', 'D101-004310000-0001'],
+  );
+});
+
+test('parses every item when body.items is an array in a measured MFDS response', () => {
+  const result = parseMfdsSearchResponse(arrayShapeFixture);
+
+  assert.deepEqual(
+    result.map(({ foodCode }) => foodCode),
+    [
+      'D102-096060000-0001',
+      'D110-462155200-0001',
+      'D114-640080000-0001',
+      'D202-096060000-0001',
+    ],
+  );
+});
+
+test('keeps a one-item body.items array as an array', () => {
+  const result = parseMfdsSearchResponse({
+    header: { resultCode: '00', resultMsg: 'NORMAL SERVICE.' },
+    body: { totalCount: 1, items: [firstItem] },
+  });
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].foodCode, 'D101-004160000-0001');
+});
+
+test('returns an empty array when body.items is null', () => {
+  assert.deepEqual(parseMfdsSearchResponse({
+    header: { resultCode: '00', resultMsg: 'NORMAL SERVICE.' },
+    body: { totalCount: 1, items: null },
+  }), []);
+});
+
+test('rejects a numeric body.items value with the unexpected shape', () => {
+  assert.throws(
+    () => parseMfdsSearchResponse({
+      header: { resultCode: '00', resultMsg: 'NORMAL SERVICE.' },
+      body: { totalCount: 1, items: 42 },
+    }),
+    {
+      name: 'TypeError',
+      message: 'parseMfdsSearchResponse: unexpected items shape, got 42',
+    },
+  );
+});
+
+test('rejects a string body.items value with the unexpected shape', () => {
+  assert.throws(
+    () => parseMfdsSearchResponse({
+      header: { resultCode: '00', resultMsg: 'NORMAL SERVICE.' },
+      body: { totalCount: 1, items: 'unexpected' },
+    }),
+    {
+      name: 'TypeError',
+      message: 'parseMfdsSearchResponse: unexpected items shape, got "unexpected"',
+    },
   );
 });
 

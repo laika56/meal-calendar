@@ -50,7 +50,19 @@ export function parseMfdsSearchResponse(response) {
 
   if (response.body.totalCount === 0 || !response.body.items) return [];
 
-  const { item } = response.body.items;
-  const items = Array.isArray(item) ? item : [item];
+  const rawItems = response.body.items;
+  let items;
+
+  if (Array.isArray(rawItems)) {
+    items = rawItems;
+  } else if (typeof rawItems === 'object') {
+    const { item } = rawItems;
+    items = Array.isArray(item) ? item : [item];
+  } else {
+    throw new TypeError(
+      `parseMfdsSearchResponse: unexpected items shape, got ${JSON.stringify(rawItems)}`,
+    );
+  }
+
   return items.map(parseMfdsFoodItem);
 }
