@@ -1,0 +1,7 @@
+{
+  "hosting": {
+    "site": "calorie-43692",
+    "public": "public",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+  }
+}
