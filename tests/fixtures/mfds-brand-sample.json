@@ -1,0 +1,136 @@
+{
+  "_source": "식약처 통합식품영양성분DB getFoodNtrCpntDbInq02 (2026-08-13 실측)",
+  "_note": "브랜드/개당중량 대응 발주(09)용. 필드는 KEEP 목록으로 추린 것이며 원본은 193개다.",
+  "_coverage": "아래 각 케이스의 파라미터 조합을 그대로 적었다. 이 밖은 미검증이다.",
+  "cases": {
+    "franchise_with_weight": {
+      "params": {
+        "MAKER_NM": "맥도날드",
+        "FOOD_NM_KR": "빅맥"
+      },
+      "totalCount": 2,
+      "items": [
+        {
+          "FOOD_CD": "D202-091000000-0015",
+          "FOOD_NM_KR": "버거_더블빅맥 버거",
+          "FOOD_CAT1_NM": "빵 및 과자류",
+          "SERVING_SIZE": "100g",
+          "Z10500": "292.000g",
+          "MAKER_NM": "맥도날드",
+          "FOOD_OR_CD": "2",
+          "FOOD_OR_NM": "외식(프랜차이즈 등 업체 제공 영양정보)",
+          "DB_CLASS_NM": "상용제품",
+          "AMT_NUM1": "275.000",
+          "AMT_NUM3": "14.73",
+          "AMT_NUM4": "",
+          "AMT_NUM6": ""
+        },
+        {
+          "FOOD_CD": "D202-091000000-0056",
+          "FOOD_NM_KR": "버거_빅맥 버거",
+          "FOOD_CAT1_NM": "빵 및 과자류",
+          "SERVING_SIZE": "100g",
+          "Z10500": "223.000g",
+          "MAKER_NM": "맥도날드",
+          "FOOD_OR_CD": "2",
+          "FOOD_OR_NM": "외식(프랜차이즈 등 업체 제공 영양정보)",
+          "DB_CLASS_NM": "상용제품",
+          "AMT_NUM1": "261.000",
+          "AMT_NUM3": "12.11",
+          "AMT_NUM4": "13.90",
+          "AMT_NUM6": "22.42"
+        }
+      ]
+    },
+    "franchise_starbucks": {
+      "params": {
+        "MAKER_NM": "스타벅스"
+      },
+      "totalCount": 213,
+      "items": [
+        {
+          "FOOD_CD": "D202-082000000-0047",
+          "FOOD_NM_KR": "도넛_베이크드 헤이즐넛 쇼콜라넛",
+          "FOOD_CAT1_NM": "빵 및 과자류",
+          "SERVING_SIZE": "100g",
+          "Z10500": "130.000g",
+          "MAKER_NM": "스타벅스",
+          "FOOD_OR_CD": "2",
+          "FOOD_OR_NM": "외식(프랜차이즈 등 업체 제공 영양정보)",
+          "DB_CLASS_NM": "상용제품",
+          "AMT_NUM1": "435.000",
+          "AMT_NUM3": "6.92",
+          "AMT_NUM4": "",
+          "AMT_NUM6": ""
+        },
+        {
+          "FOOD_CD": "D202-086000000-0005",
+          "FOOD_NM_KR": "마카롱_다크 초콜릿 마카롱",
+          "FOOD_CAT1_NM": "빵 및 과자류",
+          "SERVING_SIZE": "100g",
+          "Z10500": "35.00g",
+          "MAKER_NM": "스타벅스",
+          "FOOD_OR_CD": "2",
+          "FOOD_OR_NM": "외식(프랜차이즈 등 업체 제공 영양정보)",
+          "DB_CLASS_NM": "상용제품",
+          "AMT_NUM1": "463.000",
+          "AMT_NUM3": "8.57",
+          "AMT_NUM4": "",
+          "AMT_NUM6": ""
+        }
+      ]
+    },
+    "generic_no_maker": {
+      "params": {
+        "FOOD_NM_KR": "김밥"
+      },
+      "totalCount": 2840,
+      "items": [
+        {
+          "FOOD_CD": "D101-007000000-0001",
+          "FOOD_NM_KR": "김밥",
+          "FOOD_CAT1_NM": "밥류",
+          "SERVING_SIZE": "100g",
+          "Z10500": "230.000g",
+          "MAKER_NM": null,
+          "FOOD_OR_CD": "1",
+          "FOOD_OR_NM": "가정식(분석 함량)",
+          "DB_CLASS_NM": "품목대표",
+          "AMT_NUM1": "140.000",
+          "AMT_NUM3": "4.84",
+          "AMT_NUM4": "4.55",
+          "AMT_NUM6": "19.98"
+        },
+        {
+          "FOOD_CD": "D101-007070000-0001",
+          "FOOD_NM_KR": "김밥_김치",
+          "FOOD_CAT1_NM": "밥류",
+          "SERVING_SIZE": "100g",
+          "Z10500": "270.000g",
+          "MAKER_NM": null,
+          "FOOD_OR_CD": "1",
+          "FOOD_OR_NM": "가정식(분석 함량)",
+          "DB_CLASS_NM": "품목대표",
+          "AMT_NUM1": "130.000",
+          "AMT_NUM3": "4.30",
+          "AMT_NUM4": "4.03",
+          "AMT_NUM6": "19.17"
+        }
+      ]
+    },
+    "brand_absent": {
+      "params": {
+        "MAKER_NM": "서브웨이"
+      },
+      "totalCount": 0,
+      "items": []
+    },
+    "combo_zero": {
+      "params": {
+        "FOOD_NM_KR": "서가원 김밥"
+      },
+      "totalCount": 0,
+      "items": []
+    }
+  }
+}

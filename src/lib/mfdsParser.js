@@ -5,40 +5,150 @@ const NUTRIENT_FIELDS = [
   ['carbG', 'AMT_NUM6'],
 ];
 
+function formatValue(value) {
+  if (Number.isNaN(value)) return 'NaN';
+
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function parseNumber(value) {
+  if (typeof value === 'string' && value.includes(',')) {
+    const normalized = value.trim();
+    if (!/^\d{1,3}(?:,\d{3})*(?:\.\d+)?$/.test(normalized)) return Number.NaN;
+    return Number(normalized.replace(/,/g, ''));
+  }
+
+  return Number(value);
+}
+
 function parseNutrient(item, label, field) {
   const value = item[field];
   if (value === '') return null;
 
-  const number = Number(value);
+  const number = parseNumber(value);
   if (Number.isNaN(number)) {
     throw new Error(
-      `parseMfdsFoodItem: ${label} is not a valid number, got ${JSON.stringify(value)} for ${item.FOOD_CD}`,
+      `parseMfdsFoodItem: ${label} is not a valid number, got ${formatValue(value)} for ${item.FOOD_CD}`,
     );
   }
   if (number < 0) {
     throw new Error(
-      `parseMfdsFoodItem: ${label} must not be negative, got ${JSON.stringify(value)} for ${item.FOOD_CD}`,
+      `parseMfdsFoodItem: ${label} must not be negative, got ${formatValue(value)} for ${item.FOOD_CD}`,
     );
   }
 
   return number;
 }
 
-export function parseMfdsFoodItem(item) {
-  if (item.SERVING_SIZE !== '100g') {
+function parseBasis(item) {
+  const value = item.SERVING_SIZE;
+  if (typeof value !== 'string') {
     throw new Error(
-      `parseMfdsFoodItem: expected SERVING_SIZE "100g", got ${JSON.stringify(item.SERVING_SIZE)} for ${item.FOOD_CD}`,
+      `parseMfdsFoodItem: expected SERVING_SIZE "100g" or "100mL", got ${formatValue(value)} for ${item.FOOD_CD}`,
     );
   }
+
+  const normalized = value.trim();
+  if (normalized === '100g') return 'g';
+  if (normalized.toLowerCase() === '100ml') return 'mL';
+
+  throw new Error(
+    `parseMfdsFoodItem: expected SERVING_SIZE "100g" or "100mL", got ${JSON.stringify(value)} for ${item.FOOD_CD}`,
+  );
+}
+
+function parseAmount(item, field, label) {
+  const value = item[field];
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') {
+    throw new TypeError(
+      `parseMfdsFoodItem: ${label} must be a string or null, got ${formatValue(value)} for ${item.FOOD_CD}`,
+    );
+  }
+
+  const normalized = value.trim();
+  if (normalized === '') return null;
+
+  const match = /^((?:\d{1,3}(?:,\d{3})*|\d+)(?:\.\d+)?)\s*(g|ml)?$/i.exec(normalized);
+  if (!match) {
+    return { amount: null, unit: null, note: normalized };
+  }
+
+  const number = Number(match[1].replace(/,/g, ''));
+  if (number <= 0) {
+    return { amount: null, unit: null, note: normalized };
+  }
+
+  return {
+    amount: number,
+    unit: match[2] ? (match[2].toLowerCase() === 'g' ? 'g' : 'mL') : null,
+    note: null,
+  };
+}
+
+function parseMaker(item) {
+  const value = item.MAKER_NM;
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') {
+    throw new TypeError(
+      `parseMfdsFoodItem: maker must be a string or null, got ${formatValue(value)} for ${item.FOOD_CD}`,
+    );
+  }
+
+  return value.trim() || null;
+}
+
+export function parseMfdsFoodItem(item) {
+  const basis = parseBasis(item);
+  const per100g = Object.fromEntries(
+    NUTRIENT_FIELDS.map(([label, field]) => [label, parseNutrient(item, label, field)]),
+  );
+  const total = parseAmount(item, 'Z10500', 'totalAmount');
+  const serving = parseAmount(item, 'NUTRI_AMOUNT_SERVING', 'servingAmount');
 
   return {
     foodCode: item.FOOD_CD,
     name: item.FOOD_NM_KR,
     category: item.FOOD_CAT1_NM,
-    per100g: Object.fromEntries(
-      NUTRIENT_FIELDS.map(([label, field]) => [label, parseNutrient(item, label, field)]),
-    ),
+    per100g,
+    basis,
+    maker: parseMaker(item),
+    isFranchise: item.FOOD_OR_CD === '2',
+    totalAmount: total?.amount ?? null,
+    totalUnit: total?.unit ?? null,
+    totalNote: total?.note ?? null,
+    servingAmount: serving?.amount ?? null,
+    servingUnit: serving?.unit ?? null,
+    servingNote: serving?.note ?? null,
   };
+}
+
+export function resolveServing(parsed) {
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new TypeError(`resolveServing: parsed must be an object, got ${formatValue(parsed)}`);
+  }
+
+  if (parsed.isFranchise === true && parsed.totalAmount != null) {
+    return {
+      amount: parsed.totalAmount,
+      unit: parsed.totalUnit ?? parsed.basis,
+      source: 'franchise-total',
+    };
+  }
+
+  if (parsed.servingAmount != null) {
+    return {
+      amount: parsed.servingAmount,
+      unit: parsed.servingUnit ?? parsed.basis,
+      source: 'serving-field',
+    };
+  }
+
+  return null;
 }
 
 export function parseMfdsSearchResponse(response) {
