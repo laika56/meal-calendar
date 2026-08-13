@@ -26,3 +26,7 @@ data/
 .DS_Store
 .impeccable/
 *.log
+
+# Codex 실행 로그 — 한 건당 수천 줄, 수 MB다. 저장소에 넣을 이유가 없다
+# (로그는 막혔을 때만 열어본다 — ../AGENTS.md 「리뷰 방법」)
+.codex-runs/
