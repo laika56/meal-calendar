@@ -9,7 +9,7 @@
 
 | 파일 | 내용 |
 |---|---|
-| `src/lib/metabolism.js` | BMR · TDEE · 목적별 매크로 배분 |
+| `src/lib/metabolism.js` | BMR · TDEE · 목적별 매크로 배분 · 조합 진입점 |
 | `src/lib/units.js` | 영양성분 단위 환산 |
 | `tests/metabolism.test.js` | 위 테스트 |
 | `tests/units.test.js` | 위 테스트 |
@@ -88,21 +88,52 @@ TDEE = bmr * 활동계수
 
 > 순서를 바꾸면 단백질이 깎인다. 단백질·지방을 먼저 고정하고 탄수를 잔여로 둔다.
 
-**반환 — 여기서만 반올림한다:**
+**반환:**
 
 ```js
 {
   kcal: <정수>,        // Math.round
   proteinG: <정수>,    // Math.round
   fatG: <정수>,        // Math.round
-  carbG: <정수>,       // Math.round
-  bmr: <정수>,         // Math.round — 표시용
-  tdee: <정수>         // Math.round — 표시용
+  carbG: <정수>        // Math.round
 }
 ```
 
 **반올림 규칙:** `Math.round` (0.5는 올림). 반올림은 **각 값을 독립적으로** 한다 —
 반올림 후 `proteinG*4 + fatG*9 + carbG*4`가 `kcal`과 정확히 안 맞아도 된다. 맞추려고 보정하지 않는다.
+
+인자로 받은 `tdee`는 **반올림되지 않은 값**을 기대한다. 호출부가 `calcTDEE` 결과를 그대로 넘긴다.
+
+> **정정 이력 (2026-08-13):** 이 반환 객체에 원래 `bmr`·`tdee`가 들어 있었는데,
+> `calcTargets`는 `bmr`을 인자로 받지 않아 계산할 수 없었다 — 명세 모순.
+> Codex가 구현 전에 멈추고 지적해서 잡혔다.
+> **`bmr`을 인자에 추가하는 방향으로 고치지 않았다.** 쓰지도 않는 값을 받아 그대로 뱉는
+> pass-through 파라미터가 되기 때문이다. 대신 표시용 조합을 A-4로 분리했다.
+
+## A-4. `buildGoalProfile({ sex, weightKg, heightCm, age, weeklyWorkouts, goal })`
+
+A-1 → A-2 → A-3을 순서대로 부르는 조합 함수. **앱이 온보딩에서 실제로 부르는 진입점이다.**
+
+```js
+const bmr  = calcBMR({ sex, weightKg, heightCm, age });   // 반올림 안 된 값
+const tdee = calcTDEE(bmr, weeklyWorkouts);               // 반올림 안 된 값
+const t    = calcTargets({ tdee, weightKg, goal });
+```
+
+**반환:**
+
+```js
+{
+  bmr: <정수>,      // Math.round — 표시용
+  tdee: <정수>,     // Math.round — 표시용
+  kcal, proteinG, fatG, carbG   // calcTargets 결과 그대로
+}
+```
+
+- **반올림은 여기서 처음 한다.** `calcTargets`에는 반올림 안 된 `tdee`가 들어간다 —
+  중간에 반올림하면 오차가 목표 칼로리까지 전파된다
+- 하위 함수가 던지는 `RangeError`·`TypeError`·`ImpossibleTargetError`를 **잡지 않는다.** 그대로 올린다
+- 검증은 하위 함수가 이미 한다. 여기서 중복 검증하지 않는다
 
 **퇴화 케이스 — 이게 이 발주의 핵심이다:**
 
@@ -192,6 +223,10 @@ kcal = kj / 4.184
 4. **`null` 전파** — `scaleNutrients`·`kjToKcal`에서 `null`이 `0`으로 안 바뀌는지
 5. **`checkCalorieConsistency`가 던지지 않음** — `kcal: 0`, `null` 포함 입력에서
 6. **계산 순서 검증** — 단백질이 목표대로 나오는지 (탄수 잔여 방식이 지켜졌는지)
+7. **`buildGoalProfile` 반올림 전파** — 중간 반올림이 없는지 확인한다.
+   `buildGoalProfile` 결과의 `kcal`이, 반올림 안 된 `tdee`로 `calcTargets`를 직접 부른 결과와 같아야 한다.
+   (반올림된 `tdee`를 넣으면 값이 달라지는 입력을 골라서 검증한다)
+8. **`buildGoalProfile` 예외 전파** — 하위 함수의 `RangeError`·`ImpossibleTargetError`가 그대로 올라오는지
 
 **금지:**
 
