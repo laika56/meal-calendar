@@ -30,6 +30,7 @@ export const SERVING_SOURCE_LABELS = {
 };
 
 function formatValue(value) {
+  if (Number.isNaN(value)) return 'NaN'; // JSON.stringify(NaN) 은 'null' 을 돌려준다 — 그대로 쓰면 오진단을 부른다
   return value === undefined ? 'undefined' : JSON.stringify(value);
 }
 
@@ -99,23 +100,42 @@ export function parseQuickFoodInput(input) {
   };
 }
 
-export function selectBestFood(query, foods) {
+function validateMatchArgs(fnName, query, foods) {
   if (typeof query !== 'string') {
-    throw new TypeError(`selectBestFood: query must be a string, got ${formatValue(query)}`);
+    throw new TypeError(`${fnName}: query must be a string, got ${formatValue(query)}`);
   }
   if (!Array.isArray(foods)) {
-    throw new TypeError(`selectBestFood: foods must be an array, got ${formatValue(foods)}`);
+    throw new TypeError(`${fnName}: foods must be an array, got ${formatValue(foods)}`);
   }
   foods.forEach((food, index) => {
     if (!food || typeof food.name !== 'string') {
-      throw new TypeError(`selectBestFood: foods[${index}].name must be a string`);
+      throw new TypeError(`${fnName}: foods[${index}].name must be a string`);
     }
   });
-  if (foods.length === 0) return null;
+}
 
+// 이름 매칭 3단계(정확 일치 → 접두 → 부분문자열) 중 하나라도 걸리면 그 식품을 돌려준다.
+// 전부 실패하면 undefined다 — 호출부가 foods[0] 폴백을 쓸지, 확인을 요구할지 정한다.
+function findByName(query, foods) {
   const wanted = compact(query);
   return foods.find((food) => compact(food.name) === wanted)
     ?? foods.find((food) => compact(food.name).startsWith(wanted))
-    ?? foods.find((food) => compact(food.name).includes(wanted))
-    ?? foods[0];
+    ?? foods.find((food) => compact(food.name).includes(wanted));
+}
+
+export function selectBestFood(query, foods) {
+  validateMatchArgs('selectBestFood', query, foods);
+  if (foods.length === 0) return null;
+  return findByName(query, foods) ?? foods[0];
+}
+
+/**
+ * 이름이 정말로 맞아떨어지는 후보가 있는지 (정확·접두·부분문자열 중 하나).
+ * false 면 selectBestFood 의 결과는 foods[0] 폴백이라는 뜻이다 — 이름이 전혀 안 맞는데
+ * 그냥 첫 검색 결과를 고른 것이므로, 호출부는 그 값을 확인 없이 바로 기록하면 안 된다.
+ */
+export function hasNameMatch(query, foods) {
+  validateMatchArgs('hasNameMatch', query, foods);
+  if (foods.length === 0) return false;
+  return findByName(query, foods) !== undefined;
 }

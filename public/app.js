@@ -5,7 +5,7 @@ import { scaleNutrients } from '/src/lib/units.js';
 import { validateSignUpForm } from '/src/lib/authValidation.js';
 import { authErrorMessage, validationMessage } from '/src/lib/authMessages.js';
 import {
-  parseQuickFoodInput, selectBestFood, SERVING_SOURCE_LABELS,
+  parseQuickFoodInput, selectBestFood, hasNameMatch, SERVING_SOURCE_LABELS,
 } from '/src/lib/quickFoodInput.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
@@ -47,7 +47,7 @@ const state = {
   openDate: null, // 일간 상세로 열어둔 날짜
   pendingSlot: null, // 항목 추가 중인 슬롯 키
   auth: null, // null | { uid, isAnonymous, email, emailVerified }
-  booted: false, // 데이터 로딩을 한 번만 돌리기 위한 래치
+  bootedUid: null, // 마지막으로 데이터를 읽은 uid. null 이면 아직 안 읽었다 (I2 — uid 로 키를 잡는다)
 };
 
 const el = {
@@ -93,6 +93,7 @@ const el = {
   gateTabSignUp: document.getElementById('gateTabSignUp'),
   gateTabSignIn: document.getElementById('gateTabSignIn'),
   gateForgot: document.getElementById('gateForgot'),
+  accountSection: document.getElementById('accountSection'),
   accountGuest: document.getElementById('accountGuest'),
   accountMember: document.getElementById('accountMember'),
   accountEmail: document.getElementById('accountEmail'),
@@ -100,6 +101,7 @@ const el = {
   resendVerify: document.getElementById('resendVerify'),
   upgradeForm: document.getElementById('upgradeForm'),
   upgradeError: document.getElementById('upgradeError'),
+  memberNotice: document.getElementById('memberNotice'),
   signOutBtn: document.getElementById('signOutBtn'),
   switchAccountBtn: document.getElementById('switchAccountBtn'),
   conflictPrompt: document.getElementById('conflictPrompt'),
@@ -117,7 +119,7 @@ function emptySlots() {
 }
 
 function buildEntry({
-  foodKey, name, amountG, kcal, carbG, proteinG, fatG, addedBy, estimate,
+  foodKey, name, amountG, kcal, carbG, proteinG, fatG, addedBy, estimate, matchedFoodName,
 }) {
   return {
     foodKey: foodKey ?? `manual_${crypto.randomUUID()}`,
@@ -125,6 +127,9 @@ function buildEntry({
     addedBy,
     at: new Date().toISOString(),
     ...(estimate ? { estimate } : {}),
+    // 빠른 기록으로 검색 결과가 실제 매칭된 식품명 — g 명시 경로에서도 항상 남긴다 (I5).
+    // 사용자가 뜻한 이름(entry.name)과 다를 수 있으므로 어떤 식품의 숫자가 들어갔는지 추적한다.
+    ...(matchedFoodName ? { matchedFoodName } : {}),
   };
 }
 
@@ -236,9 +241,14 @@ function renderDayDetail() {
         name.className = 'entry-name';
         if (entry.estimate) {
           name.textContent = `${entry.name} ${entry.estimate.displayAmount} · 추정`;
-          name.title = `${entry.estimate.sourceLabel} · ${entry.estimate.matchedFoodName}`;
         } else {
           name.textContent = `${entry.name} ${entry.amountG}g`;
+        }
+        // 빠른 기록이 실제로 매칭한 식품명 — g 명시 경로에도 남긴다 (I5)
+        if (entry.matchedFoodName) {
+          name.title = entry.estimate
+            ? `${entry.estimate.sourceLabel} · ${entry.matchedFoodName}`
+            : `검색에서 매칭된 식품: ${entry.matchedFoodName}`;
         }
 
         const kcal = document.createElement('span');
@@ -446,7 +456,10 @@ el.searchForm.addEventListener('submit', async (event) => {
     return;
   }
 
-  if (parsed.ok) {
+  // 이름이 정말로 맞아떨어지는 후보가 있을 때만 자동 기록한다. selectBestFood 의 foods[0]
+  // 폴백(이름이 전혀 안 맞는데 그냥 첫 결과를 고른 경우)은 확인 없이 쓰지 않는다 (I5) —
+  // 엉뚱한 식품의 영양값이 조용히 들어갈 수 있기 때문이다.
+  if (parsed.ok && hasNameMatch(parsed.query, items)) {
     const food = selectBestFood(parsed.query, items);
     const added = await addSearchedFood(food, parsed.amountG, parsed);
     if (!added) {
@@ -457,7 +470,10 @@ el.searchForm.addEventListener('submit', async (event) => {
   }
 
   el.searchStatus.hidden = true;
-  if (parsed.reason === 'unsupported-serving') {
+  if (parsed.ok) {
+    el.searchStatus.hidden = false;
+    el.searchStatus.textContent = '정확히 일치하는 이름이 없습니다. 아래에서 골라주세요.';
+  } else if (parsed.reason === 'unsupported-serving') {
     el.searchStatus.hidden = false;
     el.searchStatus.textContent = '이 단위는 아직 자동 환산하지 못합니다. 음식을 고른 뒤 g을 입력해주세요.';
   }
@@ -471,7 +487,9 @@ el.searchForm.addEventListener('submit', async (event) => {
       <span class="r-name">${food.name}</span>
       <span class="r-meta">${food.category ?? ''} · 100g당 ${kcalText}kcal</span>
     `;
-    button.addEventListener('click', () => openPortionPrompt(food));
+    // parsed.ok 면 사용자가 이미 입력한 양(g 명시든 개수 추정 환산이든)을 그대로 넘긴다 —
+    // 이름을 못 찾았다고 이미 알려준 수량까지 지우고 100g 기본값으로 되돌리지 않는다.
+    button.addEventListener('click', () => openPortionPrompt(food, parsed.ok ? parsed.amountG : undefined));
     el.searchResults.appendChild(button);
   }
 });
@@ -505,7 +523,6 @@ async function addSearchedFood(food, amountG, quickInput = null) {
     displayAmount: quickInput.displayAmount,
     source: quickInput.servingSource,
     sourceLabel: SERVING_SOURCE_LABELS[quickInput.servingSource],
-    matchedFoodName: food.name,
   } : null;
 
   await addEntryToSlot(slotKey, buildEntry({
@@ -518,6 +535,9 @@ async function addSearchedFood(food, amountG, quickInput = null) {
     fatG: scaled.fatG,
     addedBy: quickInput ? 'quick' : 'search',
     estimate,
+    // 빠른 기록에서만 남긴다 — 직접 검색(quickInput=null)은 entry.name 이 이미 food.name 이라
+    // 중복이다. g 명시든 개수 추정이든 상관없이 항상 남긴다 (I5, 예전엔 추정 경로에만 있었다).
+    matchedFoodName: quickInput ? food.name : null,
   }));
   return true;
 }
@@ -536,10 +556,10 @@ function renderPortionPreview() {
   `;
 }
 
-function openPortionPrompt(food) {
+function openPortionPrompt(food, amountG = 100) {
   selectedFood = food;
   el.portionTitle.textContent = food.name;
-  el.portionAmount.value = 100;
+  el.portionAmount.value = amountG;
   renderPortionPreview();
   showPortionPrompt(true);
 }
@@ -710,11 +730,26 @@ document.getElementById('openSettings').addEventListener('click', () => {
   renderManualRatio();
 });
 
+let armTimer = null; // 2단계 확인의 '무장' 상태를 자동으로 풀기 위한 타이머 (I3)
+
 function resetDestructiveConfirmations() {
+  clearTimeout(armTimer);
   el.switchAccountBtn.dataset.armed = '';
   el.switchAccountBtn.textContent = '다른 계정으로 로그인';
   el.conflictAbandon.dataset.armed = '';
   el.conflictAbandon.textContent = '기록을 포기하고 그 계정으로 로그인';
+}
+
+/**
+ * 2단계 확인의 1단계 — 버튼을 '무장'하고 경고 문구로 바꾼다.
+ * 무장 상태를 무기한 유지하면, 시트를 열어둔 채 한참 있다가 실수로 같은 버튼을 스치는
+ * 것만으로 되돌릴 수 없는 동작이 실행된다. 5초 뒤 자동으로 풀리게 한다 (I3).
+ */
+function armDestructive(button, warnLabel) {
+  button.dataset.armed = 'yes';
+  button.textContent = warnLabel;
+  clearTimeout(armTimer);
+  armTimer = setTimeout(resetDestructiveConfirmations, 5000);
 }
 
 function closeSettings() {
@@ -809,13 +844,16 @@ function renderAccountSection(user) {
   el.conflictPrompt.hidden = true;
   el.upgradeForm.hidden = false;
   resetDestructiveConfirmations();
+  clearAuthError(el.memberNotice); // 회원 전용 알림도 상태 전환마다 같이 비운다 (C2)
 
   if (!user) {
+    el.accountSection.hidden = true; // 로그인 전에는 「계정」 빈 상자가 안 보이게 한다 (M6)
     el.accountGuest.hidden = true;
     el.accountMember.hidden = true;
     return;
   }
 
+  el.accountSection.hidden = false;
   el.accountGuest.hidden = !user.isAnonymous;
   el.accountMember.hidden = user.isAnonymous;
 
@@ -828,8 +866,10 @@ function renderAccountSection(user) {
 
 /**
  * 인증 상태가 바뀔 때마다 불린다.
- * user 가 있으면 게이트를 숨기고, 아직 데이터를 안 읽었으면 그때 읽는다.
- * booted 래치가 없으면 이메일 인증 상태 갱신 같은 사소한 변화마다 한 달치를 다시 읽는다.
+ * user 가 있으면 게이트를 숨기고, 아직 그 uid 로 데이터를 안 읽었으면 그때 읽는다.
+ * uid 로 키를 잡은 래치가 없으면 이메일 인증 상태 갱신 같은 사소한 변화마다 한 달치를 다시
+ * 읽는다. 단순 boolean 이었으면 계정이 로그아웃 없이 바뀌는 경로(handleEmailInUse 의
+ * 「빈 계정이면 갈아탄다」 분기)에서 새 uid 의 데이터를 다시 안 읽는 버그가 생긴다 (I2).
  */
 async function applyAuthState(user) {
   state.auth = user;
@@ -838,13 +878,15 @@ async function applyAuthState(user) {
   if (!user) {
     el.settings.hidden = true;
     el.authGate.hidden = false;
-    state.booted = false;
+    state.bootedUid = null;
     return;
   }
 
   el.authGate.hidden = true;
-  if (state.booted) return;
-  state.booted = true;
+  if (state.bootedUid === user.uid) return;
+  state.bootedUid = user.uid;
+  state.monthData = new Map(); // 계정이 바뀌었으면 이전 계정 데이터를 들고 있지 않는다
+  state.goal = null;
 
   await migrateLegacyProfile();
 
@@ -882,7 +924,15 @@ async function runAuthAction(button, errorBox, action) {
     clearAuthError(errorBox);
   } catch (err) {
     console.error('[meal-calendar] 인증 실패', err);
-    showAuthError(errorBox, authErrorMessage(err?.code));
+    // authErrorMessage 는 code 가 문자열·null·undefined 가 아니면 TypeError 를 던진다.
+    // err.code 가 숫자인 경우가 있다(브라우저 DOMException.code 등) — 여기서 그대로
+    // authErrorMessage(err?.code) 를 부르면 인자 평가 중에 던지고, showAuthError 는 아예
+    // 호출되지 못한 채 이 오류가 통째로 삼켜진다 (I1). 문자열일 때만 매핑을 쓴다.
+    const code = typeof err?.code === 'string' ? err.code : null;
+    showAuthError(
+      errorBox,
+      code ? authErrorMessage(code) : `문제가 생겼습니다. (${err?.message ?? err})`,
+    );
     throw err;
   } finally {
     button.disabled = false;
@@ -933,14 +983,17 @@ function bindAuthHandlers() {
       .catch(() => {});
   });
 
+  // #upgradeError 는 #accountGuest 안에 있어서 회원 상태(#accountMember)에서는 조상이
+  // 숨겨진다 — hidden = false 를 걸어도 화면에 안 나타난다. 회원 전용 액션은 #accountMember
+  // 안의 #memberNotice 로 보낸다 (C2).
   el.resendVerify.addEventListener('click', () => {
-    runAuthAction(el.resendVerify, el.upgradeError, () => db.resendVerification())
-      .then(() => showAuthError(el.upgradeError, '인증 메일을 다시 보냈습니다.'))
+    runAuthAction(el.resendVerify, el.memberNotice, () => db.resendVerification())
+      .then(() => showAuthError(el.memberNotice, '인증 메일을 다시 보냈습니다.'))
       .catch(() => {});
   });
 
   el.signOutBtn.addEventListener('click', () => {
-    runAuthAction(el.signOutBtn, el.upgradeError, () => db.signOutUser()).catch(() => {});
+    runAuthAction(el.signOutBtn, el.memberNotice, () => db.signOutUser()).catch(() => {});
   });
 
   bindUpgradeHandlers();
@@ -1005,29 +1058,38 @@ function bindUpgradeHandlers() {
   // 2단계 확인. 첫 탭에서는 문구만 바꾸고, 같은 버튼을 한 번 더 눌러야 실행된다.
   el.conflictAbandon.addEventListener('click', () => {
     if (el.conflictAbandon.dataset.armed !== 'yes') {
-      el.conflictAbandon.dataset.armed = 'yes';
-      el.conflictAbandon.textContent = '정말 포기합니다 — 한 번 더 누르세요';
+      armDestructive(el.conflictAbandon, '정말 포기합니다 — 한 번 더 누르세요');
       return;
     }
     const credential = pendingConflict;
     if (!credential) return;
+    // signOutUser() 를 먼저 부르지 않는다 (C1). 익명 계정은 로그아웃하는 순간 uid 를 되찾을
+    // 방법이 없는데, 여기 넘어오는 password 는 방금 가입 폼에 사용자가 새로 입력한 값이라
+    // 그 계정의 실제 비밀번호라는 보장이 전혀 없다. signInWithEmailAndPassword 는 다른
+    // 사용자(익명 포함)가 로그인된 상태에서도 그대로 동작하며 currentUser 를 교체하므로
+    // 명시적 로그아웃이 애초에 필요 없다 — 로그인이 실패해도 지금 익명 세션은 그대로 남아
+    // 기록을 잃지 않는다.
     // 라벨 되돌리기도 runAuthAction 밖에서 한다 — finally 가 '무장된' 라벨로 복원해버린다
-    runAuthAction(el.conflictAbandon, el.upgradeError, async () => {
-      await db.signOutUser();
-      await db.signInWithPassword(credential.email, credential.password);
-    }).then(() => {
+    runAuthAction(
+      el.conflictAbandon,
+      el.upgradeError,
+      () => db.signInWithPassword(credential.email, credential.password),
+    ).then(() => {
       pendingConflict = null;
       el.conflictAbandon.dataset.armed = '';
       el.conflictAbandon.textContent = '기록을 포기하고 그 계정으로 로그인';
-    }).catch(() => {});
+    }).catch(() => {
+      // 로그인 실패 — 익명 세션은 그대로다. 무장 상태만 풀어서 반무장 버튼으로 남기지 않는다.
+      el.conflictAbandon.dataset.armed = '';
+      el.conflictAbandon.textContent = '기록을 포기하고 그 계정으로 로그인';
+    });
   });
 
   // 비회원 상태에서 「다른 계정으로 로그인」 — 게이트로 돌아가되 익명 세션을 버린다.
   // 이것도 2단계다. 익명 계정은 로그아웃하면 되찾을 수 없다.
   el.switchAccountBtn.addEventListener('click', () => {
     if (el.switchAccountBtn.dataset.armed !== 'yes') {
-      el.switchAccountBtn.dataset.armed = 'yes';
-      el.switchAccountBtn.textContent = '지금 기록이 사라집니다 — 한 번 더 누르세요';
+      armDestructive(el.switchAccountBtn, '지금 기록이 사라집니다 — 한 번 더 누르세요');
       return;
     }
     runAuthAction(el.switchAccountBtn, el.upgradeError, () => db.signOutUser())
