@@ -6,7 +6,7 @@
 
 ## 지금 상태
 
-Phase 0. 스캐폴딩 완료. **계산 엔진 발주 01 구현 완료 — Claude 리뷰 대기.**
+Phase 0. 스캐폴딩 완료. **계산 엔진(발주01+03) 리뷰·커밋 완료.** 다음 코드 작업은 블로커 해소 후.
 
 > **작업 순서 규칙:** Codex에 넘길 수 있는 것부터 먼저 발주한다 (`../AGENTS.md` 「순서」).
 > Codex가 도는 동안 Claude가 자기 몫을 병렬로 한다.
@@ -46,18 +46,22 @@ standalone / safe-area / 100dvh / `BarcodeDetector` 부재 / secure context / SW
 
 | 대상 | 잡은 쪽 | 상태 |
 |---|---|---|
-| `src/lib/metabolism.js`, `src/lib/units.js` + 테스트 | **Codex** | 구현 완료 · Claude 리뷰 대기 → `docs/orders/03-error-messages.md` B-2 정정 반영 |
+| `src/lib/metabolism.js`, `src/lib/units.js` + 테스트 | **Codex** | **완료·커밋** (`meal-calendar` `0a1cf7c`) → `orders/01`, `orders/03` |
 | `public/` (검증 페이지) | Claude | 완료 |
-| `../coin-bot/{AGENTS,CLAUDE}.md`, `../stock/{AGENTS,CLAUDE}.md`, `../scripts/check-doc-split.sh` | **Codex** | 완료 · 검증 통과, Claude 리뷰 대기 |
+| `../coin-bot/{AGENTS,CLAUDE}.md`, `../scripts/check-doc-split.sh` | **Codex** | **완료·커밋** (`coin-bot` `da1d4e2`, root `c260784`) |
+| `../stock/{AGENTS,CLAUDE}.md` | **Codex** | **완료·커밋** (`stock` `b65892c`) |
 
 ## Codex 발주 대기열
 
 | 순서 | 작업 | 명세 준비 | 발주 | 내 리뷰 | 사용자 컨펌 |
 |---|---|---|---|---|---|
-| 1 | 대사량·매크로 계산 + 테스트 | ☑ `orders/01` | ☑ | ☐ | ☐ |
-| 2 | 단위 환산 + 테스트 | ☑ `orders/01` | ☑ | ☐ | ☐ |
-| 3 | 식약처 응답 파서 | ☐ (실응답 샘플 필요) | ☐ | ☐ | ☐ |
-| 4 | 룰렛 solver | ☐ | ☐ | ☐ | ☐ |
+| 1 | 대사량·매크로 계산 + 테스트 | ☑ `orders/01` | ☑ | ☑ | ☑ |
+| 2 | 단위 환산 + 테스트 | ☑ `orders/01` | ☑ | ☑ | ☑ |
+| 3 | 계산 엔진 에러 메시지 보강 (발주01 리뷰 구멍 5건) | ☑ `orders/03` | ☑ | ☑ | ☑ |
+| 4 | 식약처 응답 파서 | ☐ (실응답 샘플 필요) | ☐ | ☐ | ☐ |
+| 5 | 룰렛 solver | ☐ | ☐ | ☐ | ☐ |
+
+> 문서 중복 제거(`orders/02`, coin-bot·stock)는 이 프로젝트 대기열이 아니라 워크스페이스 루트 `AGENTS.md` 작업이었다 — 완료·커밋됨.
 
 **게이트:** 리뷰와 컨펌 둘 다 체크되기 전엔 머지하지 않는다.
 
