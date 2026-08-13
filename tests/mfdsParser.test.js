@@ -45,6 +45,7 @@ test('maps MFDS identity fields and all four per-100g nutrients', () => {
     basis: 'g',
     maker: null,
     isFranchise: false,
+    foodGroup: 'unknown',
     totalAmount: null,
     totalUnit: null,
     totalNote: null,
@@ -251,50 +252,120 @@ test('sets isFranchise only from FOOD_OR_CD 2', () => {
   }).isFranchise, false);
 });
 
-test('parses total amount, basis, maker, and franchise fields from measured MFDS brand items', () => {
+test('maps every specified DB_GRP_CM string, absent value, and blank value to foodGroup', () => {
+  const cases = [
+    ['D', 'dish'],
+    ['P', 'processed'],
+    ['R1', 'ingredient'],
+    ['unexpected', 'unknown'],
+    [null, 'unknown'],
+    [undefined, 'unknown'],
+    ['', 'unknown'],
+  ];
+
+  for (const [value, expected] of cases) {
+    assert.equal(parseMfdsFoodItem({ ...firstItem, DB_GRP_CM: value }).foodGroup, expected);
+  }
+});
+
+test('uses DB_GRP_CM alone instead of inferring foodGroup from DB_GRP_NM', () => {
+  assert.equal(parseMfdsFoodItem({
+    ...firstItem,
+    DB_GRP_CM: 'unexpected',
+    DB_GRP_NM: '음식',
+  }).foodGroup, 'unknown');
+});
+
+test('rejects every non-string non-null DB_GRP_CM with TypeError', () => {
+  for (const value of [0, true, 1n, {}, []]) {
+    assert.throws(
+      () => parseMfdsFoodItem({ ...firstItem, DB_GRP_CM: value }),
+      (error) => error.name === 'TypeError' && error.message.includes(firstItem.FOOD_CD),
+    );
+  }
+});
+
+test('parses total amount, basis, maker, franchise, and food group from measured brand items', () => {
   const bigMac = brandFixture.cases.franchise_with_weight.items[1];
   const gimbap = brandFixture.cases.generic_no_maker.items[0];
 
   assert.deepEqual(
-    (({ totalAmount, totalUnit, basis, maker, isFranchise }) => ({
+    (({ totalAmount, totalUnit, basis, maker, isFranchise, foodGroup }) => ({
       totalAmount,
       totalUnit,
       basis,
       maker,
       isFranchise,
+      foodGroup,
     }))(
-      parseMfdsFoodItem(bigMac),
+      parseMfdsFoodItem({ ...bigMac, DB_GRP_CM: 'D' }),
     ),
-    { totalAmount: 223, totalUnit: 'g', basis: 'g', maker: '맥도날드', isFranchise: true },
+    {
+      totalAmount: 223,
+      totalUnit: 'g',
+      basis: 'g',
+      maker: '맥도날드',
+      isFranchise: true,
+      foodGroup: 'dish',
+    },
   );
   assert.deepEqual(
-    (({ totalAmount, totalUnit, basis, maker, isFranchise }) => ({
+    (({ totalAmount, totalUnit, basis, maker, isFranchise, foodGroup }) => ({
       totalAmount,
       totalUnit,
       basis,
       maker,
       isFranchise,
+      foodGroup,
     }))(
-      parseMfdsFoodItem(gimbap),
+      parseMfdsFoodItem({ ...gimbap, DB_GRP_CM: 'D' }),
     ),
-    { totalAmount: 230, totalUnit: 'g', basis: 'g', maker: null, isFranchise: false },
+    {
+      totalAmount: 230,
+      totalUnit: 'g',
+      basis: 'g',
+      maker: null,
+      isFranchise: false,
+      foodGroup: 'dish',
+    },
   );
 });
 
-test('resolves a measured franchise total as one serving', () => {
+test('resolves measured D-group Big Mac and non-franchise gimbap totals as one serving', () => {
   const bigMac = brandFixture.cases.franchise_with_weight.items[1];
-  const parsed = parseMfdsFoodItem(bigMac);
+  const gimbap = brandFixture.cases.generic_no_maker.items[0];
 
-  assert.deepEqual(resolveServing(parsed), {
+  assert.deepEqual(resolveServing(parseMfdsFoodItem({ ...bigMac, DB_GRP_CM: 'D' })), {
     amount: 223,
     unit: 'g',
-    source: 'franchise-total',
+    source: 'dish-total',
+  });
+  assert.equal(parseMfdsFoodItem({ ...gimbap, DB_GRP_CM: 'D' }).isFranchise, false);
+  assert.deepEqual(resolveServing(parseMfdsFoodItem({ ...gimbap, DB_GRP_CM: 'D' })), {
+    amount: 230,
+    unit: 'g',
+    source: 'dish-total',
   });
 });
 
-test('falls back to basis when a franchise total has no unit', () => {
+test('prefers a dish total when both total and serving fields are present', () => {
   assert.deepEqual(resolveServing({
-    isFranchise: true,
+    foodGroup: 'dish',
+    totalAmount: 230,
+    totalUnit: 'g',
+    basis: 'g',
+    servingAmount: 150,
+    servingUnit: 'g',
+  }), {
+    amount: 230,
+    unit: 'g',
+    source: 'dish-total',
+  });
+});
+
+test('falls back to basis when a dish total has no unit', () => {
+  assert.deepEqual(resolveServing({
+    foodGroup: 'dish',
     totalAmount: 650,
     totalUnit: null,
     basis: 'mL',
@@ -303,13 +374,13 @@ test('falls back to basis when a franchise total has no unit', () => {
   }), {
     amount: 650,
     unit: 'mL',
-    source: 'franchise-total',
+    source: 'dish-total',
   });
 });
 
-test('resolves the serving field for a non-franchise product', () => {
+test('resolves the serving field for a processed product', () => {
   assert.deepEqual(resolveServing({
-    isFranchise: false,
+    foodGroup: 'processed',
     totalAmount: 1000,
     totalUnit: 'g',
     basis: 'g',
@@ -324,7 +395,7 @@ test('resolves the serving field for a non-franchise product', () => {
 
 test('falls back to basis when the serving field has no unit', () => {
   assert.deepEqual(resolveServing({
-    isFranchise: false,
+    foodGroup: 'processed',
     totalAmount: null,
     totalUnit: null,
     basis: 'g',
@@ -337,21 +408,50 @@ test('falls back to basis when the serving field has no unit', () => {
   });
 });
 
-test('returns null when no serving source is available', () => {
-  assert.equal(resolveServing({
-    isFranchise: false,
+test('uses a serving field when a dish has no total amount', () => {
+  assert.deepEqual(resolveServing({
+    foodGroup: 'dish',
     totalAmount: null,
     totalUnit: null,
+    basis: 'g',
+    servingAmount: 100,
+    servingUnit: null,
+  }), {
+    amount: 100,
+    unit: 'g',
+    source: 'serving-field',
+  });
+});
+
+test('returns null for a processed product with only a package total', () => {
+  assert.equal(resolveServing({
+    foodGroup: 'processed',
+    totalAmount: 1000,
+    totalUnit: 'g',
     basis: 'g',
     servingAmount: null,
     servingUnit: null,
   }), null);
 });
 
-test('does not use a non-franchise product total as one serving', () => {
+test('returns null for ingredient and unknown food groups without a serving field', () => {
+  for (const foodGroup of ['ingredient', 'unknown']) {
+    assert.equal(resolveServing({
+      foodGroup,
+      totalAmount: 230,
+      totalUnit: 'g',
+      basis: 'g',
+      servingAmount: null,
+      servingUnit: null,
+    }), null);
+  }
+});
+
+test('does not use the legacy franchise flag as a serving source', () => {
   assert.equal(resolveServing({
-    isFranchise: false,
-    totalAmount: 1000,
+    foodGroup: 'unknown',
+    isFranchise: true,
+    totalAmount: 223,
     totalUnit: 'g',
     basis: 'g',
     servingAmount: null,

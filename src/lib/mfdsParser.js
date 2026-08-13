@@ -102,6 +102,21 @@ function parseMaker(item) {
   return value.trim() || null;
 }
 
+function parseFoodGroup(item) {
+  const value = item.DB_GRP_CM;
+  if (value === null || value === undefined) return 'unknown';
+  if (typeof value !== 'string') {
+    throw new TypeError(
+      `parseMfdsFoodItem: foodGroup must be a string or null, got ${formatValue(value)} for ${item.FOOD_CD}`,
+    );
+  }
+
+  if (value === 'D') return 'dish';
+  if (value === 'P') return 'processed';
+  if (value === 'R1') return 'ingredient';
+  return 'unknown';
+}
+
 export function parseMfdsFoodItem(item) {
   const basis = parseBasis(item);
   const per100g = Object.fromEntries(
@@ -118,6 +133,7 @@ export function parseMfdsFoodItem(item) {
     basis,
     maker: parseMaker(item),
     isFranchise: item.FOOD_OR_CD === '2',
+    foodGroup: parseFoodGroup(item),
     totalAmount: total?.amount ?? null,
     totalUnit: total?.unit ?? null,
     totalNote: total?.note ?? null,
@@ -132,11 +148,11 @@ export function resolveServing(parsed) {
     throw new TypeError(`resolveServing: parsed must be an object, got ${formatValue(parsed)}`);
   }
 
-  if (parsed.isFranchise === true && parsed.totalAmount != null) {
+  if (parsed.foodGroup === 'dish' && parsed.totalAmount != null) {
     return {
       amount: parsed.totalAmount,
       unit: parsed.totalUnit ?? parsed.basis,
-      source: 'franchise-total',
+      source: 'dish-total',
     };
   }
 
