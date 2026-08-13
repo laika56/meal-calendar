@@ -89,6 +89,17 @@
   .day-over { border-color: var(--over); background: var(--over-bg); }
   .day-over .day-badge { color: var(--over); }
   .day-none .day-badge { color: var(--none-fg); }
+  /* 「아직 모름」 — 미기록(·미기록)과 다르게 보여야 한다. 판정을 보류한 상태다. */
+  .day-unknown .day-badge { color: var(--none-fg); opacity: 0.5; }
+  .day-unknown .day-num { opacity: 0.45; }
+
+  .month-notice {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 12px; margin: 0 0 8px; font-size: 12px; color: var(--muted);
+    line-height: 1.5;
+  }
+  .month-notice[hidden] { display: none; }
+  .month-notice-error { color: var(--over); border-color: var(--over); background: var(--over-bg); }
 
   .day-outside { opacity: .35; }
   .day-today { box-shadow: 0 0 0 2px var(--fg) inset; }
@@ -359,6 +370,7 @@
   <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
 </div>
 
+<div id="monthNotice" class="month-notice" hidden></div>
 <div id="grid" class="grid"></div>
 </main>
 

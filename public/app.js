@@ -29,6 +29,9 @@ const STATUS_LABEL = {
   ok: { symbol: '●', text: '달성' },
   over: { symbol: '△', text: '초과' },
   none: { symbol: '·', text: '미기록' },
+  // 「아직 모름」. 미기록과 구분해야 한다 — 로딩·실패를 미기록으로 그리면
+  // 사용자가 기록이 사라졌다고 읽는다.
+  unknown: { symbol: '·', text: '…' },
 };
 
 function todayLocalDate() {
@@ -48,10 +51,18 @@ const state = {
   pendingSlot: null, // 항목 추가 중인 슬롯 키
   auth: null, // null | { uid, isAnonymous, email, emailVerified }
   bootedUid: null, // 마지막으로 데이터를 읽은 uid. null 이면 아직 안 읽었다 (I2 — uid 로 키를 잡는다)
+  // 'idle' | 'loading' | 'error'. 「아직 모름」과 「기록 없음」은 다른 상태다 —
+  // 이걸 구분하지 않으면 로딩 중인 달이 「미기록」으로 그려져서 사용자가 기록이
+  // 날아갔다고 믿는다. 실기기에서 실제로 그렇게 오해했다 (2026-08-13).
+  // 초기값이 'loading' 인 게 중요하다. start() 는 인증이 풀리기 전에 renderMonth() 를 먼저
+  // 부르는데(그리드를 즉시 보여주려고), 이때 'idle' 이면 아직 아무것도 안 읽은 빈 Map 을
+  // 「전부 미기록」으로 그린다 — 고치려는 증상 그 자체다.
+  monthState: 'loading',
 };
 
 const el = {
   monthLabel: document.getElementById('monthLabel'),
+  monthNotice: document.getElementById('monthNotice'),
   grid: document.getElementById('grid'),
   detail: document.getElementById('dayDetail'),
   detailDate: document.getElementById('detailDate'),
@@ -155,11 +166,23 @@ function renderMonth() {
   const cells = buildMonthGrid({ year: state.year, month: state.month, weekStartsOn: 0 });
   el.grid.innerHTML = '';
 
+  // 아직 안 읽었거나 읽기에 실패했으면 「미기록」이라고 말하지 않는다.
+  // 모르는 것을 없다고 단정하는 표시다 (절대규칙 7).
+  const known = state.monthState === 'idle';
+  el.monthNotice.hidden = known;
+  if (state.monthState === 'loading') {
+    el.monthNotice.className = 'month-notice';
+    el.monthNotice.textContent = '기록을 불러오는 중…';
+  } else if (state.monthState === 'error') {
+    el.monthNotice.className = 'month-notice month-notice-error';
+    el.monthNotice.textContent = '기록을 불러오지 못했습니다. 아래 달력은 비어 보이지만 지워진 것이 아닙니다.';
+  }
+
   for (const cell of cells) {
     const day = state.monthData.get(cell.date);
     const kcal = day?.totals?.kcal ?? 0;
     const hasRecord = Boolean(day) && kcal > 0;
-    const status = dayStatus({ kcal, targetKcal: target, hasRecord });
+    const status = known ? dayStatus({ kcal, targetKcal: target, hasRecord }) : 'unknown';
     const label = STATUS_LABEL[status];
 
     const button = document.createElement('button');
@@ -168,11 +191,11 @@ function renderMonth() {
     button.dataset.date = cell.date;
     button.setAttribute(
       'aria-label',
-      `${cell.date}, ${label.text}${hasRecord ? `, ${kcal}kcal` : ''}`,
+      `${cell.date}, ${label.text}${known && hasRecord ? `, ${kcal}kcal` : ''}`,
     );
     button.innerHTML = `
       <span class="day-num">${cell.dayOfMonth}</span>
-      <span class="day-kcal">${hasRecord ? Math.round(kcal) : ''}</span>
+      <span class="day-kcal">${known && hasRecord ? Math.round(kcal) : ''}</span>
       <span class="day-badge">${label.symbol} ${label.text}</span>
     `;
     button.addEventListener('click', () => openDayDetail(cell.date));
@@ -181,12 +204,17 @@ function renderMonth() {
 }
 
 async function loadMonthData() {
+  state.monthState = 'loading';
+  renderMonth(); // 기다리게 하지 않고 「불러오는 중」을 먼저 보여준다
   await dbReady;
   try {
     state.monthData = await db.loadMonth(state.year, state.month);
+    state.monthState = 'idle';
   } catch (err) {
     console.error('[meal-calendar] 월 데이터 로드 실패', err);
-    state.monthData = new Map();
+    // monthData 를 비우지 않는다 — 이전 달 데이터가 남는 게, 없다고 거짓말하는 것보다 낫다.
+    // 어차피 monthState 가 'error' 라 화면은 판정을 보류한다.
+    state.monthState = 'error';
   }
   renderMonth();
 }
@@ -890,13 +918,15 @@ async function applyAuthState(user) {
 
   await migrateLegacyProfile();
 
-  try {
-    state.goal = await db.loadGoalFor(todayLocalDate());
-  } catch (err) {
-    console.error('[meal-calendar] 목표 조회 실패', err);
-  }
+  // 목표 조회와 월 데이터 조회는 서로 독립이다. 순차로 await 하면 네트워크 왕복 두 번을
+  // 줄줄이 기다리게 되고, 모바일 회선에서 이게 첫 화면 지연으로 그대로 보인다.
+  // 목표가 늦게 와도 loadMonthData 가 끝나면서 renderMonth 를 다시 부르므로 달성률은 맞는다.
+  const goalLoad = db.loadGoalFor(todayLocalDate())
+    .then((goal) => { state.goal = goal; })
+    .catch((err) => { console.error('[meal-calendar] 목표 조회 실패', err); });
 
-  await loadMonthData();
+  await Promise.all([goalLoad, loadMonthData()]);
+  renderMonth(); // 목표가 월 데이터보다 늦게 왔을 수 있다 — 최종 상태로 한 번 더 그린다
 }
 
 function selectGateTab(mode) {
