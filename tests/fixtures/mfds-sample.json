@@ -1,0 +1,90 @@
+{
+  "_source": "실제 응답 — apis.data.go.kr/1471000/FoodNtrCpntDbInfo02/getFoodNtrCpntDbInq02, 2026-08-13 조회",
+  "_note": "AMT_NUM1=에너지(kcal) AMT_NUM2=수분(g) AMT_NUM3=단백질(g) AMT_NUM4=지방(g) AMT_NUM5=회분(g) AMT_NUM6=탄수화물(g) AMT_NUM7=당류(g) AMT_NUM8=식이섬유(g) — 출력메세지_식품영양성분DB정보.xlsx 기준",
+  "items": [
+    {
+      "FOOD_CD": "D101-004160000-0001",
+      "FOOD_NM_KR": "국밥_돼지머리",
+      "FOOD_CAT1_NM": "밥류",
+      "SERVING_SIZE": "100g",
+      "AMT_NUM1": "137.000",
+      "AMT_NUM2": "71.60",
+      "AMT_NUM3": "6.70",
+      "AMT_NUM4": "5.16",
+      "AMT_NUM5": "0.63",
+      "AMT_NUM6": "15.94",
+      "AMT_NUM7": "0.16",
+      "AMT_NUM8": "0.70"
+    },
+    {
+      "FOOD_CD": "D101-004310000-0001",
+      "FOOD_NM_KR": "국밥_순대국밥",
+      "FOOD_CAT1_NM": "밥류",
+      "SERVING_SIZE": "100g",
+      "AMT_NUM1": "75.00",
+      "AMT_NUM2": "83.70",
+      "AMT_NUM3": "3.17",
+      "AMT_NUM4": "2.28",
+      "AMT_NUM5": "0.48",
+      "AMT_NUM6": "10.38",
+      "AMT_NUM7": "0.17",
+      "AMT_NUM8": "1.30"
+    },
+    {
+      "FOOD_CD": "D101-004500000-0001",
+      "FOOD_NM_KR": "국밥_콩나물",
+      "FOOD_CAT1_NM": "밥류",
+      "SERVING_SIZE": "100g",
+      "AMT_NUM1": "52.00",
+      "AMT_NUM2": "86.80",
+      "AMT_NUM3": "1.45",
+      "AMT_NUM4": "0.24",
+      "AMT_NUM5": "0.56",
+      "AMT_NUM6": "10.93",
+      "AMT_NUM7": "0.00",
+      "AMT_NUM8": "1.20"
+    },
+    {
+      "FOOD_CD": "D101-006000000-0001",
+      "FOOD_NM_KR": "기장밥",
+      "FOOD_CAT1_NM": "밥류",
+      "SERVING_SIZE": "100g",
+      "AMT_NUM1": "166.000",
+      "AMT_NUM2": "59.10",
+      "AMT_NUM3": "3.44",
+      "AMT_NUM4": "0.57",
+      "AMT_NUM5": "0.15",
+      "AMT_NUM6": "36.77",
+      "AMT_NUM7": "0.00",
+      "AMT_NUM8": "1.50"
+    },
+    {
+      "FOOD_CD": "D101-007000000-0001",
+      "FOOD_NM_KR": "김밥",
+      "FOOD_CAT1_NM": "밥류",
+      "SERVING_SIZE": "100g",
+      "AMT_NUM1": "140.000",
+      "AMT_NUM2": "69.50",
+      "AMT_NUM3": "4.84",
+      "AMT_NUM4": "4.55",
+      "AMT_NUM5": "1.11",
+      "AMT_NUM6": "19.98",
+      "AMT_NUM7": "0.00",
+      "AMT_NUM8": "1.40"
+    },
+    {
+      "FOOD_CD": "D101-007070000-0001",
+      "FOOD_NM_KR": "김밥_김치",
+      "FOOD_CAT1_NM": "밥류",
+      "SERVING_SIZE": "100g",
+      "AMT_NUM1": "130.000",
+      "AMT_NUM2": "71.20",
+      "AMT_NUM3": "4.30",
+      "AMT_NUM4": "4.03",
+      "AMT_NUM5": "1.29",
+      "AMT_NUM6": "19.17",
+      "AMT_NUM7": "0.29",
+      "AMT_NUM8": "1.80"
+    }
+  ]
+}
