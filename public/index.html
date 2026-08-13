@@ -178,6 +178,34 @@
     border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
   }
   .calc-note { color: var(--muted); font-size: 12px; margin: 0; line-height: 1.5; }
+  .checkbox-row {
+    flex-direction: row !important; align-items: center; gap: 8px !important;
+    font-weight: 500 !important; color: var(--fg) !important;
+  }
+  .checkbox-row input { width: auto; }
+
+  .ghost-btn {
+    -webkit-appearance: none; appearance: none;
+    border: 1px solid var(--line); background: none; color: var(--fg);
+    font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 8px;
+    margin-left: auto;
+  }
+  .quick-section { margin-bottom: 16px; }
+  .quick-section h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+  .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+    padding: 8px 8px 8px 14px; font-size: 13px;
+  }
+  .chip-add {
+    -webkit-appearance: none; appearance: none; border: 0; background: none;
+    color: var(--fg); font: inherit; font-size: 13px; font-weight: 600;
+  }
+  .chip-del {
+    -webkit-appearance: none; appearance: none; border: 0; background: none;
+    color: var(--muted); font-size: 15px; line-height: 1; padding: 2px 4px;
+  }
   .form-error {
     color: var(--over); background: var(--over-bg); border: 1px solid var(--over);
     border-radius: 10px; padding: 10px 12px; font-size: 13px;
@@ -187,6 +215,10 @@
     padding: 12px; font-size: 13px; line-height: 1.7;
   }
   .form-result b { font-size: 15px; }
+  .manual-ratio {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; font-size: 12px; color: var(--muted); margin-bottom: 16px; line-height: 1.6;
+  }
   .profile-form button[type="submit"] {
     -webkit-appearance: none; appearance: none; border: 0;
     min-height: 48px; font: inherit; font-weight: 600; font-size: 16px;
@@ -253,6 +285,7 @@
     <div class="sheet-header">
       <button id="closeDetail" aria-label="캘린더로 돌아가기">‹ 캘린더</button>
       <h2 id="detailDate"></h2>
+      <button id="copyYesterday" class="ghost-btn" type="button">어제 복사</button>
     </div>
     <div class="totals">
       <div class="total-row"><span>칼로리</span><b id="totalKcal">0 / 0 kcal</b></div>
@@ -270,6 +303,16 @@
       <button id="closeEntry" aria-label="돌아가기">‹ 뒤로</button>
       <h2 id="entryTitle">항목 추가</h2>
     </div>
+
+    <div id="quickPresets" class="quick-section" hidden>
+      <h3>프리셋</h3>
+      <div id="presetChips" class="chip-row"></div>
+    </div>
+    <div id="quickRecent" class="quick-section" hidden>
+      <h3>최근 항목</h3>
+      <div id="recentChips" class="chip-row"></div>
+    </div>
+
     <form id="manualEntryForm" class="profile-form">
       <label>이름
         <input name="name" type="text" required placeholder="직접 입력">
@@ -294,6 +337,10 @@
       <label>지방 (g)
         <input name="fatG" type="number" inputmode="decimal" min="0" step="0.1" required>
       </label>
+      <label class="checkbox-row">
+        <input name="saveAsPreset" type="checkbox">
+        프리셋으로 저장 (다음에 1탭으로 추가)
+      </label>
       <div id="entryError" class="form-error" hidden></div>
       <button type="submit">추가</button>
     </form>
@@ -306,6 +353,7 @@
       <button id="closeSettings" aria-label="캘린더로 돌아가기">‹ 캘린더</button>
       <h2>목표 설정</h2>
     </div>
+    <div id="manualRatio" class="manual-ratio" hidden></div>
     <form id="profileForm" class="profile-form">
       <label>성별
         <select name="sex" required>

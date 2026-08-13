@@ -31,6 +31,8 @@ Firebase Web SDK 설정값(`apiKey`, `projectId` 등)은 예외 — 이건 비�
 users/{uid}
   profile          { heightCm, birthYear, sex, activityLevel, updatedAt }
   dislikes         [ foodKey ]            기피 식품. 룰렛이 제외한다
+  recentEntries    [ entry ]              Phase 4. 최근 추가한 항목, 이름 기준 dedupe,
+                                           최신순 최대 10개. 항목 추가할 때마다 갱신
 
 users/{uid}/goals/{effectiveFrom}        YYYY-MM-DD. 목표는 바뀌므로 이력으로 쌓는다
   { mode, kcal, carbG, proteinG, fatG, bmr, tdee, note }

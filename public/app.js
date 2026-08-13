@@ -56,10 +56,16 @@ const el = {
   profileForm: document.getElementById('profileForm'),
   formError: document.getElementById('formError'),
   formResult: document.getElementById('formResult'),
+  manualRatio: document.getElementById('manualRatio'),
   entrySheet: document.getElementById('entryForm'),
   entryForm: document.getElementById('manualEntryForm'),
   entryTitle: document.getElementById('entryTitle'),
   entryError: document.getElementById('entryError'),
+  quickPresets: document.getElementById('quickPresets'),
+  presetChips: document.getElementById('presetChips'),
+  quickRecent: document.getElementById('quickRecent'),
+  recentChips: document.getElementById('recentChips'),
+  copyYesterday: document.getElementById('copyYesterday'),
 };
 
 function targetKcal() {
@@ -68,6 +74,15 @@ function targetKcal() {
 
 function emptySlots() {
   return { breakfast: [], lunch: [], dinner: [], snack: [] };
+}
+
+function buildEntry({ name, amountG, kcal, carbG, proteinG, fatG, addedBy }) {
+  return {
+    foodKey: `manual_${crypto.randomUUID()}`,
+    name, amountG, kcal, carbG, proteinG, fatG,
+    addedBy,
+    at: new Date().toISOString(),
+  };
 }
 
 // ── 저장 상태 표시 ────────────────────────────────────────────────────
@@ -243,6 +258,17 @@ async function removeEntry(slotKey, index) {
   await persistDay(slots);
 }
 
+async function addEntryToSlot(slotKey, entry) {
+  const day = currentDay();
+  const slots = { ...emptySlots(), ...(day.slots ?? {}) };
+  slots[slotKey] = [...slots[slotKey], entry];
+  await persistDay(slots);
+
+  db.pushRecentEntry(entry).catch((err) => {
+    console.error('[meal-calendar] 최근 항목 갱신 실패 (기록 자체는 저장됐다)', err);
+  });
+}
+
 document.getElementById('closeDetail').addEventListener('click', () => {
   el.detail.hidden = true;
   state.openDate = null;
@@ -250,12 +276,79 @@ document.getElementById('closeDetail').addEventListener('click', () => {
 
 // ── 항목 추가 ─────────────────────────────────────────────────────────
 
+function renderChip(container, { text, onAdd, onDelete }) {
+  const chip = document.createElement('div');
+  chip.className = 'chip';
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'chip-add';
+  addBtn.textContent = text;
+  addBtn.addEventListener('click', onAdd);
+  chip.appendChild(addBtn);
+
+  if (onDelete) {
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'chip-del';
+    delBtn.setAttribute('aria-label', '프리셋 삭제');
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', onDelete);
+    chip.appendChild(delBtn);
+  }
+
+  container.appendChild(chip);
+}
+
+async function renderQuickPicks() {
+  await dbReady;
+  el.presetChips.innerHTML = '';
+  el.recentChips.innerHTML = '';
+
+  try {
+    const presets = await db.listPresets();
+    el.quickPresets.hidden = presets.length === 0;
+    for (const preset of presets) {
+      renderChip(el.presetChips, {
+        text: `${preset.label} · ${Math.round(preset.entry.kcal)}kcal`,
+        onAdd: async () => {
+          el.entrySheet.hidden = true;
+          await addEntryToSlot(state.pendingSlot, buildEntry({ ...preset.entry, addedBy: 'preset' }));
+        },
+        onDelete: async () => {
+          await db.deletePreset(preset.id);
+          renderQuickPicks();
+        },
+      });
+    }
+  } catch (err) {
+    console.error('[meal-calendar] 프리셋 조회 실패', err);
+  }
+
+  try {
+    const recent = await db.loadRecentEntries();
+    el.quickRecent.hidden = recent.length === 0;
+    for (const item of recent) {
+      renderChip(el.recentChips, {
+        text: `${item.name} · ${Math.round(item.kcal)}kcal`,
+        onAdd: async () => {
+          el.entrySheet.hidden = true;
+          await addEntryToSlot(state.pendingSlot, buildEntry({ ...item, addedBy: item.addedBy ?? 'manual' }));
+        },
+      });
+    }
+  } catch (err) {
+    console.error('[meal-calendar] 최근 항목 조회 실패', err);
+  }
+}
+
 function openEntryForm(slotKey, slotLabel) {
   state.pendingSlot = slotKey;
   el.entryTitle.textContent = `${slotLabel} 항목 추가`;
   el.entryForm.reset();
   el.entryError.hidden = true;
   el.entrySheet.hidden = false;
+  renderQuickPicks();
 }
 
 document.getElementById('closeEntry').addEventListener('click', () => {
@@ -266,23 +359,21 @@ document.getElementById('closeEntry').addEventListener('click', () => {
 el.entryForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   el.entryError.hidden = true;
+  await dbReady;
 
   const data = new FormData(el.entryForm);
-  const entry = {
-    foodKey: `manual_${crypto.randomUUID()}`,
+  const fields = {
     name: String(data.get('name')).trim(),
     amountG: Number(data.get('amountG')),
     kcal: Number(data.get('kcal')),
     carbG: Number(data.get('carbG')),
     proteinG: Number(data.get('proteinG')),
     fatG: Number(data.get('fatG')),
-    addedBy: 'manual',
-    at: new Date().toISOString(),
   };
 
   const invalid = ['amountG', 'kcal', 'carbG', 'proteinG', 'fatG']
-    .find((field) => !Number.isFinite(entry[field]) || entry[field] < 0);
-  if (!entry.name || invalid) {
+    .find((field) => !Number.isFinite(fields[field]) || fields[field] < 0);
+  if (!fields.name || invalid) {
     el.entryError.hidden = false;
     el.entryError.textContent = invalid
       ? `${invalid} 값이 올바르지 않다. 0 이상의 숫자를 넣어라.`
@@ -290,12 +381,46 @@ el.entryForm.addEventListener('submit', async (event) => {
     return;
   }
 
-  const day = currentDay();
-  const slots = { ...emptySlots(), ...(day.slots ?? {}) };
-  slots[state.pendingSlot] = [...slots[state.pendingSlot], entry];
-
+  const saveAsPreset = data.get('saveAsPreset') === 'on';
+  const slotKey = state.pendingSlot;
   el.entrySheet.hidden = true;
   state.pendingSlot = null;
+
+  await addEntryToSlot(slotKey, buildEntry({ ...fields, addedBy: 'manual' }));
+
+  if (saveAsPreset) {
+    const { name, amountG, kcal, carbG, proteinG, fatG } = fields;
+    db.savePreset(fields.name, { name, amountG, kcal, carbG, proteinG, fatG }).catch((err) => {
+      console.error('[meal-calendar] 프리셋 저장 실패 (기록 자체는 저장됐다)', err);
+    });
+  }
+});
+
+el.copyYesterday.addEventListener('click', async () => {
+  await dbReady;
+  const prevDateStr = db.previousDate(state.openDate);
+
+  let prevDay;
+  try {
+    prevDay = await db.loadDay(prevDateStr);
+  } catch (err) {
+    console.error('[meal-calendar] 어제 조회 실패', err);
+    return;
+  }
+  if (!prevDay || !prevDay.slots) return;
+
+  const day = currentDay();
+  const slots = { ...emptySlots(), ...(day.slots ?? {}) };
+  for (const [key] of SLOT_LABELS) {
+    const prevEntries = prevDay.slots[key] ?? [];
+    const copies = prevEntries.map((entry) => buildEntry({
+      name: entry.name, amountG: entry.amountG, kcal: entry.kcal,
+      carbG: entry.carbG, proteinG: entry.proteinG, fatG: entry.fatG,
+      addedBy: entry.addedBy ?? 'manual',
+    }));
+    slots[key] = [...slots[key], ...copies];
+  }
+
   await persistDay(slots);
 });
 
@@ -343,10 +468,36 @@ async function fillFormFromProfile() {
   if (state.goal) showResult(state.goal);
 }
 
+// DECISIONS.md 2번의 되돌리는 조건: "수동 입력 비율이 30% 넘으면 상용 식품 DB를 다시 본다."
+// 감으로 판단하지 않도록 이 비율을 앱이 직접 센다. 이번 달 로드된 데이터 기준 — 3개월
+// 전체를 매번 스캔하면 비싸다. 판단은 사람이 직접 3개월 추이를 보고 한다.
+function renderManualRatio() {
+  let total = 0;
+  let manual = 0;
+  for (const day of state.monthData.values()) {
+    for (const key of ['breakfast', 'lunch', 'dinner', 'snack']) {
+      for (const entry of day.slots?.[key] ?? []) {
+        total += 1;
+        if (entry.addedBy === 'manual') manual += 1;
+      }
+    }
+  }
+
+  if (total === 0) {
+    el.manualRatio.hidden = true;
+    return;
+  }
+  const pct = Math.round((manual / total) * 100);
+  el.manualRatio.hidden = false;
+  el.manualRatio.textContent = `이번 달 수동 입력 비율: ${manual}/${total} (${pct}%)`
+    + (pct > 30 ? ' — 30% 초과. 식품 DB 검색(Phase 7)을 앞당길 만하다.' : '');
+}
+
 document.getElementById('openSettings').addEventListener('click', () => {
   el.formError.hidden = true;
   el.settings.hidden = false;
   fillFormFromProfile();
+  renderManualRatio();
 });
 
 document.getElementById('closeSettings').addEventListener('click', () => {

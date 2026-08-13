@@ -10,7 +10,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp,
+  doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js';
 
 import { firebaseConfig } from '/src/firebaseConfig.js';
@@ -151,4 +151,63 @@ export async function saveDay(dateStr, { slots, totals, weightKg }) {
   if (weightKg !== undefined) payload.weightKg = weightKg;
 
   await setDoc(doc(db, 'users', requireUid(), 'days', dateStr), payload, { merge: true });
+}
+
+// ── 프리셋 ────────────────────────────────────────────────────────────
+// users/{uid}/presets/{presetId} — 1-Click 고정 식품.
+
+export async function listPresets() {
+  const snapshot = await getDocs(collection(db, 'users', requireUid(), 'presets'));
+  return snapshot.docs
+    .map((docSnapshot) => ({ id: docSnapshot.id, ...docSnapshot.data() }))
+    .sort((a, b) => (a.label < b.label ? -1 : 1));
+}
+
+export async function savePreset(label, entry) {
+  const presetId = crypto.randomUUID();
+  await setDoc(doc(db, 'users', requireUid(), 'presets', presetId), {
+    label,
+    entry,
+    createdAt: serverTimestamp(),
+  });
+  return presetId;
+}
+
+export async function deletePreset(presetId) {
+  await deleteDoc(doc(db, 'users', requireUid(), 'presets', presetId));
+}
+
+// ── 최근 항목 ─────────────────────────────────────────────────────────
+// users/{uid}.recentEntries — 최신순, 이름 기준 dedupe, 최대 10개.
+// 별도 컬렉션·쿼리를 안 쓴다 — 이 정도 개수는 문서 하나에 배열로 두는 게
+// 훨씬 싸고, days/ 전체를 스캔할 필요가 없다.
+
+const RECENT_ENTRIES_LIMIT = 10;
+
+export async function loadRecentEntries() {
+  const snapshot = await getDoc(doc(db, 'users', requireUid()));
+  return snapshot.exists() ? (snapshot.data().recentEntries ?? []) : [];
+}
+
+export async function pushRecentEntry(entry) {
+  const current = await loadRecentEntries();
+  const deduped = current.filter((item) => item.name !== entry.name);
+  const next = [entry, ...deduped].slice(0, RECENT_ENTRIES_LIMIT);
+  await setDoc(doc(db, 'users', requireUid()), { recentEntries: next }, { merge: true });
+}
+
+// ── 날짜 유틸 ─────────────────────────────────────────────────────────
+
+function shiftDate(dateStr, deltaDays) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(y, m - 1, d, 12); // 정오로 고정 — DST 경계에서 날짜가 안 밀린다
+  date.setDate(date.getDate() + deltaDays);
+  const year = String(date.getFullYear()).padStart(4, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function previousDate(dateStr) {
+  return shiftDate(dateStr, -1);
 }
