@@ -1,7 +1,25 @@
 {
   "hosting": {
     "site": "calorie-43692",
-    "public": "public",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+    "public": ".",
+    "rewrites": [
+      { "source": "/", "destination": "/public/index.html" }
+    ],
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      ".git/**",
+      ".firebase/**",
+      ".claude/**",
+      ".superpowers/**",
+      ".impeccable/**",
+      ".codex-runs/**",
+      "**/node_modules/**",
+      "docs/**",
+      "tests/**",
+      "scripts/**",
+      "functions/**",
+      "*.md"
+    ]
   }
 }

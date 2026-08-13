@@ -102,12 +102,28 @@ match /foods/{doc} {
 - 서비스워커는 **앱 셸만** 캐싱한다. 영양 데이터는 Firestore가 알아서 한다
 - 실패한 쓰기를 조용히 삼키지 않는다. UI에 "저장 대기 중" 상태를 노출한다
 
-## iOS PWA 제약 (설계 시 전제)
+## iOS PWA 제약 (실기기 확인 완료, 2026-08-13)
 
-- HTTPS 필수 — PWA 설치와 `getUserMedia`(카메라) 둘 다
-- `BarcodeDetector` 없음 → `zxing-wasm`. 근거는 `DECISIONS.md`
-- standalone 모드에서 카메라 권한이 매번 초기화될 수 있다 — 실기기 확인 항목
-- safe-area inset 처리 필요 (노치·홈 인디케이터)
-- 홈 화면 아이콘은 `apple-touch-icon` + manifest 둘 다 넣는다
+- HTTPS 필수 — PWA 설치와 `getUserMedia`(카메라) 둘 다. **확인됨**
+- `BarcodeDetector` 없음 → `zxing-wasm`. **확인됨**
+- **standalone 모드에서 카메라 권한이 앱 재실행마다 다시 초기화된다.** 한 번 허용해도 유지 안 됨 —
+  Phase 8(바코드) UX가 이걸 전제로 설계돼야 한다
+- safe-area inset 처리 필요 (노치·홈 인디케이터). **확인됨**
+- 홈 화면 아이콘은 `apple-touch-icon` + manifest 둘 다 넣는다. **확인됨**
 
-**이 목록은 문서가 아니라 실기기에서 확인해야 확정된다.** 확인 전엔 전부 가설이다.
+## 배포 구조 — Hosting은 프로젝트 루트 전체를 서빙한다
+
+`public/`만 배포하면 `src/lib/`(계산 엔진·파서, 빌드 없이 브라우저가 직접 import)에 못 닿는다.
+그렇다고 번들러를 넣진 않는다(빌드 스텝 없음은 확정 사항). 대신:
+
+- `firebase.json`의 `hosting.public`은 `"."` — 리포 루트 전체가 서빙 대상
+- `rewrites`로 `/` → `/public/index.html` — URL은 루트, 실제 파일은 `public/` 안
+- `index.html`의 manifest·아이콘 링크는 `/public/...` 절대경로 (루트 URL 기준 상대경로라 `./`로 쓰면 깨진다)
+- `manifest.webmanifest`의 `start_url`/`scope`는 `/` — 아이콘 경로는 `./icon-*.png` 그대로 둔다
+  (매니페스트 자신의 URL이 `/public/manifest.webmanifest`라 상대경로가 `/public/icon-*.png`로 정확히 풀린다)
+- `firebase.json`의 `ignore`에 `docs/`·`tests/`·`scripts/`·`.git`·`.env*` 등을 명시적으로 뺀다.
+  **`.gitignore`는 배포 범위와 무관하다** — `firebase deploy`는 로컬 파일을 git 상태와 상관없이 그대로 올린다.
+  실측: `curl .../.env` `.../tests/...` `.../.git/config` 전부 404 확인 완료
+
+`src/lib/*.js`를 화면 스크립트에서 쓸 땐 `import { calcBMR } from '/src/lib/metabolism.js'`처럼
+루트 기준 절대경로로 부른다.
