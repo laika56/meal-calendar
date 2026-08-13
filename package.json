@@ -1,0 +1,15 @@
+{
+  "name": "meal-calendar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "캘린더 메인 iOS PWA 식단 기록 앱",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "test:watch": "node --test --watch",
+    "icons": "python3 scripts/make_icons.py"
+  }
+}
