@@ -1,0 +1,106 @@
+# 결정 근거
+
+기획 초안을 뒤집은 판단들. 근거를 남겨서 같은 논쟁을 두 번 하지 않는다.
+되돌릴 조건을 함께 적는다 — 조건이 충족되면 되돌리는 게 맞다.
+
+---
+
+## 1. 바코드 스캔 — `BarcodeDetector` 안 쓴다, ZXing-wasm 간다
+
+**2026-08-13 확정**
+
+초안은 "카메라 바코드 스캔"을 기능으로 잡았고, 웹에서 그건 보통 `BarcodeDetector` API를 뜻한다.
+**iOS Safari에 그 API가 없다.**
+
+- Safari는 macOS·iOS 어디서도 `BarcodeDetector`를 기본 지원하지 않는다
+- iOS 17에서 설정 → Safari → 고급 → Feature Flags → Shape Detection API 로 켤 수 있었으나,
+  **iOS 18에서 회귀(regression)** — WebKit에 버그 리포트가 올라간 상태
+- Chrome(데스크톱·안드로이드)에서는 네이티브로 동작한다. 즉 이건 **iOS 한정 구멍**이다
+
+우리 타깃이 iOS PWA 하나뿐이므로 이건 "대부분 되는데 iOS만 안 되는" 문제가 아니라 **아예 안 되는** 문제다.
+
+**선택:** WebAssembly 디코더 (`zxing-wasm`). iOS에서 성능 나오는 유일한 경로.
+
+**포기한 것:** 번들 크기 증가(wasm 수백 KB)와 직접 관리해야 하는 카메라 프레임 루프.
+`BarcodeDetector`였으면 공짜였을 것들이다.
+
+**되돌리는 조건:** Safari가 Shape Detection API를 안정 기능으로 출시하면 (플래그 아님, 회귀 아님)
+wasm을 걷어내고 네이티브로 간다. 릴리스 노트를 봐야 알 수 있다 — 짐작하지 않는다.
+
+출처:
+- [BarcodeDetector — MDN](https://developer.mozilla.org/en-US/docs/Web/API/BarcodeDetector)
+- [BarcodeDetector API — Can I use](https://caniuse.com/mdn-api_barcodedetector)
+- [Shape Detection API (Barcode Detector) — Safari 18.X, Apple Developer Forums](https://developer.apple.com/forums/thread/767761)
+- [Barcode Scanning on iOS: The Missing Web API and a WebAssembly Solution](https://dev.to/ilhannegis/barcode-scanning-on-ios-the-missing-web-api-and-a-webassembly-solution-2in2)
+
+---
+
+## 2. 식품 DB — FatSecret/Nutritionix 아니고 식약처 + Open Food Facts
+
+**2026-08-13 확정**
+
+초안은 "글로벌 식품 DB"로 FatSecret 또는 Nutritionix를 잡았다. 쓰는 사람이 한국에서 한식을 먹는다는 점이 빠져 있었다.
+
+**식약처 통합식품영양성분 DB** (공공데이터포털 / 식품안전나라):
+- 원재료성식품·가공식품·**음식**을 분류해서 제공 — "음식" 분류가 한식 한 그릇 단위를 커버한다
+- 에너지·탄수화물·단백질·지질에 더해 당류·포화지방·나트륨·식이섬유까지 있음
+- 분기별 갱신, 공공데이터라 무료
+- 품목제조보고번호·업체명이 있어 **가공식품 매칭에 쓸 수 있다**
+
+**Open Food Facts**: 바코드 → 제품 조회용. 무료·키 불필요. 단, **국내 제품 커버리지에 구멍이 있다** — 못 찾으면 수동 입력으로 떨어뜨린다.
+
+**FatSecret을 뺀 이유:** 무료 티어가 OAuth1 + IP 화이트리스트 기반이라,
+클라이언트 PWA는 물론이고 Cloud Functions(IP 고정 안 됨)에서도 다루기 번거롭다. 얻는 게 그 비용을 못 넘는다.
+
+**포기한 것:** 해외 체인 음식(스타벅스·치폴레 등) 커버리지. Nutritionix가 강한 영역이다.
+해외 브랜드 음식을 자주 먹게 되면 그때 재검토한다.
+
+**되돌리는 조건:** 3개월 써보고 "검색해도 안 나와서 수동 입력한 비율"이 30%를 넘으면 상용 DB를 다시 본다.
+**이 비율을 앱이 자동으로 세게 만든다** — 안 세면 감으로 판단하게 된다.
+
+출처:
+- [식품의약품안전처_식품영양성분DB정보 — 공공데이터포털](https://www.data.go.kr/data/15127578/openapi.do)
+- [식품영양성분 데이터베이스 — 식품안전나라](https://various.foodsafetykorea.go.kr/nutrient/)
+- [식품영양성분 DB OpenAPI 안내](https://www.foodsafetykorea.go.kr/api/openApiInfo.do?menu_grp=MENU_GRP31&menu_no=656&show_cnt=10&start_idx=1&svc_no=I0750&svc_type_cd=API_TYPE06)
+
+---
+
+## 3. 캘린더 — FullCalendar.js 안 쓴다
+
+**2026-08-13 확정**
+
+필요한 화면은 "월 그리드 + 칸마다 숫자 하나 + 목표 대비 색"이다.
+FullCalendar가 제공하는 것(드래그 리사이즈, 주/일/타임그리드 뷰, 반복 일정, 타임존 처리)은 **하나도 안 쓴다.**
+
+CSS Grid 40줄이면 되는 것에 라이브러리를 얹으면, 얻는 것 없이 번들·API 학습·업그레이드 부담만 생긴다.
+
+**포기한 것:** 나중에 "주간 타임라인 뷰"가 갖고 싶어지면 직접 짜야 한다.
+
+**되돌리는 조건:** 시간축(몇 시에 먹었는지)이 제품의 핵심이 되면 그때 라이브러리를 본다. 지금 스펙엔 시간축이 없다 — 슬롯 4개(아침/점심/저녁/간식)뿐이다.
+
+---
+
+## 4. AI 룰렛 — LLM에게 산수를 시키지 않는다
+
+**2026-08-13 확정**
+
+초안: "AI 알고리즘이 잔여 목표 영양소와 기피 식품을 연산해 남은 슬롯 최적 식단 무작위 자동 배정".
+
+**"잔여 매크로에 맞는 음식 조합 고르기"는 제약충족/배낭 문제다. 언어 모델이 할 일이 아니다.**
+
+| | LLM 호출 | 로컬 solver |
+|---|---|---|
+| 산술 정확도 | 틀린다 | 정확 |
+| 지연 | 초 단위 | 즉시 |
+| 비용 | 호출당 과금 | 0 |
+| 재현성 | 없음 | 시드로 고정 |
+| 오프라인 | 불가 | 가능 |
+
+**선택:** 로컬 solver가 후보 조합을 뽑고 무작위성은 **시드 있는 셔플**로 준다(룰렛의 재미는 유지).
+LLM은 **선택 사항**이며, 정해진 결과에 설명·변주 문구를 붙이는 데만 쓴다. 숫자를 만들게 하지 않는다.
+
+**포기한 것:** "이번 주엔 좀 색다르게" 같은 모호한 취향 요청 처리. 그건 LLM이 잘하는 영역이다.
+필요해지면 LLM이 **후보군을 좁히고**, 최종 배정은 여전히 solver가 하는 2단 구조로 간다.
+
+**되돌리는 조건:** solver 결과가 "먹기 싫은 조합"만 내놓아서 룰렛을 안 쓰게 되면 재검토.
+그때도 산술은 solver가 한다.
