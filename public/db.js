@@ -211,3 +211,21 @@ function shiftDate(dateStr, deltaDays) {
 export function previousDate(dateStr) {
   return shiftDate(dateStr, -1);
 }
+
+// ── 식품 검색 (Phase 7) ───────────────────────────────────────────────
+// Cloud Functions 프록시를 부른다. 키는 서버에만 있다 — 여기서는 인증 토큰만 붙인다
+// (functions/index.js 가 검증한다. AGENTS.md 절대규칙 1).
+
+export async function searchFoods(q) {
+  requireUid();
+  const token = await auth.currentUser.getIdToken();
+  const res = await fetch(`/api/foods/search?q=${encodeURIComponent(q)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? `검색 실패 (${res.status})`);
+  }
+  const { items } = await res.json();
+  return items;
+}

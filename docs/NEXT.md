@@ -6,6 +6,18 @@
 
 ## 지금 상태
 
+**Phase 7 완료 — 식약처 검색 (2026-08-13, 로드맵 순서보다 앞당김, 사용자 요청).**
+Firebase **Blaze 업그레이드**(사용자가 직접 카드 등록, 예산알림 $5) → Cloud Functions
+`searchFoods` 배포 → 항목 추가 화면에 "식약처 검색" 탭 → 검색결과 탭 → 양(g) 입력 →
+자동계산 미리보기 → 추가. `foods/` 캐시에도 upsert됨. 브라우저로 전체 흐름 실측 확인
+(150g 기준 122×1.5=183kcal 등 계산 정확도까지 검산).
+
+배포 중 실측으로 잡은 버그 2개 (둘 다 `docs/ARCHITECTURE.md` 「searchFoods 구현 메모」):
+1. **서비스키 이중 인코딩** — `URLSearchParams.set()`이 이미 인코딩된 키를 또 인코딩해서
+   MFDS가 "등록되지 않은 서비스키"로 거부함. `decodeURIComponent`로 먼저 풀고 넣게 고침
+2. **`mfdsParser.js`의 명세 버그** — `body.items`가 `{item:[...]}`가 아니라 배열 자체로
+   오는 케이스를 발주04가 못 봤었다. 발주07로 원본 고침(Codex), Functions 쪽 복사본도 동기화
+
 **Phase 4 완료 — 입력 속도 (2026-08-13).**
 프리셋(1탭 추가 + 삭제), 최근 항목(자동 갱신, 최신순 10개), 어제 복사, 수동입력비율 카운터
 (`DECISIONS.md` 2번의 되돌리는 조건 — 30% 넘으면 세팅 화면에 경고 뜸). 전부 브라우저로 실측 확인.
@@ -100,9 +112,11 @@ Blaze는 카드 등록 필요(개인 사용량은 사실상 무료) — 과금 �
 |---|---|---|
 | `src/lib/metabolism.js`, `src/lib/units.js` + 테스트 | **Codex** | **완료·커밋** (`meal-calendar` `0a1cf7c`) → `orders/01`, `orders/03` |
 | `src/lib/mfdsParser.js`, `tests/mfdsParser.test.js` | **Codex** | **완료·커밋** (`07cff69`) → `orders/04` |
+| `src/lib/mfdsParser.js`, `tests/mfdsParser.test.js` 배열형 `items` 대응 | **Codex** | **완료·커밋** (`c288781`) — 82/82 → `orders/07` |
 | `src/lib/calendarGrid.js`, `tests/calendarGrid.test.js` | **Codex** | **완료·커밋** (`e84a8b4`) → `orders/05` |
 | `src/lib/dayTotals.js`, `tests/dayTotals.test.js` | **Codex** | **완료·리뷰통과** — 77/77, 구현 깨뜨려 테스트 진위 확인함 → `orders/06` |
 | `public/index.html`, `app.js`, `sw.js`, `db.js`, `firebase.json`, `firestore.rules` | Claude | **완료·배포·실측검증 통과** |
+| `functions/index.js`, `functions/shared/mfdsParser.js` (searchFoods) | Claude | **완료·배포·실측검증 통과** — Blaze 업그레이드 후 |
 | `../coin-bot/{AGENTS,CLAUDE}.md`, `../scripts/check-doc-split.sh` | **Codex** | **완료·커밋** (`coin-bot` `da1d4e2`, root `c260784`) |
 | `../stock/{AGENTS,CLAUDE}.md` | **Codex** | **완료·커밋** (`stock` `b65892c`) |
 
@@ -116,8 +130,9 @@ Blaze는 카드 등록 필요(개인 사용량은 사실상 무료) — 과금 �
 | 4 | 식약처 응답 파서 | ☑ `orders/04` (실응답+공식필드매핑 확보) | ☑ | ☑ | ☑ |
 | 5 | 월 캘린더 그리드 날짜계산 + 상태판정 | ☑ `orders/05` | ☑ | ☑ | ☑ |
 | 6 | 일간 합계 집계 | ☑ `orders/06` | ☑ | ☑ | ☐ |
-| 7 | 최근 항목 집계 (빈도·최근성 정렬) | ☐ (프리셋 데이터 모양 선행) | ☐ | ☐ | ☐ |
-| 8 | 룰렛 solver | ☐ (Phase4 프리셋 설계 선행 필요) | ☐ | ☐ | ☐ |
+| 7 | 식약처 파서 — items 배열형 대응 | ☑ `orders/07` | ☑ | ☑ | ☐ |
+| 8 | 최근 항목 집계 (빈도·최근성 정렬) | ☐ (실사용에선 단순 최근순으로 충분해 발주 안 함) | ☐ | ☐ | ☐ |
+| 9 | 룰렛 solver | ☐ (Phase4 프리셋 설계 선행 필요) | ☐ | ☐ | ☐ |
 
 > 문서 중복 제거(`orders/02`, coin-bot·stock)는 이 프로젝트 대기열이 아니라 워크스페이스 루트 `AGENTS.md` 작업이었다 — 완료·커밋됨.
 

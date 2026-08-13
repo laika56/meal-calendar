@@ -219,6 +219,43 @@
     background: var(--card); border: 1px solid var(--line); border-radius: 10px;
     padding: 10px 12px; font-size: 12px; color: var(--muted); margin-bottom: 16px; line-height: 1.6;
   }
+
+  .search-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .search-row input {
+    flex: 1 1 auto; -webkit-appearance: none; appearance: none;
+    font: inherit; font-size: 16px; color: var(--fg); background: var(--card);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .search-row button {
+    -webkit-appearance: none; appearance: none; border: 0;
+    background: var(--fg); color: var(--bg); font: inherit; font-weight: 600;
+    font-size: 14px; padding: 0 16px; border-radius: 10px;
+  }
+  .search-status { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .search-results { display: flex; flex-direction: column; gap: 6px; }
+  .search-result {
+    -webkit-appearance: none; appearance: none; width: 100%; text-align: left;
+    border: 1px solid var(--line); background: var(--card); border-radius: 10px;
+    padding: 10px 12px; font: inherit; color: var(--fg);
+  }
+  .search-result .r-name { font-size: 13px; font-weight: 600; display: block; }
+  .search-result .r-meta { font-size: 12px; color: var(--muted); }
+
+  .portion-prompt label {
+    display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px;
+    font-size: 13px; font-weight: 600; color: var(--muted);
+  }
+  .portion-prompt input {
+    -webkit-appearance: none; appearance: none; font: inherit; font-size: 16px;
+    color: var(--fg); background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 12px;
+  }
+  .portion-prompt .form-result { margin-bottom: 14px; }
+  #confirmPortion {
+    -webkit-appearance: none; appearance: none; border: 0; width: 100%;
+    min-height: 48px; font: inherit; font-weight: 600; font-size: 16px;
+    color: var(--bg); background: var(--fg); border-radius: 12px;
+  }
   .profile-form button[type="submit"] {
     -webkit-appearance: none; appearance: none; border: 0;
     min-height: 48px; font: inherit; font-weight: 600; font-size: 16px;
@@ -304,6 +341,17 @@
       <h2 id="entryTitle">항목 추가</h2>
     </div>
 
+    <div id="entryChooser">
+    <div class="quick-section">
+      <h3>식약처 검색</h3>
+      <form id="foodSearchForm" class="search-row">
+        <input id="searchInput" type="text" placeholder="예: 닭가슴살" autocomplete="off">
+        <button type="submit">검색</button>
+      </form>
+      <div id="searchStatus" class="search-status" hidden></div>
+      <div id="searchResults" class="search-results"></div>
+    </div>
+
     <div id="quickPresets" class="quick-section" hidden>
       <h3>프리셋</h3>
       <div id="presetChips" class="chip-row"></div>
@@ -344,6 +392,19 @@
       <div id="entryError" class="form-error" hidden></div>
       <button type="submit">추가</button>
     </form>
+    </div>
+
+    <div id="portionPrompt" class="portion-prompt" hidden>
+      <div class="sheet-header">
+        <button id="cancelPortion" type="button" aria-label="검색 결과로 돌아가기">‹ 검색 결과</button>
+        <h2 id="portionTitle"></h2>
+      </div>
+      <label>양 (g)
+        <input id="portionAmount" type="number" inputmode="decimal" min="0" step="0.1" value="100">
+      </label>
+      <div id="portionPreview" class="form-result"></div>
+      <button id="confirmPortion" type="button">이 양으로 추가</button>
+    </div>
   </div>
 </div>
 

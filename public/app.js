@@ -1,6 +1,7 @@
 import { buildMonthGrid, dayStatus } from '/src/lib/calendarGrid.js';
 import { buildGoalProfile, ImpossibleTargetError } from '/src/lib/metabolism.js';
 import { calcDayTotals } from '/src/lib/dayTotals.js';
+import { scaleNutrients } from '/src/lib/units.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
 // 전부 받아질 때까지 이 모듈 전체의 실행이 밀린다. 캘린더 그리드는 네트워크 없이 그릴 수 있는데
@@ -66,6 +67,17 @@ const el = {
   quickRecent: document.getElementById('quickRecent'),
   recentChips: document.getElementById('recentChips'),
   copyYesterday: document.getElementById('copyYesterday'),
+  entryChooser: document.getElementById('entryChooser'),
+  searchForm: document.getElementById('foodSearchForm'),
+  searchInput: document.getElementById('searchInput'),
+  searchStatus: document.getElementById('searchStatus'),
+  searchResults: document.getElementById('searchResults'),
+  portionPrompt: document.getElementById('portionPrompt'),
+  portionTitle: document.getElementById('portionTitle'),
+  portionAmount: document.getElementById('portionAmount'),
+  portionPreview: document.getElementById('portionPreview'),
+  confirmPortion: document.getElementById('confirmPortion'),
+  cancelPortion: document.getElementById('cancelPortion'),
 };
 
 function targetKcal() {
@@ -348,12 +360,130 @@ function openEntryForm(slotKey, slotLabel) {
   el.entryForm.reset();
   el.entryError.hidden = true;
   el.entrySheet.hidden = false;
+  el.searchInput.value = '';
+  el.searchResults.innerHTML = '';
+  el.searchStatus.hidden = true;
+  showPortionPrompt(false);
   renderQuickPicks();
 }
 
 document.getElementById('closeEntry').addEventListener('click', () => {
   el.entrySheet.hidden = true;
   state.pendingSlot = null;
+});
+
+// ── 식약처 검색 ───────────────────────────────────────────────────────
+
+function showPortionPrompt(show) {
+  el.entryChooser.hidden = show;
+  el.portionPrompt.hidden = !show;
+}
+
+el.searchForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await dbReady;
+
+  const q = el.searchInput.value.trim();
+  if (!q) return;
+
+  el.searchResults.innerHTML = '';
+  el.searchStatus.hidden = false;
+  el.searchStatus.textContent = '검색 중…';
+
+  let items;
+  try {
+    items = await db.searchFoods(q);
+  } catch (err) {
+    console.error('[meal-calendar] 검색 실패', err);
+    el.searchStatus.textContent = `검색 실패 — ${err.message}`;
+    return;
+  }
+
+  if (items.length === 0) {
+    el.searchStatus.textContent = '검색 결과 없음. 수동 입력을 이용해라.';
+    return;
+  }
+  el.searchStatus.hidden = true;
+
+  for (const food of items) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'search-result';
+    const kcalText = food.per100g.kcal == null ? '?' : Math.round(food.per100g.kcal);
+    button.innerHTML = `
+      <span class="r-name">${food.name}</span>
+      <span class="r-meta">${food.category ?? ''} · 100g당 ${kcalText}kcal</span>
+    `;
+    button.addEventListener('click', () => openPortionPrompt(food));
+    el.searchResults.appendChild(button);
+  }
+});
+
+let selectedFood = null;
+
+function renderPortionPreview() {
+  const amountG = Number(el.portionAmount.value);
+  if (!Number.isFinite(amountG) || amountG < 0) {
+    el.portionPreview.textContent = '양을 올바르게 입력해라.';
+    return;
+  }
+  const scaled = scaleNutrients(selectedFood.per100g, amountG);
+  el.portionPreview.innerHTML = `
+    <b>${scaled.kcal ?? '?'}</b> kcal
+    (탄 ${scaled.carbG ?? '?'}g · 단 ${scaled.proteinG ?? '?'}g · 지 ${scaled.fatG ?? '?'}g)
+    ${Object.values(scaled).some((v) => v === null) ? '<br>일부 값이 DB에 없다 — 추가 후 수동으로 채워라.' : ''}
+  `;
+}
+
+function openPortionPrompt(food) {
+  selectedFood = food;
+  el.portionTitle.textContent = food.name;
+  el.portionAmount.value = 100;
+  renderPortionPreview();
+  showPortionPrompt(true);
+}
+
+el.portionAmount.addEventListener('input', () => {
+  if (selectedFood) renderPortionPreview();
+});
+
+el.cancelPortion.addEventListener('click', () => {
+  showPortionPrompt(false);
+});
+
+el.confirmPortion.addEventListener('click', async () => {
+  const amountG = Number(el.portionAmount.value);
+  if (!Number.isFinite(amountG) || amountG < 0) return;
+
+  const scaled = scaleNutrients(selectedFood.per100g, amountG);
+  if (Object.values(scaled).some((v) => v === null)) {
+    // null 이 하나라도 있으면 그대로 못 넣는다 — 절대규칙7, 없는 값을 0으로 만들지 않는다.
+    // 수동 입력으로 보내서 사람이 채우게 한다.
+    el.entryForm.reset();
+    el.entryForm.name.value = selectedFood.name;
+    el.entryForm.amountG.value = amountG;
+    if (scaled.kcal != null) el.entryForm.kcal.value = scaled.kcal;
+    if (scaled.carbG != null) el.entryForm.carbG.value = scaled.carbG;
+    if (scaled.proteinG != null) el.entryForm.proteinG.value = scaled.proteinG;
+    if (scaled.fatG != null) el.entryForm.fatG.value = scaled.fatG;
+    showPortionPrompt(false);
+    return;
+  }
+
+  const slotKey = state.pendingSlot;
+  el.entrySheet.hidden = true;
+  state.pendingSlot = null;
+  showPortionPrompt(false);
+
+  await addEntryToSlot(slotKey, buildEntry({
+    name: selectedFood.name,
+    amountG,
+    kcal: scaled.kcal,
+    carbG: scaled.carbG,
+    proteinG: scaled.proteinG,
+    fatG: scaled.fatG,
+    addedBy: 'search',
+  }));
 });
 
 el.entryForm.addEventListener('submit', async (event) => {
