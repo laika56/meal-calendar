@@ -6,7 +6,8 @@
 
 ## 지금 상태
 
-Phase 0. 스캐폴딩 완료. **계산 엔진(발주01+03) 리뷰·커밋 완료.** 다음 코드 작업은 블로커 해소 후.
+**Phase 1 셸 완료·배포·실기기 브라우저 검증까지 끝남 (2026-08-13).**
+`https://calorie-43692.web.app` 에서 월 캘린더(더미데이터) + 일간상세 뼈대 동작.
 
 > **작업 순서 규칙:** Codex에 넘길 수 있는 것부터 먼저 발주한다 (`../AGENTS.md` 「순서」).
 > Codex가 도는 동안 Claude가 자기 몫을 병렬로 한다.
@@ -28,12 +29,19 @@ Phase 0. 스캐폴딩 완료. **계산 엔진(발주01+03) 리뷰·커밋 완료
 
 ## 다음 작업
 
-블로커 3개 전부 해소됨, 발주04 커밋 완료 (2026-08-13). 다음:
+Phase 1 끝. 브라우저(claude-in-chrome)로 검증 완료 — **아직 실기기(아이폰)로는 확인 안 됨, 사용자 확인 필요.**
 
-1. **배포 구조 확정** — Hosting이 리포 루트 전체를 서빙하도록 바꿈(`docs/ARCHITECTURE.md` 「배포 구조」 참조).
-   `public/`만으론 `src/lib/`을 브라우저가 못 불러왔음. `firebase.json`/`index.html`/`manifest.webmanifest` 수정, 재배포 완료
-2. Phase 1: PWA 셸 + 월 캘린더 그리드 (더미 데이터) — `firebaseConfig.js`는 이미 있음, Firestore 연동은 Phase 2~3
-3. Phase 8 설계 시 카메라 권한 재요청 UX 반영 (위 참조)
+**Phase 1에서 실제로 잡은 버그 3개** (배포는 매번 성공했는데 브라우저에서 안 바뀐 것처럼 보이던 것들.
+전부 `docs/ARCHITECTURE.md` 「서비스워커 스코프」에 근거 정리):
+1. SW를 `/public/sw.js`로 등록해서 스코프가 `/public/`로 좁아짐 (루트 페이지를 SW가 못 건드림)
+2. SW가 cache-first라 재배포해도 브라우저가 헌 버전을 계속 씀
+3. `app.js`/`.html`에 `max-age=3600` 캐시헤더가 붙어서 SW를 고쳐도 브라우저 HTTP 캐시가 안 풀림
+
+**그 다음:**
+1. 사용자가 아이폰에서 `https://calorie-43692.web.app` 열어서 캘린더·일간상세 확인 (홈화면 재추가 필요할 수 있음 — manifest 안 바뀌었으면 그대로 써도 됨)
+2. Phase 2: 계산 엔진(발주01+03, 완료됨)을 화면에 실제로 연결 — 지금은 `DUMMY_TARGET_KCAL = 2000` 고정값
+3. Phase 3: Firestore 연동 (지금은 `firebaseConfig.js`만 있고 실제 읽기/쓰기 없음)
+4. Phase 8 설계 시 카메라 권한 재요청 UX 반영 (위 참조)
 
 ## 작업 분담 현황
 
@@ -42,8 +50,9 @@ Phase 0. 스캐폴딩 완료. **계산 엔진(발주01+03) 리뷰·커밋 완료
 | 대상 | 잡은 쪽 | 상태 |
 |---|---|---|
 | `src/lib/metabolism.js`, `src/lib/units.js` + 테스트 | **Codex** | **완료·커밋** (`meal-calendar` `0a1cf7c`) → `orders/01`, `orders/03` |
-| `src/lib/mfdsParser.js`, `tests/mfdsParser.test.js` | **Codex** | **완료·미커밋** → `orders/04` |
-| `public/` (검증 페이지) | Claude | 완료 |
+| `src/lib/mfdsParser.js`, `tests/mfdsParser.test.js` | **Codex** | **완료·커밋** (`07cff69`) → `orders/04` |
+| `src/lib/calendarGrid.js`, `tests/calendarGrid.test.js` | **Codex** | **완료·리뷰통과·미커밋** — `npm test` 55/55 → `orders/05` |
+| `public/index.html`, `app.js`, `sw.js`, `firebase.json` (캘린더 셸, 더미데이터) | Claude | **완료·배포·브라우저검증 통과·미커밋** — SW스코프/캐싱 버그 3개 발견·수정 |
 | `../coin-bot/{AGENTS,CLAUDE}.md`, `../scripts/check-doc-split.sh` | **Codex** | **완료·커밋** (`coin-bot` `da1d4e2`, root `c260784`) |
 | `../stock/{AGENTS,CLAUDE}.md` | **Codex** | **완료·커밋** (`stock` `b65892c`) |
 
@@ -54,8 +63,9 @@ Phase 0. 스캐폴딩 완료. **계산 엔진(발주01+03) 리뷰·커밋 완료
 | 1 | 대사량·매크로 계산 + 테스트 | ☑ `orders/01` | ☑ | ☑ | ☑ |
 | 2 | 단위 환산 + 테스트 | ☑ `orders/01` | ☑ | ☑ | ☑ |
 | 3 | 계산 엔진 에러 메시지 보강 (발주01 리뷰 구멍 5건) | ☑ `orders/03` | ☑ | ☑ | ☑ |
-| 4 | 식약처 응답 파서 | ☑ `orders/04` (실응답+공식필드매핑 확보) | ☑ | ☐ | ☐ |
-| 5 | 룰렛 solver | ☐ (Phase4 프리셋 설계 선행 필요) | ☐ | ☐ | ☐ |
+| 4 | 식약처 응답 파서 | ☑ `orders/04` (실응답+공식필드매핑 확보) | ☑ | ☑ | ☑ |
+| 5 | 월 캘린더 그리드 날짜계산 + 상태판정 | ☑ `orders/05` | ☑ | ☑ | ☐ |
+| 6 | 룰렛 solver | ☐ (Phase4 프리셋 설계 선행 필요) | ☐ | ☐ | ☐ |
 
 > 문서 중복 제거(`orders/02`, coin-bot·stock)는 이 프로젝트 대기열이 아니라 워크스페이스 루트 `AGENTS.md` 작업이었다 — 완료·커밋됨.
 

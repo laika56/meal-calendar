@@ -8,203 +8,153 @@
 <meta name="apple-mobile-web-app-title" content="식단">
 <link rel="manifest" href="/public/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/public/icon-180.png">
-<title>iOS PWA 검증 — meal-calendar</title>
+<title>식단 캘린더</title>
 <style>
   :root {
     --bg: #ffffff; --fg: #16181d; --muted: #6b7280;
     --line: #e5e7eb; --card: #f7f8fa;
+    --under: #7a5b00; --under-bg: #fdf3d8;
     --ok: #0f7b3f; --ok-bg: #e6f4ec;
-    --no: #a3121b; --no-bg: #fdeaec;
-    --wait: #7a5b00; --wait-bg: #fdf3d8;
+    --over: #a3121b; --over-bg: #fdeaec;
+    --none-fg: #9aa2ad; --none-bg: transparent;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #101216; --fg: #e8eaed; --muted: #9aa2ad;
       --line: #262a31; --card: #181b21;
+      --under: #e8c25a; --under-bg: #2a2211;
       --ok: #5fd48f; --ok-bg: #12291d;
-      --no: #ff8a94; --no-bg: #2b1418;
-      --wait: #e8c25a; --wait-bg: #2a2211;
+      --over: #ff8a94; --over-bg: #2b1418;
+      --none-fg: #565c66; --none-bg: transparent;
     }
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
   body {
     background: var(--bg); color: var(--fg);
-    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
-    /* 100vh 금지 — iOS 주소창 때문에 잘린다 */
-    min-height: 100dvh;
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+    min-height: 100dvh; /* 100vh 금지 — iOS 주소창 때문에 잘린다 */
     padding:
-      calc(env(safe-area-inset-top) + 20px)
-      calc(env(safe-area-inset-right) + 16px)
-      calc(env(safe-area-inset-bottom) + 20px)
-      calc(env(safe-area-inset-left) + 16px);
+      calc(env(safe-area-inset-top) + 12px)
+      calc(env(safe-area-inset-right) + 10px)
+      calc(env(safe-area-inset-bottom) + 12px)
+      calc(env(safe-area-inset-left) + 10px);
   }
-  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.01em; }
-  .sub { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
-  .row {
-    display: flex; gap: 12px; align-items: baseline;
-    padding: 11px 12px; border: 1px solid var(--line);
-    border-radius: 10px; background: var(--card); margin-bottom: 8px;
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
   }
-  .row .k { flex: 1 1 auto; min-width: 0; }
-  .row .k b { font-weight: 600; display: block; }
-  .row .k span { color: var(--muted); font-size: 13px; }
-  .v {
-    flex: 0 0 auto; font-size: 13px; font-weight: 700;
-    padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+  header button {
+    -webkit-appearance: none; appearance: none; border: 0; background: var(--card);
+    color: var(--fg); width: 40px; height: 40px; border-radius: 10px;
+    font-size: 20px; line-height: 1;
   }
-  /* 색만으로 구분하지 않는다 — 텍스트가 항상 함께 간다 */
-  .ok   { color: var(--ok);   background: var(--ok-bg); }
-  .no   { color: var(--no);   background: var(--no-bg); }
-  .wait { color: var(--wait); background: var(--wait-bg); }
-  button {
+  h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+
+  #weekdays {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    color: var(--muted); font-size: 12px; font-weight: 600;
+    text-align: center; margin-bottom: 6px;
+  }
+
+  .grid {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+  }
+  .day {
     -webkit-appearance: none; appearance: none;
-    width: 100%; min-height: 48px; /* 44pt 이상 */
-    font: inherit; font-weight: 600; font-size: 16px;
-    color: var(--bg); background: var(--fg);
-    border: 0; border-radius: 12px; margin-top: 14px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; aspect-ratio: 1 / 1.05; min-height: 44px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card); color: var(--fg); font: inherit; padding: 4px 2px;
   }
-  button:disabled { opacity: .45; }
-  video {
-    width: 100%; border-radius: 12px; margin-top: 12px;
-    background: #000; display: none; aspect-ratio: 3/4; object-fit: cover;
+  .day-num { font-size: 13px; font-weight: 600; }
+  .day-kcal { font-size: 11px; color: var(--muted); min-height: 13px; }
+  .day-badge { font-size: 9px; font-weight: 700; white-space: nowrap; }
+
+  .day-under { border-color: var(--under); background: var(--under-bg); }
+  .day-under .day-badge { color: var(--under); }
+  .day-ok { border-color: var(--ok); background: var(--ok-bg); }
+  .day-ok .day-badge { color: var(--ok); }
+  .day-over { border-color: var(--over); background: var(--over-bg); }
+  .day-over .day-badge { color: var(--over); }
+  .day-none .day-badge { color: var(--none-fg); }
+
+  .day-outside { opacity: .35; }
+  .day-today { box-shadow: 0 0 0 2px var(--fg) inset; }
+
+  /* 일간 상세 시트 */
+  .sheet {
+    position: fixed; inset: 0; background: var(--bg); color: var(--fg);
+    padding:
+      calc(env(safe-area-inset-top) + 12px)
+      calc(env(safe-area-inset-right) + 10px)
+      calc(env(safe-area-inset-bottom) + 12px)
+      calc(env(safe-area-inset-left) + 10px);
+    overflow-y: auto;
   }
-  video.on { display: block; }
-  .note {
-    margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line);
-    color: var(--muted); font-size: 13px;
+  .sheet[hidden] { display: none; }
+  .sheet-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
   }
-  .note b { color: var(--fg); }
-  code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 13px; background: var(--card);
-    padding: 1px 5px; border-radius: 4px;
+  .sheet-header button {
+    -webkit-appearance: none; appearance: none; border: 0; background: none;
+    color: var(--fg); font: inherit; font-weight: 600; padding: 6px 0;
   }
+  .sheet-header h2 { font-size: 16px; margin: 0; }
+
+  .totals { margin-bottom: 20px; }
+  .total-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 14px; margin-bottom: 8px;
+  }
+  .total-row b { font-size: 20px; }
+  .bar {
+    height: 8px; border-radius: 999px; background: var(--card);
+    border: 1px solid var(--line); overflow: hidden;
+  }
+  .bar-fill { height: 100%; background: var(--ok); border-radius: 999px; width: 0; }
+
+  .slots { display: flex; flex-direction: column; gap: 12px; }
+  .slot {
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+    background: var(--card);
+  }
+  .slot h3 { font-size: 14px; margin: 0 0 6px; }
+  .slot-items { color: var(--muted); font-size: 13px; }
 </style>
 </head>
 <body>
 
-<h1>iOS PWA 검증</h1>
-<p class="sub">meal-calendar Phase 0 · 실기기에서만 판정 가능한 항목들</p>
+<header>
+  <button id="prevMonth" aria-label="이전 달">‹</button>
+  <h1 id="monthLabel"></h1>
+  <button id="nextMonth" aria-label="다음 달">›</button>
+</header>
 
-<div id="checks"></div>
-
-<button id="cam">카메라 권한 테스트 (후면)</button>
-<video id="preview" playsinline muted></video>
-
-<div class="note">
-  <b>확인 절차</b><br>
-  1. Safari로 이 페이지를 연다 → 위 항목 확인<br>
-  2. 공유 → <b>홈 화면에 추가</b><br>
-  3. <b>홈 화면 아이콘</b>으로 다시 연다 → standalone이 <code>예</code>로 바뀌어야 한다<br>
-  4. standalone 상태에서 카메라 버튼을 다시 누른다<br>
-  → <b>권한을 또 묻는지</b>가 핵심. 매번 물으면 바코드 UX를 그에 맞게 짜야 한다.
+<div id="weekdays">
+  <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
 </div>
 
-<script>
-const checks = document.getElementById('checks');
+<div id="grid" class="grid"></div>
 
-function row(label, hint, state, text) {
-  const el = document.createElement('div');
-  el.className = 'row';
-  el.innerHTML =
-    '<div class="k"><b></b><span></span></div><div class="v"></div>';
-  el.querySelector('b').textContent = label;
-  el.querySelector('span').textContent = hint;
-  const v = el.querySelector('.v');
-  v.className = 'v ' + state;
-  v.textContent = text;
-  checks.appendChild(el);
-  return v;
-}
+<div id="dayDetail" class="sheet" hidden>
+  <div class="sheet-header">
+    <button id="closeDetail" aria-label="캘린더로 돌아가기">‹ 캘린더</button>
+    <h2 id="detailDate"></h2>
+  </div>
+  <div class="totals">
+    <div class="total-row"><span>칼로리</span><b id="totalKcal">0 / 0 kcal</b></div>
+    <div class="bar"><div class="bar-fill" id="kcalBar"></div></div>
+  </div>
+  <div class="slots">
+    <section class="slot"><h3>아침</h3><div class="slot-items">— 아직 기록 없음</div></section>
+    <section class="slot"><h3>점심</h3><div class="slot-items">— 아직 기록 없음</div></section>
+    <section class="slot"><h3>저녁</h3><div class="slot-items">— 아직 기록 없음</div></section>
+    <section class="slot"><h3>간식</h3><div class="slot-items">— 아직 기록 없음</div></section>
+  </div>
+</div>
 
-// standalone — 홈 화면 아이콘으로 열었는지
-const standalone =
-  window.navigator.standalone === true ||
-  window.matchMedia('(display-mode: standalone)').matches;
-row('standalone 모드', '홈 화면 아이콘으로 열림',
-    standalone ? 'ok' : 'wait',
-    standalone ? '예' : '아니오 (Safari)');
-
-// safe-area — 노치/홈 인디케이터
-const sat = getComputedStyle(document.body).paddingTop;
-row('safe-area inset', 'env() 적용된 상단 여백', 'ok', sat);
-
-// dvh 지원
-const dvh = CSS.supports('height', '100dvh');
-row('100dvh 지원', '주소창 높이 변화 대응',
-    dvh ? 'ok' : 'no', dvh ? '지원' : '미지원');
-
-// BarcodeDetector — 없을 것으로 예상. 있으면 DECISIONS.md 1번 재검토
-const hasBD = 'BarcodeDetector' in window;
-row('BarcodeDetector', '없을 것으로 예상 → zxing-wasm',
-    hasBD ? 'wait' : 'ok',
-    hasBD ? '있음 — 재검토!' : '없음 (예상대로)');
-
-// secure context — 카메라의 전제
-row('보안 컨텍스트', 'HTTPS. 카메라의 전제조건',
-    window.isSecureContext ? 'ok' : 'no',
-    window.isSecureContext ? 'HTTPS' : 'HTTP — 카메라 불가');
-
-// service worker
-row('Service Worker', '오프라인 셸 캐싱',
-    'serviceWorker' in navigator ? 'ok' : 'no',
-    'serviceWorker' in navigator ? '사용 가능' : '없음');
-
-// 저장소 — iOS는 7일 미사용 시 정리할 수 있다
-const storageRow = row('저장소 영속성', '미사용 시 정리 방어', 'wait', '확인 중');
-if (navigator.storage && navigator.storage.persist) {
-  navigator.storage.persist().then(granted => {
-    storageRow.className = 'v ' + (granted ? 'ok' : 'wait');
-    storageRow.textContent = granted ? '영속 허용' : '거부 — 유실 가능';
-  }).catch(() => {
-    storageRow.className = 'v no';
-    storageRow.textContent = '호출 실패';
-  });
-} else {
-  storageRow.className = 'v no';
-  storageRow.textContent = 'API 없음';
-}
-
-// 카메라 — 반드시 사용자 제스처 안에서 호출한다
-const camRow = row('카메라 권한', '버튼을 눌러야 판정된다', 'wait', '미확인');
-const btn = document.getElementById('cam');
-const video = document.getElementById('preview');
-let stream = null;
-
-btn.addEventListener('click', async () => {
-  if (stream) {                       // 트랙 정리 — 안 하면 카메라 불이 안 꺼진다
-    stream.getTracks().forEach(t => t.stop());
-    stream = null;
-    video.classList.remove('on');
-    btn.textContent = '카메라 권한 테스트 (후면)';
-    return;
-  }
-  btn.disabled = true;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } }, audio: false
-    });
-    video.srcObject = stream;
-    video.classList.add('on');
-    await video.play();
-    const track = stream.getVideoTracks()[0];
-    camRow.className = 'v ok';
-    camRow.textContent = '허용 — ' + (track ? track.label || '이름 없음' : '?');
-    btn.textContent = '카메라 끄기';
-  } catch (err) {
-    camRow.className = 'v no';
-    camRow.textContent = err.name || '실패';
-    console.error('[meal-calendar] getUserMedia 실패', err);
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-// 화면 벗어날 때 트랙 정리
-window.addEventListener('pagehide', () => {
-  if (stream) stream.getTracks().forEach(t => t.stop());
-});
-</script>
+<script type="module" src="/public/app.js"></script>
 </body>
 </html>

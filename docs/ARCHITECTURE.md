@@ -125,5 +125,25 @@ match /foods/{doc} {
   **`.gitignore`는 배포 범위와 무관하다** — `firebase deploy`는 로컬 파일을 git 상태와 상관없이 그대로 올린다.
   실측: `curl .../.env` `.../tests/...` `.../.git/config` 전부 404 확인 완료
 
+### 서비스워커 스코프 — 파일 위치가 아니라 등록 경로가 스코프를 정한다
+
+Phase 1에서 실제로 걸렸던 함정 두 개, 둘 다 배포는 성공했는데 브라우저에서 "안 바뀐 것처럼" 보이는
+버그라 배포 로그만 봐선 못 잡는다.
+
+1. **SW 등록 경로가 스코프를 정한다.** `navigator.serviceWorker.register('/public/sw.js')`처럼
+   부르면 스코프가 스크립트가 있는 디렉터리(`/public/`)로 좁아진다. **루트 문서(`/`)는 그 스코프
+   밖이라 SW가 아예 못 건드린다.** `firebase.json`에 `{ "source": "/sw.js", "destination": "/public/sw.js" }`
+   rewrite를 추가해 **루트 경로(`/sw.js`)로 서빙되게 만들고**, 등록도 `register('/sw.js')`로 한다.
+   실제 파일은 `public/sw.js`에 그대로 둔다 — rewrite가 경로만 바꿔준다.
+2. **`Cache-Control: max-age=3600`이 SW 캐시와 별개로 브라우저 HTTP 캐시에도 걸린다.** SW를
+   cache-first에서 network-first로 고쳐도, `app.js`/`index.html` 자체가 브라우저 디스크 캐시에
+   1시간 박혀있으면 재배포해도 그 캐시가 안 풀린다. **JS·HTML은 `Cache-Control: no-cache,
+   must-revalidate`로 명시** (`firebase.json`의 `headers`). 아이콘·매니페스트 같은 정적 자산은
+   기본 캐싱을 유지해도 된다 — 내용이 자주 안 바뀐다.
+
+**디버깅 방법:** `curl`은 SW·브라우저 캐시를 안 타므로 서버가 실제로 뭘 주는지 확인하는 데 쓴다.
+브라우저에서 안 바뀌어 보이면 `navigator.serviceWorker.getRegistrations()`로 스코프를,
+`caches.keys()`로 캐시 이름을 직접 찍어본다.
+
 `src/lib/*.js`를 화면 스크립트에서 쓸 땐 `import { calcBMR } from '/src/lib/metabolism.js'`처럼
 루트 기준 절대경로로 부른다.

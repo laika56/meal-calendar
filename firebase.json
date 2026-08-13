@@ -3,7 +3,18 @@
     "site": "calorie-43692",
     "public": ".",
     "rewrites": [
-      { "source": "/", "destination": "/public/index.html" }
+      { "source": "/", "destination": "/public/index.html" },
+      { "source": "/sw.js", "destination": "/public/sw.js" }
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|html)",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+      },
+      {
+        "source": "/",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+      }
     ],
     "ignore": [
       "firebase.json",
