@@ -1,7 +1,12 @@
 import { buildMonthGrid, dayStatus } from '/src/lib/calendarGrid.js';
 import { buildGoalProfile, ImpossibleTargetError } from '/src/lib/metabolism.js';
 import { calcDayTotals } from '/src/lib/dayTotals.js';
-import * as db from '/public/db.js';
+
+// db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
+// 전부 받아질 때까지 이 모듈 전체의 실행이 밀린다. 캘린더 그리드는 네트워크 없이 그릴 수 있는데
+// 첫 화면이 몇 초씩 빈 채로 있었던 이유가 이거였다 — 실기기 실측으로 발견.
+let db = null;
+const dbReady = import('/public/db.js').then((mod) => { db = mod; });
 
 const FALLBACK_TARGET_KCAL = 2000; // 목표를 아직 안 정한 사용자용. 저장되지 않는다
 const LEGACY_PROFILE_KEY = 'meal-calendar:profile-v1'; // Phase 2 의 localStorage. 1회 이관 후 지운다
@@ -113,6 +118,7 @@ function renderMonth() {
 }
 
 async function loadMonthData() {
+  await dbReady;
   try {
     state.monthData = await db.loadMonth(state.year, state.month);
   } catch (err) {
@@ -195,6 +201,7 @@ function renderDayDetail() {
 async function openDayDetail(dateStr) {
   state.openDate = dateStr;
   setSaveState(null);
+  await dbReady;
 
   // 월 조회에 없던 날이어도 개별 조회로 한 번 더 확인한다 (다른 기기에서 방금 쓴 경우)
   if (!state.monthData.has(dateStr)) {
@@ -211,6 +218,7 @@ async function openDayDetail(dateStr) {
 }
 
 async function persistDay(slots) {
+  await dbReady;
   const totals = calcDayTotals(slots);
   const day = { ...currentDay(), slots, totals, date: state.openDate };
   state.monthData.set(state.openDate, day);
@@ -317,6 +325,7 @@ function showResult(result) {
 }
 
 async function fillFormFromProfile() {
+  await dbReady;
   let profile = null;
   try {
     profile = await db.loadProfile();
@@ -347,6 +356,7 @@ document.getElementById('closeSettings').addEventListener('click', () => {
 el.profileForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   el.formError.hidden = true;
+  await dbReady;
 
   const data = new FormData(el.profileForm);
   const profile = {
@@ -421,7 +431,8 @@ async function migrateLegacyProfile() {
 // ── 시작 ──────────────────────────────────────────────────────────────
 
 async function start() {
-  renderMonth(); // 로그인 전에도 빈 그리드는 보여준다
+  renderMonth(); // Firebase 도착 전에도 그리드부터 그린다 — 이게 이 함수의 핵심이다
+  await dbReady;
 
   try {
     await db.signIn();
