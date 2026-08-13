@@ -6,6 +6,22 @@
 
 ## 지금 상태
 
+**자연어 빠른 기록 구현 완료, 로컬 실측 완료 (2026-08-13, 아직 미배포).**
+`반숙란 2개` 입력 한 번으로 식약처의 `반숙란` 결과를 자동 선택하고, 식약처 가이드의 달걀 1개
+50g 대표 중량을 적용해 2개분 칼로리·탄단지를 기록했다. 목록에는 `2개 · 추정`과 근거가 남고,
+새로고침 뒤에도 유지됨을 확인했다. `밥 반 공기`(질병관리청 1공기 200g)와 명시적 g도 지원한다.
+대표 중량이 없는 `닭가슴살 한 팩`은 임의 계산하지 않고 기존 검색 결과로 내려간다.
+순수 파서·선택 로직 포함 전체 테스트 **108/108 통과**. 커밋 완료, 아직 미배포.
+
+**비회원→회원 계정 복구 구현 완료 (2026-08-13, 로컬 앱 + 실제 Firebase 실측).**
+첫 진입 인증 게이트, 이메일/비밀번호 가입·로그인·로그아웃, 비회원 시작, 비회원 uid를 유지한
+회원 전환, 미인증 안내, 비밀번호 재설정, 중복 이메일 충돌 경고를 추가했다. Firebase 프로젝트
+`calorie-43692`의 이메일/비밀번호 제공자도 활성화했다. 영양값을 모두 0으로 둔 테스트 기록으로
+회원 전환 및 로그아웃·재로그인 뒤 기록 유지, 충돌 시 `1일치` 손실 표시·취소를 실측했다.
+인증 메일 링크 클릭은 수신 가능한 테스트 주소가 없어 확인하지 못했고, 재발송은 반복 계정 생성
+뒤 Firebase 요청 제한에 걸렸다. **2026-08-13 Firebase Hosting 배포 완료:**
+`https://calorie-43692.web.app` (커밋은 하지 않음).
+
 **Phase 7 완료 — 식약처 검색 (2026-08-13, 로드맵 순서보다 앞당김, 사용자 요청).**
 Firebase **Blaze 업그레이드**(사용자가 직접 카드 등록, 예산알림 $5) → Cloud Functions
 `searchFoods` 배포 → 항목 추가 화면에 "식약처 검색" 탭 → 검색결과 탭 → 양(g) 입력 →
@@ -29,8 +45,6 @@ Firebase CDN 로딩을 기다렸다). 동적 import로 분리해서 그리드는
 **Phase 3 완료 (2026-08-13).**
 익명 로그인 → 목표 저장 → 날짜 탭 → 슬롯별 `+ 추가` → 수동 입력 → Firestore 저장 →
 새로고침해도 남아 있음. 보안 규칙 배포·실측 완료 (`docs/ARCHITECTURE.md` 「보안 규칙」).
-
-**남은 구멍:** 익명 계정 복구 경로가 없다 — **앱을 지우면 기록이 사라진다.** Phase 5 전에 붙여야 한다.
 
 ---
 
@@ -101,7 +115,6 @@ localStorage 저장(`meal-calendar:profile-v1`) → 캘린더 목표칼로리가
 Phase 4부터 하자고 함. **Phase 4 끝났으니 Phase 7(식약처 검색) 진행할지 다시 물어야 한다.**
 Blaze는 카드 등록 필요(개인 사용량은 사실상 무료) — 과금 관련이라 사용자 확인 필수.
 
-**나중 (Phase 5 전 필수):** 익명 계정 복구 경로(`linkWithCredential`) — 지금은 앱 지우면 데이터 증발
 **나중 (Phase 8):** 카메라 권한 재요청 UX 반영 (위 참조)
 
 ## 작업 분담 현황
@@ -115,6 +128,9 @@ Blaze는 카드 등록 필요(개인 사용량은 사실상 무료) — 과금 �
 | `src/lib/mfdsParser.js`, `tests/mfdsParser.test.js` 배열형 `items` 대응 | **Codex** | **완료·커밋** (`c288781`) — 82/82 → `orders/07` |
 | `src/lib/calendarGrid.js`, `tests/calendarGrid.test.js` | **Codex** | **완료·커밋** (`e84a8b4`) → `orders/05` |
 | `src/lib/dayTotals.js`, `tests/dayTotals.test.js` | **Codex** | **완료·리뷰통과** — 77/77, 구현 깨뜨려 테스트 진위 확인함 → `orders/06` |
+| `src/lib/authValidation.js`, `src/lib/authMessages.js` + 테스트 | **Codex** | 구현·검수 완료 — 100/100, 변이 검증 통과 → `orders/08` |
+| `public/db.js`, `public/index.html`, `public/app.js` 인증 흐름 | **Codex** (사용자 역할 제한 해제) | 구현 완료 · 실제 Firebase 실측·Hosting 배포·커밋 완료 |
+| 자연어 빠른 기록 (`반숙란 2개`) 파서·UI·테스트 | **Codex** (사용자 편의 우선 설계 승인) | 구현·로컬 실측·커밋 완료 — 108/108, 아직 미배포 |
 | `public/index.html`, `app.js`, `sw.js`, `db.js`, `firebase.json`, `firestore.rules` | Claude | **완료·배포·실측검증 통과** |
 | `functions/index.js`, `functions/shared/mfdsParser.js` (searchFoods) | Claude | **완료·배포·실측검증 통과** — Blaze 업그레이드 후 |
 | `../coin-bot/{AGENTS,CLAUDE}.md`, `../scripts/check-doc-split.sh` | **Codex** | **완료·커밋** (`coin-bot` `da1d4e2`, root `c260784`) |
@@ -133,6 +149,7 @@ Blaze는 카드 등록 필요(개인 사용량은 사실상 무료) — 과금 �
 | 7 | 식약처 파서 — items 배열형 대응 | ☑ `orders/07` | ☑ | ☑ | ☐ |
 | 8 | 최근 항목 집계 (빈도·최근성 정렬) | ☐ (실사용에선 단순 최근순으로 충분해 발주 안 함) | ☐ | ☐ | ☐ |
 | 9 | 룰렛 solver | ☐ (Phase4 프리셋 설계 선행 필요) | ☐ | ☐ | ☐ |
+| 10 | 인증 검증 + 에러 메시지 | ☑ `orders/08` | ☑ | ☑ | ☐ |
 
 > 문서 중복 제거(`orders/02`, coin-bot·stock)는 이 프로젝트 대기열이 아니라 워크스페이스 루트 `AGENTS.md` 작업이었다 — 완료·커밋됨.
 

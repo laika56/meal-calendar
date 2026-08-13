@@ -168,6 +168,7 @@
 
   /* 목표 설정 폼 */
   .profile-form { display: flex; flex-direction: column; gap: 14px; }
+  .profile-form[hidden] { display: none; }
   .profile-form label {
     display: flex; flex-direction: column; gap: 6px;
     font-size: 13px; font-weight: 600; color: var(--muted);
@@ -220,6 +221,46 @@
     padding: 10px 12px; font-size: 12px; color: var(--muted); margin-bottom: 16px; line-height: 1.6;
   }
 
+  /* 인증 게이트 */
+  .gate-hero { text-align: center; margin: 32px 0 24px; }
+  .gate-hero h1 { font-size: 22px; margin: 0 0 8px; }
+  .gate-hero p { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.6; }
+  .gate-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .gate-tabs button {
+    flex: 1; -webkit-appearance: none; appearance: none;
+    border: 1px solid var(--line); background: var(--card); color: var(--muted);
+    border-radius: 10px; padding: 10px; font: inherit; font-weight: 600;
+  }
+  .gate-tabs button[aria-selected="true"] { color: var(--fg); border-color: var(--fg); }
+  .gate-warn {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; font-size: 12px; color: var(--muted); line-height: 1.6;
+    margin-bottom: 16px;
+  }
+  .gate-alt {
+    margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line);
+    text-align: center;
+  }
+  .gate-alt button {
+    -webkit-appearance: none; appearance: none; border: 0; background: none;
+    color: var(--muted); font: inherit; font-size: 13px; text-decoration: underline;
+    padding: 6px;
+  }
+  .link-button {
+    -webkit-appearance: none; appearance: none; border: 0; background: none;
+    color: var(--muted); font: inherit; font-size: 13px; text-decoration: underline;
+    padding: 6px 0; text-align: left;
+  }
+
+  /* 설정 > 계정 */
+  .account-box {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; margin-bottom: 16px;
+  }
+  .account-box h3 { font-size: 13px; margin: 0 0 10px; }
+  .account-mail { font-size: 14px; font-weight: 600; margin: 0 0 8px; word-break: break-all; }
+  .account-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
   .search-row { display: flex; gap: 8px; margin-bottom: 8px; }
   .search-row input {
     flex: 1 1 auto; -webkit-appearance: none; appearance: none;
@@ -232,6 +273,10 @@
     font-size: 14px; padding: 0 16px; border-radius: 10px;
   }
   .search-status { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .quick-hint {
+    color: var(--muted); font-size: 12px; line-height: 1.55;
+    margin: -2px 0 10px;
+  }
   .search-results { display: flex; flex-direction: column; gap: 6px; }
   .search-result {
     -webkit-appearance: none; appearance: none; width: 100%; text-align: left;
@@ -343,10 +388,11 @@
 
     <div id="entryChooser">
     <div class="quick-section">
-      <h3>식약처 검색</h3>
+      <h3>빠른 기록</h3>
+      <p class="quick-hint">음식과 양을 같이 쓰면 바로 기록합니다. 개·공기는 대표 중량으로 추정합니다.</p>
       <form id="foodSearchForm" class="search-row">
-        <input id="searchInput" type="text" placeholder="예: 닭가슴살" autocomplete="off">
-        <button type="submit">검색</button>
+        <input id="searchInput" type="text" placeholder="예: 반숙란 2개" autocomplete="off">
+        <button type="submit">바로 추가</button>
       </form>
       <div id="searchStatus" class="search-status" hidden></div>
       <div id="searchResults" class="search-results"></div>
@@ -408,12 +454,108 @@
   </div>
 </div>
 
+<div id="authGate" class="sheet" hidden>
+  <div class="sheet-inner">
+    <div class="gate-hero">
+      <h1>식단 캘린더</h1>
+      <p>기록을 어디에 남길지 정해주세요.</p>
+    </div>
+
+    <div class="gate-tabs" role="tablist">
+      <button type="button" id="gateTabSignUp" role="tab" aria-selected="true">회원가입</button>
+      <button type="button" id="gateTabSignIn" role="tab" aria-selected="false">로그인</button>
+    </div>
+
+    <div id="gateError" class="form-error" hidden></div>
+
+    <form id="gateSignUpForm" class="profile-form">
+      <label>이메일
+        <input name="email" type="email" autocomplete="username"
+               inputmode="email" autocapitalize="none" spellcheck="false" required>
+      </label>
+      <label>비밀번호 (8자 이상)
+        <input name="password" type="password" autocomplete="new-password" required>
+      </label>
+      <label>비밀번호 확인
+        <input name="confirm" type="password" autocomplete="new-password" required>
+      </label>
+      <button type="submit">회원가입</button>
+    </form>
+
+    <form id="gateSignInForm" class="profile-form" hidden>
+      <label>이메일
+        <input name="email" type="email" autocomplete="username"
+               inputmode="email" autocapitalize="none" spellcheck="false" required>
+      </label>
+      <label>비밀번호
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit">로그인</button>
+      <button type="button" id="gateForgot" class="link-button">비밀번호를 잊었어요</button>
+    </form>
+
+    <div class="gate-alt">
+      <div class="gate-warn">
+        비회원으로도 쓸 수 있습니다. 다만 <b>앱을 지우면 기록이 사라집니다.</b>
+        나중에 설정에서 회원으로 바꾸면 기록은 그대로 이어집니다.
+      </div>
+      <button type="button" id="guestStart">비회원으로 시작</button>
+    </div>
+  </div>
+</div>
+
 <div id="settings" class="sheet" hidden>
   <div class="sheet-inner">
     <div class="sheet-header">
       <button id="closeSettings" aria-label="캘린더로 돌아가기">‹ 캘린더</button>
       <h2>목표 설정</h2>
     </div>
+    <section id="accountSection" class="account-box">
+      <h3>계정</h3>
+
+      <div id="accountGuest" hidden>
+        <div class="gate-warn">
+          ⚠ 비회원입니다. <b>앱을 지우면 기록이 사라집니다.</b>
+          회원으로 바꾸면 지금 기록이 그대로 이어집니다.
+        </div>
+        <div id="upgradeError" class="form-error" hidden></div>
+        <form id="upgradeForm" class="profile-form">
+          <label>이메일
+            <input name="email" type="email" autocomplete="username"
+                   inputmode="email" autocapitalize="none" spellcheck="false" required>
+          </label>
+          <label>비밀번호 (8자 이상)
+            <input name="password" type="password" autocomplete="new-password" required>
+          </label>
+          <label>비밀번호 확인
+            <input name="confirm" type="password" autocomplete="new-password" required>
+          </label>
+          <button type="submit">회원 전환</button>
+        </form>
+        <div class="account-actions">
+          <button type="button" id="switchAccountBtn" class="link-button">다른 계정으로 로그인</button>
+        </div>
+      </div>
+
+      <div id="accountMember" hidden>
+        <p id="accountEmail" class="account-mail"></p>
+        <div id="verifyWarn" class="gate-warn" hidden>
+          ⚠ 이메일 미인증 — 지금 비밀번호를 잊으면 복구할 수 없습니다.
+        </div>
+        <div class="account-actions">
+          <button type="button" id="resendVerify" class="link-button" hidden>인증 메일 다시 보내기</button>
+          <button type="button" id="signOutBtn" class="link-button">로그아웃</button>
+        </div>
+      </div>
+
+      <div id="conflictPrompt" hidden>
+        <div class="form-error" id="conflictText"></div>
+        <div class="account-actions">
+          <button type="button" id="conflictCancel" class="link-button">다른 이메일 쓰기</button>
+          <button type="button" id="conflictAbandon" class="link-button">기록을 포기하고 그 계정으로 로그인</button>
+        </div>
+      </div>
+    </section>
     <div id="manualRatio" class="manual-ratio" hidden></div>
     <form id="profileForm" class="profile-form">
       <label>성별

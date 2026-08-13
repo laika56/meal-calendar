@@ -60,7 +60,12 @@ foods/{source}_{code}                    공용 캐시. 외부 API 쿼터 절약
   name:     "닭가슴살 구이",
   amountG:  150,
   kcal, carbG, proteinG, fatG,  // amountG 기준으로 이미 환산된 값
-  addedBy:  "manual" | "search" | "barcode" | "preset" | "roulette",
+  addedBy:  "manual" | "quick" | "search" | "barcode" | "preset" | "roulette",
+  estimate: {                    // 빠른 기록에서 대표 중량을 쓴 경우에만 존재
+    displayAmount,               // 사용자가 쓴 단위, 예: "2개"
+    source, sourceLabel,         // 대표 중량 근거
+    matchedFoodName              // 실제 식약처 검색에서 고른 항목
+  },
   at:       serverTimestamp
 }
 ```
@@ -97,9 +102,19 @@ foods/{source}_{code}                    공용 캐시. 외부 API 쿼터 절약
 > **규칙 함수 위치 주의:** `isSignedIn()`/`isOwner()` 같은 헬퍼는 `service` 블록 **안**에 둬야 한다.
 > 파일 최상단(`service` 밖)에 쓰면 컴파일이 안 된다.
 
-익명 인증을 쓰되 **계정 복구 경로를 만든다** — 익명 uid는 앱 삭제 시 사라진다.
-나중에 이메일 링크로 승격(`linkWithCredential`)할 수 있게 설계해 둔다. **아직 안 만들었다 —
-지금 앱을 지우면 기록이 사라진다.** Phase 5 전에 붙여야 한다.
+인증 상태는 미로그인·비회원(익명)·회원(이메일/비밀번호) 세 가지다. 첫 진입에서는 사용자가
+회원가입/로그인/비회원 시작 중 하나를 고른다. 비회원이 설정에서 회원으로 전환할 때는
+`linkWithCredential`로 기존 익명 uid에 이메일 자격을 붙인다. uid가 바뀌지 않으므로 Firestore
+데이터 이동도, 보안 규칙 변경도 필요 없다.
+
+인증 구독은 `onIdTokenChanged`를 쓴다. 자격 연결은 uid가 그대로라 `onAuthStateChanged`가 다시
+불리지 않을 수 있지만 ID 토큰은 바뀐다. 이 이벤트를 놓치면 회원 전환은 성공해도 설정 화면이
+비회원 상태로 남아 새로고침을 요구하게 된다.
+
+중복 이메일로 전환하려는데 현재 익명 uid에 기록이 있으면 자동 로그인하지 않는다. 먼저
+Firestore의 날짜 문서 수를 세어 "N일치가 넘어가지 않는다"고 표시하고, 사용자가 명시적으로
+기록 포기를 두 번 확인해야 기존 계정으로 바꾼다. 비회원은 앱 데이터/인증 상태를 지우기 전에
+회원 전환해야 다른 기기에서 복구할 수 있다.
 
 ## Cloud Functions 엔드포인트
 
@@ -128,6 +143,8 @@ foods/{source}_{code}                    공용 캐시. 외부 API 쿼터 절약
   `functions/shared/mfdsParser.js`에 복사본을 둔다. **원본이 진실의 원천, 복사본은 손으로 동기화**
   (`functions/lib/`가 아니라 `functions/shared/`인 이유: `.gitignore`가 `functions/lib/`를
   TS 빌드 산출물로 이미 막아뒀었다 — 이름 충돌 피하려고 옮겼다)
+- Hosting rewrite에도 `region: asia-northeast3`를 명시한다. 생략하면 로컬 Hosting 서버가 배포된
+  함수를 `us-central1`로 잘못 찾아 404를 반환했다. 운영·로컬 모두 함수 리전은 한 곳에서 일치시킨다
 
 ## 오프라인
 

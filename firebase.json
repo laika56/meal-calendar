@@ -14,7 +14,10 @@
     "rewrites": [
       { "source": "/", "destination": "/public/index.html" },
       { "source": "/sw.js", "destination": "/public/sw.js" },
-      { "source": "/api/foods/search", "function": "searchFoods" }
+      {
+        "source": "/api/foods/search",
+        "function": { "functionId": "searchFoods", "region": "asia-northeast3" }
+      }
     ],
     "headers": [
       {

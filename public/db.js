@@ -6,11 +6,15 @@
 // - 오프라인 퍼시스턴스를 켠다. 지하철·헬스장에서 입력한다 (AGENTS.md 절대규칙 6)
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js';
 import {
-  getAuth, signInAnonymously, onAuthStateChanged,
+  getAuth, signInAnonymously, onIdTokenChanged, signOut,
+  createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  linkWithCredential, EmailAuthProvider,
+  sendEmailVerification, sendPasswordResetEmail,
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js';
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, serverTimestamp,
+  limit,
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js';
 
 import { firebaseConfig } from '/src/firebaseConfig.js';
@@ -25,30 +29,108 @@ const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
 
-/** 익명 로그인. 이미 로그인돼 있으면 그 사용자를 그대로 쓴다. */
-export function signIn() {
-  return new Promise((resolve, reject) => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        unsubscribe();
-        resolve(user.uid);
-        return;
-      }
-      signInAnonymously(auth).catch((err) => {
-        unsubscribe();
-        reject(err);
-      });
-    }, (err) => {
-      unsubscribe();
-      reject(err);
-    });
-  });
+// ── 인증 ──────────────────────────────────────────────────────────────
+// 상태는 「없음 / 비회원(익명) / 회원(이메일 링크됨)」 세 가지다.
+// 비회원→회원은 linkWithCredential 이라 uid 가 유지된다 — 데이터가 한 바이트도 안 움직이고
+// 보안 규칙도 그대로 성립한다. 설계는 docs/superpowers/specs/2026-08-13-auth-guest-member-design.md.
+
+function snapshotUser(user) {
+  if (!user) return null;
+  return {
+    uid: user.uid,
+    isAnonymous: user.isAnonymous,
+    email: user.email,
+    emailVerified: user.emailVerified,
+  };
+}
+
+/** 인증 상태 구독. 로그인·로그아웃·링크 성공 때마다 불린다. 해지 함수를 돌려준다. */
+export function observeAuth(cb) {
+  // 익명 계정에 이메일 자격을 연결하면 uid 는 그대로라 onAuthStateChanged 가
+  // 다시 불리지 않을 수 있다. 토큰 변경까지 관찰해야 회원 전환 직후 UI가 갱신된다.
+  return onIdTokenChanged(auth, (user) => cb(snapshotUser(user)));
+}
+
+/** 비회원으로 시작 — 익명 계정을 만든다. */
+export async function startGuest() {
+  const { user } = await signInAnonymously(auth);
+  return user.uid;
+}
+
+/**
+ * 회원가입.
+ * - 비회원 사용 중이면 linkWithCredential → uid 유지, 데이터 유지
+ * - 로그인 안 된 상태(게이트에서 바로 가입)면 새 계정 생성
+ * 가입 직후 인증 메일을 보낸다. 메일 발송 실패는 가입 자체를 되돌리지 않는다 —
+ * 계정은 이미 만들어졌고, 재발송 버튼이 설정 화면에 있다.
+ */
+export async function signUp(email, password) {
+  const current = auth.currentUser;
+  let user;
+
+  if (current && current.isAnonymous) {
+    const credential = EmailAuthProvider.credential(email, password);
+    ({ user } = await linkWithCredential(current, credential));
+  } else {
+    ({ user } = await createUserWithEmailAndPassword(auth, email, password));
+  }
+
+  try {
+    await sendEmailVerification(user);
+  } catch (err) {
+    console.error('[meal-calendar] 인증 메일 발송 실패 — 설정에서 재발송할 수 있다', err);
+  }
+  return user.uid;
+}
+
+export async function signInWithPassword(email, password) {
+  const { user } = await signInWithEmailAndPassword(auth, email, password);
+  return user.uid;
+}
+
+export function signOutUser() {
+  return signOut(auth);
+}
+
+export function resendVerification() {
+  const { currentUser } = auth;
+  if (!currentUser) throw new Error('db: 로그인 상태가 아니다');
+  return sendEmailVerification(currentUser);
+}
+
+export function sendReset(email) {
+  return sendPasswordResetEmail(auth, email);
+}
+
+/**
+ * 이 계정에 기록이 있나. 이메일 중복 충돌에서 「갈아타도 되는지」 판정에 쓴다.
+ * 읽기 2회로 끝낸다 — goals·presets 는 따로 세지 않는다 (목표를 저장했으면 profile 이
+ * 반드시 있고, 프리셋을 만들었으면 days 나 recentEntries 가 이미 차 있다).
+ */
+export async function hasAnyData() {
+  const uid = requireUid();
+
+  const userDoc = await getDoc(doc(db, 'users', uid));
+  if (userDoc.exists()) {
+    const data = userDoc.data();
+    if (data.profile) return true;
+    if (Array.isArray(data.recentEntries) && data.recentEntries.length > 0) return true;
+  }
+
+  const daysSnapshot = await getDocs(query(collection(db, 'users', uid, 'days'), limit(1)));
+  return !daysSnapshot.empty;
+}
+
+/** 거부 문구에 「기록 N건」을 숫자로 박기 위해서다. 충돌 분기에서만 부른다. */
+export async function countDays() {
+  const snapshot = await getDocs(collection(db, 'users', requireUid(), 'days'));
+  return snapshot.size;
 }
 
 function requireUid() {
   const { currentUser } = auth;
   if (!currentUser) {
-    throw new Error('db: 로그인 전에는 읽고 쓸 수 없다. signIn() 을 먼저 부른다');
+    throw new Error('db: 인증 전에는 읽고 쓸 수 없다');
   }
   return currentUser.uid;
 }
