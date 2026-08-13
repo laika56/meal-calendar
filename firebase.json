@@ -1,4 +1,7 @@
 {
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "hosting": {
     "site": "calorie-43692",
     "public": ".",
@@ -30,7 +33,8 @@
       "tests/**",
       "scripts/**",
       "functions/**",
-      "*.md"
+      "*.md",
+      "*.rules"
     ]
   }
 }

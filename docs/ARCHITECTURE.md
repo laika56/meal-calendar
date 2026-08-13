@@ -71,20 +71,33 @@ foods/{source}_{code}                    공용 캐시. 외부 API 쿼터 절약
 캘린더는 한 화면에 30~31일을 그린다. 날마다 slots를 다 읽어 합치면 읽기 횟수가 30배가 된다.
 `totals`만 읽도록 쿼리를 구성한다. **쓰기 시점에 갱신하며, 갱신 누락이 곧 버그다** — 테스트로 잠근다.
 
-## 보안 규칙 (배포 전 필수)
+## 보안 규칙 — **배포됨** (2026-08-13)
 
-```
-match /users/{uid}/{document=**} {
-  allow read, write: if request.auth != null && request.auth.uid == uid;
-}
-match /foods/{doc} {
-  allow read: if request.auth != null;
-  allow write: if false;          // Cloud Functions(Admin SDK)만 쓴다
-}
-```
+실제 파일은 `firestore.rules`. 배포: `firebase deploy --only firestore:rules`.
+이 문서는 무엇을 왜 막는지만 적는다 — 규칙 본문은 그 파일이 단일 출처다.
+
+| 경로 | 읽기 | 쓰기 | 왜 |
+|---|---|---|---|
+| `users/{uid}/**` | 본인만 | 본인만 | 개인 건강 데이터. 익명 uid라도 uid는 발급되므로 격리가 성립한다 |
+| `foods/{doc}` | 로그인 사용자 | **거부** | 공용 캐시. 클라이언트가 쓸 수 있으면 남의 검색 결과를 오염시킨다. Cloud Functions(Admin SDK)는 규칙을 우회하므로 쓸 수 있다 |
+| 그 외 전부 | 거부 | 거부 | 새 컬렉션을 추가하면 여기서 막힌다. **그게 의도다** — 규칙을 먼저 쓰지 않으면 데이터가 안 들어간다 |
+
+**실측 확인 (2026-08-13, 배포된 규칙에 대해 브라우저에서 직접):**
+
+| 시도 | 결과 |
+|---|---|
+| 남의 uid 문서 읽기 | `permission-denied` ✅ |
+| `foods/` 쓰기 | `permission-denied` ✅ |
+| 명세에 없는 최상위 컬렉션 쓰기 | `permission-denied` ✅ |
+| 본인 `profile`·`goals` 읽기 | 통과 ✅ |
+| `foods/` 읽기 | 통과 ✅ |
+
+> **규칙 함수 위치 주의:** `isSignedIn()`/`isOwner()` 같은 헬퍼는 `service` 블록 **안**에 둬야 한다.
+> 파일 최상단(`service` 밖)에 쓰면 컴파일이 안 된다.
 
 익명 인증을 쓰되 **계정 복구 경로를 만든다** — 익명 uid는 앱 삭제 시 사라진다.
-나중에 이메일 링크로 승격(`linkWithCredential`)할 수 있게 설계해 둔다.
+나중에 이메일 링크로 승격(`linkWithCredential`)할 수 있게 설계해 둔다. **아직 안 만들었다 —
+지금 앱을 지우면 기록이 사라진다.** Phase 5 전에 붙여야 한다.
 
 ## Cloud Functions 엔드포인트
 
