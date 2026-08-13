@@ -60,7 +60,7 @@ foods/{source}_{code}                    공용 캐시. 외부 API 쿼터 절약
   name:     "닭가슴살 구이",
   amountG:  150,
   kcal, carbG, proteinG, fatG,  // amountG 기준으로 이미 환산된 값
-  addedBy:  "manual" | "barcode" | "preset" | "roulette",
+  addedBy:  "manual" | "search" | "barcode" | "preset" | "roulette",
   at:       serverTimestamp
 }
 ```
@@ -103,13 +103,31 @@ foods/{source}_{code}                    공용 캐시. 외부 API 쿼터 절약
 
 ## Cloud Functions 엔드포인트
 
-| 경로 | 하는 일 |
-|---|---|
-| `GET /api/foods/search?q=` | 식약처 검색 → 정규화 → `foods/` 캐시에 upsert |
-| `GET /api/foods/barcode/:code` | Open Food Facts 조회 → 정규화 → 캐시 |
-| `POST /api/roulette/explain` | (선택) solver 결과에 설명 문구. **숫자를 만들지 않는다** |
+| 경로 | 하는 일 | 상태 |
+|---|---|---|
+| `GET /api/foods/search?q=` | 식약처 검색 → 정규화 → `foods/` 캐시에 upsert | **배포됨 (2026-08-13)** |
+| `GET /api/foods/barcode/:code` | Open Food Facts 조회 → 정규화 → 캐시 | Phase 8 |
+| `POST /api/roulette/explain` | (선택) solver 결과에 설명 문구. **숫자를 만들지 않는다** | Phase 6 |
 
 전부 인증 필요. 익명 uid라도 토큰 검증은 한다 — 안 하면 남이 내 쿼터를 태운다.
+
+### `searchFoods` 구현 메모
+
+- `functions/index.js`, 리전 `asia-northeast3` (Firestore와 동일 — 레이턴시), **Blaze 요금제 필요**
+  (2026-08-13 업그레이드함. 무료 할당량 안에서는 $0, 예산 알림 $5 걸어둠)
+- `Authorization: Bearer <Firebase ID 토큰>` 검증 후에만 동작. 실측: 토큰 없으면 401
+- `MFDS_API_KEY`는 Secret Manager에 저장 (`firebase functions:secrets:set`), 코드·로그에 안 남음
+- **함정 — 서비스키 이중 인코딩:** `MFDS_API_KEY`는 공공데이터포털에서 발급된 그대로
+  퍼센트 인코딩된 상태로 저장돼있다. `URLSearchParams.set('serviceKey', key)`로 그냥 넣으면
+  **다시 인코딩돼 키가 깨진다** — MFDS가 `SERVICE_KEY_IS_NOT_REGISTERED_ERROR`로 응답해서
+  실측으로 잡았다. `decodeURIComponent(key)`로 원본으로 되돌린 뒤 넣어야 한다
+- **개별 항목 파싱 실패는 검색 전체를 안 죽인다** — `src/lib/mfdsParser.js`의
+  `parseMfdsFoodItem`(strict, 한 건이라도 이상하면 던짐)을 개별 항목마다 try/catch로 감싸서
+  실패한 항목만 건너뛴다. 검색 API처럼 여러 건을 한 번에 받는 곳엔 strict 파서를 그대로 못 쓴다
+- `src/lib/mfdsParser.js`는 `functions/` 밖이라 Cloud Functions 배포에 안 실린다 —
+  `functions/shared/mfdsParser.js`에 복사본을 둔다. **원본이 진실의 원천, 복사본은 손으로 동기화**
+  (`functions/lib/`가 아니라 `functions/shared/`인 이유: `.gitignore`가 `functions/lib/`를
+  TS 빌드 산출물로 이미 막아뒀었다 — 이름 충돌 피하려고 옮겼다)
 
 ## 오프라인
 
