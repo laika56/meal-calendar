@@ -6,7 +6,7 @@
 
 ## 지금 상태
 
-Phase 0. 스캐폴딩 완료. **Codex 발주 1건 준비됨 — 블로커와 무관하게 지금 시작 가능.**
+Phase 0. 스캐폴딩 완료. **계산 엔진 발주 01 구현 완료 — Claude 리뷰 대기.**
 
 > **작업 순서 규칙:** Codex에 넘길 수 있는 것부터 먼저 발주한다 (`../AGENTS.md` 「순서」).
 > Codex가 도는 동안 Claude가 자기 몫을 병렬로 한다.
@@ -38,7 +38,7 @@ standalone / safe-area / 100dvh / `BarcodeDetector` 부재 / secure context / SW
 **그 다음:**
 1. `.env` 채우기 (`.env.example` 참고) — **커밋 금지**
 2. Phase 1: PWA 셸 + 월 캘린더 그리드 (더미 데이터)
-3. Phase 2: 계산 엔진 명세 확정 → **Codex 첫 발주**
+3. Phase 2: 계산 엔진 구현분 Claude 리뷰 + 사용자 컨펌
 
 ## 작업 분담 현황
 
@@ -46,15 +46,15 @@ standalone / safe-area / 100dvh / `BarcodeDetector` 부재 / secure context / SW
 
 | 대상 | 잡은 쪽 | 상태 |
 |---|---|---|
-| `src/lib/metabolism.js`, `src/lib/units.js` + 테스트 | **Codex** | 발주서 완료 → `docs/orders/01-calc-engine.md`. 발주 대기 |
+| `src/lib/metabolism.js`, `src/lib/units.js` + 테스트 | **Codex** | 구현 완료 · Claude 리뷰 대기 → `docs/orders/01-calc-engine.md` |
 | `public/` (검증 페이지) | Claude | 완료 |
 
 ## Codex 발주 대기열
 
 | 순서 | 작업 | 명세 준비 | 발주 | 내 리뷰 | 사용자 컨펌 |
 |---|---|---|---|---|---|
-| 1 | 대사량·매크로 계산 + 테스트 | ☑ `orders/01` | ☐ | ☐ | ☐ |
-| 2 | 단위 환산 + 테스트 | ☑ `orders/01` | ☐ | ☐ | ☐ |
+| 1 | 대사량·매크로 계산 + 테스트 | ☑ `orders/01` | ☑ | ☐ | ☐ |
+| 2 | 단위 환산 + 테스트 | ☑ `orders/01` | ☑ | ☐ | ☐ |
 | 3 | 식약처 응답 파서 | ☐ (실응답 샘플 필요) | ☐ | ☐ | ☐ |
 | 4 | 룰렛 solver | ☐ | ☐ | ☐ | ☐ |
 
