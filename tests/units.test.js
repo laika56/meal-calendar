@@ -34,6 +34,36 @@ test('rejects negative and NaN serving amounts', () => {
   assert.throws(() => scaleNutrients(nutrients, NaN), RangeError);
 });
 
+test('reports exact serving amount errors before validating nutrient values', () => {
+  const nutrients = { kcal: undefined, carbG: null, proteinG: 10, fatG: 5 };
+  const cases = [
+    [undefined, 'scaleNutrients: amountG must be a number, got undefined'],
+    [NaN, 'scaleNutrients: amountG must be a number, got NaN'],
+    [-0.1, 'scaleNutrients: amountG must not be negative, got -0.1'],
+  ];
+
+  for (const [amountG, message] of cases) {
+    assert.throws(() => scaleNutrients(nutrients, amountG), { name: 'RangeError', message });
+  }
+});
+
+test('rejects invalid present nutrient values in nutrient-key order', () => {
+  assert.throws(
+    () => scaleNutrients({ kcal: undefined, carbG: null, proteinG: 10, fatG: 5 }, 100),
+    {
+      name: 'TypeError',
+      message: 'scaleNutrients: per100g.kcal must be a number or null, got undefined',
+    },
+  );
+  assert.throws(
+    () => scaleNutrients({ kcal: 200, carbG: NaN, proteinG: '10', fatG: 5 }, 100),
+    {
+      name: 'TypeError',
+      message: 'scaleNutrients: per100g.carbG must be a number or null, got NaN',
+    },
+  );
+});
+
 test('converts synthetic kilojoule values to one-decimal kilocalories', () => {
   assert.equal(kjToKcal(418.4), 100);
   assert.equal(kjToKcal(50), 12);
@@ -47,6 +77,21 @@ test('keeps null kilojoules null and rejects negative or NaN values', () => {
   assert.equal(kjToKcal(null), null);
   assert.throws(() => kjToKcal(-0.1), RangeError);
   assert.throws(() => kjToKcal(NaN), RangeError);
+});
+
+test('rejects invalid kilojoule values with exact messages instead of returning NaN', () => {
+  assert.throws(
+    () => kjToKcal(undefined),
+    { name: 'TypeError', message: 'kjToKcal: kj must be a number or null, got undefined' },
+  );
+  assert.throws(
+    () => kjToKcal(NaN),
+    { name: 'RangeError', message: 'kjToKcal: kj must be a number, got NaN' },
+  );
+  assert.throws(
+    () => kjToKcal(-0.1),
+    { name: 'RangeError', message: 'kjToKcal: kj must not be negative, got -0.1' },
+  );
 });
 
 test('reports a rounded calculated calorie value and deviation', () => {

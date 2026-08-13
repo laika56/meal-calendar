@@ -65,12 +65,47 @@ test('rejects invalid BMR sex and numeric inputs by type', () => {
   }
 });
 
+test('reports exact calcBMR errors for sex and every numeric field', () => {
+  const valid = { sex: 'male', weightKg: 80, heightCm: 180, age: 30 };
+  const cases = [
+    [{ ...valid, sex: 'other' }, TypeError, 'calcBMR: sex must be "male" or "female", got "other"'],
+    [{ ...valid, weightKg: undefined }, TypeError, 'calcBMR: weightKg must be a number, got undefined'],
+    [{ ...valid, weightKg: 19.9 }, RangeError, 'calcBMR: weightKg must be between 20 and 300, got 19.9'],
+    [{ ...valid, heightCm: NaN }, TypeError, 'calcBMR: heightCm must be a number, got NaN'],
+    [{ ...valid, heightCm: 250.1 }, RangeError, 'calcBMR: heightCm must be between 100 and 250, got 250.1'],
+    [{ ...valid, age: '30' }, TypeError, 'calcBMR: age must be a number, got "30"'],
+    [{ ...valid, age: 120.1 }, RangeError, 'calcBMR: age must be between 10 and 120, got 120.1'],
+  ];
+
+  for (const [input, ErrorType, message] of cases) {
+    assert.throws(() => calcBMR(input), { name: ErrorType.name, message });
+  }
+});
+
 test('uses each workout boundary coefficient and rejects invalid workout counts', () => {
   const expected = [[0, 120], [1, 137.5], [3, 137.5], [4, 155], [5, 155], [6, 172.5], [7, 172.5]];
   for (const [weeklyWorkouts, tdee] of expected) assert.equal(calcTDEE(100, weeklyWorkouts), tdee);
   for (const weeklyWorkouts of [-1, 0.5, 7.5, 8]) {
     assert.throws(() => calcTDEE(100, weeklyWorkouts), RangeError);
   }
+});
+
+test('rejects invalid TDEE inputs with exact messages before NaN can propagate', () => {
+  assert.throws(
+    () => calcTDEE(undefined, 3),
+    { name: 'TypeError', message: 'calcTDEE: bmr must be a number, got undefined' },
+  );
+  assert.throws(
+    () => calcTDEE(NaN, 3),
+    { name: 'TypeError', message: 'calcTDEE: bmr must be a number, got NaN' },
+  );
+  assert.throws(
+    () => calcTDEE(100, 8),
+    {
+      name: 'RangeError',
+      message: 'calcTDEE: weeklyWorkouts must be an integer between 0 and 7, got 8',
+    },
+  );
 });
 
 test('keeps zero calculated carbs as a valid target', () => {
@@ -90,6 +125,23 @@ test('throws ImpossibleTargetError with the negative carbs and kcal in its messa
 
 test('calculates protein before assigning carbohydrates as the remainder', () => {
   assert.equal(calcTargets({ tdee: 2000, weightKg: 80, goal: 'leanbulk' }).proteinG, 144);
+});
+
+test('validates target inputs in order and does not expose goal lookup internals', () => {
+  assert.throws(
+    () => calcTargets({ tdee: undefined, weightKg: undefined, goal: 'invalid' }),
+    { name: 'TypeError', message: 'calcTargets: tdee must be a number, got undefined' },
+  );
+  assert.throws(
+    () => calcTargets({ tdee: 2000, weightKg: NaN, goal: 'invalid' }),
+    { name: 'TypeError', message: 'calcTargets: weightKg must be a number, got NaN' },
+  );
+  assert.throws(
+    () => calcTargets({ tdee: 2000, weightKg: 70, goal: 'invalid' }),
+    (error) => error instanceof TypeError
+      && error.message === 'calcTargets: goal must be one of diet, leanbulk, bulk, got "invalid"'
+      && !error.message.includes('Cannot destructure'),
+  );
 });
 
 test('buildGoalProfile passes an unrounded TDEE into target calculation', () => {

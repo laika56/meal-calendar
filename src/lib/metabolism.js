@@ -6,24 +6,38 @@ const GOALS = {
   bulk: { calorieMultiplier: 1.15, proteinPerKg: 1.6 },
 };
 
-function assertNumber(value) {
-  if (typeof value !== 'number' || Number.isNaN(value)) throw new TypeError();
+function formatValue(value) {
+  return Number.isNaN(value) ? 'NaN' : JSON.stringify(value);
 }
 
-function assertInRange(value, minimum, maximum) {
-  if (value < minimum || value > maximum) throw new RangeError();
+function assertNumber(value, funcName, label) {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    throw new TypeError(`${funcName}: ${label} must be a number, got ${formatValue(value)}`);
+  }
+}
+
+function assertInRange(value, minimum, maximum, funcName, label) {
+  if (value < minimum || value > maximum) {
+    throw new RangeError(
+      `${funcName}: ${label} must be between ${minimum} and ${maximum}, got ${value}`,
+    );
+  }
 }
 
 export function calcBMR({ sex, weightKg, heightCm, age }) {
-  if (sex !== 'male' && sex !== 'female') throw new TypeError();
+  if (sex !== 'male' && sex !== 'female') {
+    throw new TypeError(
+      `calcBMR: sex must be "male" or "female", got ${JSON.stringify(sex)}`,
+    );
+  }
 
-  for (const [value, minimum, maximum] of [
-    [weightKg, 20, 300],
-    [heightCm, 100, 250],
-    [age, 10, 120],
+  for (const [label, value, minimum, maximum] of [
+    ['weightKg', weightKg, 20, 300],
+    ['heightCm', heightCm, 100, 250],
+    ['age', age, 10, 120],
   ]) {
-    assertNumber(value);
-    assertInRange(value, minimum, maximum);
+    assertNumber(value, 'calcBMR', label);
+    assertInRange(value, minimum, maximum, 'calcBMR', label);
   }
 
   const sexAdjustment = sex === 'male' ? 5 : -161;
@@ -31,8 +45,12 @@ export function calcBMR({ sex, weightKg, heightCm, age }) {
 }
 
 export function calcTDEE(bmr, weeklyWorkouts) {
+  assertNumber(bmr, 'calcTDEE', 'bmr');
+
   if (!Number.isInteger(weeklyWorkouts) || weeklyWorkouts < 0 || weeklyWorkouts > 7) {
-    throw new RangeError();
+    throw new RangeError(
+      `calcTDEE: weeklyWorkouts must be an integer between 0 and 7, got ${JSON.stringify(weeklyWorkouts)}`,
+    );
   }
 
   const activityMultiplier = weeklyWorkouts === 0 ? 1.2
@@ -43,6 +61,15 @@ export function calcTDEE(bmr, weeklyWorkouts) {
 }
 
 export function calcTargets({ tdee, weightKg, goal }) {
+  assertNumber(tdee, 'calcTargets', 'tdee');
+  assertNumber(weightKg, 'calcTargets', 'weightKg');
+
+  if (!Object.hasOwn(GOALS, goal)) {
+    throw new TypeError(
+      `calcTargets: goal must be one of ${Object.keys(GOALS).join(', ')}, got ${JSON.stringify(goal)}`,
+    );
+  }
+
   const { calorieMultiplier, proteinPerKg } = GOALS[goal];
   const kcal = tdee * calorieMultiplier;
   const proteinG = weightKg * proteinPerKg;

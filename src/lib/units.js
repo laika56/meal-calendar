@@ -4,18 +4,43 @@ function roundToOneDecimal(value) {
   return Math.round(value * 10) / 10;
 }
 
+function formatValue(value) {
+  return Number.isNaN(value) ? 'NaN' : JSON.stringify(value);
+}
+
 export function scaleNutrients(per100g, amountG) {
-  if (amountG < 0 || Number.isNaN(amountG)) throw new RangeError();
+  if (typeof amountG !== 'number') {
+    throw new RangeError(
+      `scaleNutrients: amountG must be a number, got ${JSON.stringify(amountG)}`,
+    );
+  }
+  if (Number.isNaN(amountG)) {
+    throw new RangeError('scaleNutrients: amountG must be a number, got NaN');
+  }
+  if (amountG < 0) {
+    throw new RangeError(`scaleNutrients: amountG must not be negative, got ${amountG}`);
+  }
 
   return Object.fromEntries(NUTRIENT_KEYS.map((key) => {
     if (!Object.hasOwn(per100g, key) || per100g[key] === null) return [key, null];
+    if (typeof per100g[key] !== 'number' || Number.isNaN(per100g[key])) {
+      throw new TypeError(
+        `scaleNutrients: per100g.${key} must be a number or null, got ${formatValue(per100g[key])}`,
+      );
+    }
     return [key, roundToOneDecimal(per100g[key] * amountG / 100)];
   }));
 }
 
 export function kjToKcal(kj) {
   if (kj === null) return null;
-  if (kj < 0 || Number.isNaN(kj)) throw new RangeError();
+  if (typeof kj !== 'number') {
+    throw new TypeError(`kjToKcal: kj must be a number or null, got ${formatValue(kj)}`);
+  }
+  if (Number.isNaN(kj)) {
+    throw new RangeError('kjToKcal: kj must be a number, got NaN');
+  }
+  if (kj < 0) throw new RangeError(`kjToKcal: kj must not be negative, got ${kj}`);
   return roundToOneDecimal(kj / 4.184);
 }
 

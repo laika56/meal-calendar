@@ -46,8 +46,9 @@ standalone / safe-area / 100dvh / `BarcodeDetector` 부재 / secure context / SW
 
 | 대상 | 잡은 쪽 | 상태 |
 |---|---|---|
-| `src/lib/metabolism.js`, `src/lib/units.js` + 테스트 | **Codex** | 구현 완료 · Claude 리뷰 대기 → `docs/orders/01-calc-engine.md` |
+| `src/lib/metabolism.js`, `src/lib/units.js` + 테스트 | **Codex** | 구현 완료 · Claude 리뷰 대기 → `docs/orders/03-error-messages.md` B-2 정정 반영 |
 | `public/` (검증 페이지) | Claude | 완료 |
+| `../coin-bot/{AGENTS,CLAUDE}.md`, `../stock/{AGENTS,CLAUDE}.md`, `../scripts/check-doc-split.sh` | **Codex** | 완료 · 검증 통과, Claude 리뷰 대기 |
 
 ## Codex 발주 대기열
 
