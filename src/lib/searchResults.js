@@ -66,21 +66,21 @@ export function rankSearchResults(items, query) {
     throw new TypeError('rankSearchResults: query must be a string');
   }
 
+  for (const item of items) {
+    if (typeof item !== 'object' || item === null || typeof item.name !== 'string') {
+      throw new TypeError('rankSearchResults: every item must have a string name');
+    }
+  }
+
   const normalizedQuery = normalizeText(query);
   if (normalizedQuery === '') return [...items];
 
   const tokens = normalizedQuery.split(' ');
-  const ranked = items.map((item, index) => {
-    if (typeof item !== 'object' || item === null || typeof item.name !== 'string') {
-      throw new TypeError('rankSearchResults: every item must have a string name');
-    }
-
-    return {
-      item,
-      index,
-      score: relevanceScore(item, normalizedQuery, tokens),
-    };
-  });
+  const ranked = items.map((item, index) => ({
+    item,
+    index,
+    score: relevanceScore(item, normalizedQuery, tokens),
+  }));
 
   // 점수가 같으면 입력 인덱스로 비교해 API가 준 원래 순서를 고정한다.
   ranked.sort((a, b) => b.score - a.score || a.index - b.index);
