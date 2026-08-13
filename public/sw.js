@@ -33,6 +33,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
+  // 외부 출처(gstatic 의 Firebase SDK, Firestore 통신)는 건드리지 않는다.
+  // opaque 응답을 캐시에 넣으면 용량만 먹고 판정도 못 하며, Firestore 는
+  // 자체 오프라인 퍼시스턴스가 있어서 SW 가 끼어들 이유가 없다.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {

@@ -6,6 +6,14 @@
 
 ## 지금 상태
 
+**Phase 3 완료 — 앱이 실제로 기록된다 (2026-08-13).**
+익명 로그인 → 목표 저장 → 날짜 탭 → 슬롯별 `+ 추가` → 수동 입력 → Firestore 저장 →
+새로고침해도 남아 있음. 보안 규칙 배포·실측 완료 (`docs/ARCHITECTURE.md` 「보안 규칙」).
+
+**남은 구멍:** 익명 계정 복구 경로가 없다 — **앱을 지우면 기록이 사라진다.** Phase 5 전에 붙여야 한다.
+
+---
+
 **Phase 1(셸+캘린더) + Phase 2(계산엔진 연결) 완료 (2026-08-13).**
 `https://calorie-43692.web.app` — 실기기(아이폰) 확인 완료. 데스크톱 반응형 레이아웃도 추가함
 (유저 요청 — 원래 iOS PWA 전제였지만 데스크톱 브라우저에서도 쓰게 됨, `#app`/`.sheet-inner`가
@@ -47,15 +55,26 @@ localStorage 저장(`meal-calendar:profile-v1`) → 캘린더 목표칼로리가
 > 바뀌기 *전에* 캐싱해둔 응답을 규정과 무관하게 들고 있는 경우다. `cmd+shift+r`(하드 리로드)로
 > 해결됨. **실사용자는 안 겪는다** — 첫 방문은 항상 새 캐시라서. 이 세션 반복배포 특유의 함정이다.
 
-**그 다음 (Phase 3 — Firebase + 수동 입력, 여기서 앱이 실제로 산다):**
-1. Firestore 스키마 실제 적용 + 오프라인 퍼시스턴스 (Opus/중간)
-2. **보안 규칙** — `ARCHITECTURE.md`에 초안 있음, 배포 전 필수 (Opus/높음)
-3. 익명 인증 연결 (지금 profile은 localStorage — Firestore `users/{uid}/profile`, `goals/{effectiveFrom}`로 옮김)
-4. 수동 입력 폼 + 슬롯 4개 연결 (지금 일간상세는 뼈대만, 항목 추가 기능 없음)
-5. `totals` 비정규화 갱신 + 누락 방지 테스트
+**Phase 3에서 한 것 (전부 완료·실측):**
+1. ~~Firestore 스키마 + 오프라인 퍼시스턴스~~ — `public/db.js`. `persistentLocalCache`를
+   `initializeFirestore` 시점에 넘긴다 (구버전 `enableIndexedDbPersistence()`는 deprecated이고
+   `getFirestore()` 뒤엔 이미 시작된 인스턴스라 실패한다)
+2. ~~보안 규칙~~ — `firestore.rules` 배포·실측 완료
+3. ~~익명 인증~~ — localStorage 프로필은 **1회 자동 이관** 후 삭제 (`migrateLegacyProfile`)
+4. ~~수동 입력 폼 + 슬롯 4개~~ — 슬롯별 `+ 추가`, 항목별 `×` 삭제
+5. ~~`totals` 갱신~~ — `calcDayTotals`(발주06)로 매 저장마다 재계산. 화면 먼저 갱신하고
+   저장은 뒤따르며, **실패하면 "저장 실패" 문구를 띄운다** (절대규칙 6 — 조용히 삼키지 않는다)
 
-Phase 3의 보안규칙·구조 결정 부분은 로드맵 기준 Opus 권장 — 시작 전에 모델 다시 확인할 것.
+**그 다음 (Phase 4 — 입력 속도. 로드맵 기준 "실제 제품은 여기다"):**
+1. **최근 항목** — 최근 먹은 것 상위 N개 1탭 (Sonnet/중간)
+2. **프리셋** — 고정 식품 1-Click 등록·호출 (Sonnet/중간)
+3. **어제 복사** — 하루치 통째로 (Sonnet/낮음)
+4. 수동 입력 비율 카운터 (Sonnet/낮음) — `DECISIONS.md` 2번의 "되돌리는 조건"을 재는 장치다
 
+Phase 4는 UI 위주라 **Sonnet으로 충분하다.** Codex 넘길 순수 로직은 "최근 항목 집계"(빈도·최근성
+정렬) 정도 — 프리셋 데이터 모양이 정해진 뒤에 발주한다.
+
+**나중 (Phase 5 전 필수):** 익명 계정 복구 경로(`linkWithCredential`) — 지금은 앱 지우면 데이터 증발
 **나중 (Phase 8):** 카메라 권한 재요청 UX 반영 (위 참조)
 
 ## 작업 분담 현황
@@ -66,8 +85,9 @@ Phase 3의 보안규칙·구조 결정 부분은 로드맵 기준 Opus 권장 �
 |---|---|---|
 | `src/lib/metabolism.js`, `src/lib/units.js` + 테스트 | **Codex** | **완료·커밋** (`meal-calendar` `0a1cf7c`) → `orders/01`, `orders/03` |
 | `src/lib/mfdsParser.js`, `tests/mfdsParser.test.js` | **Codex** | **완료·커밋** (`07cff69`) → `orders/04` |
-| `src/lib/calendarGrid.js`, `tests/calendarGrid.test.js` | **Codex** | **완료·리뷰통과·미커밋** — `npm test` 55/55 → `orders/05` |
-| `public/index.html`, `app.js`, `sw.js`, `firebase.json` (캘린더 셸, 더미데이터) | Claude | **완료·배포·브라우저검증 통과·미커밋** — SW스코프/캐싱 버그 3개 발견·수정 |
+| `src/lib/calendarGrid.js`, `tests/calendarGrid.test.js` | **Codex** | **완료·커밋** (`e84a8b4`) → `orders/05` |
+| `src/lib/dayTotals.js`, `tests/dayTotals.test.js` | **Codex** | **완료·리뷰통과** — 77/77, 구현 깨뜨려 테스트 진위 확인함 → `orders/06` |
+| `public/index.html`, `app.js`, `sw.js`, `db.js`, `firebase.json`, `firestore.rules` | Claude | **완료·배포·실측검증 통과** |
 | `../coin-bot/{AGENTS,CLAUDE}.md`, `../scripts/check-doc-split.sh` | **Codex** | **완료·커밋** (`coin-bot` `da1d4e2`, root `c260784`) |
 | `../stock/{AGENTS,CLAUDE}.md` | **Codex** | **완료·커밋** (`stock` `b65892c`) |
 
@@ -79,8 +99,10 @@ Phase 3의 보안규칙·구조 결정 부분은 로드맵 기준 Opus 권장 �
 | 2 | 단위 환산 + 테스트 | ☑ `orders/01` | ☑ | ☑ | ☑ |
 | 3 | 계산 엔진 에러 메시지 보강 (발주01 리뷰 구멍 5건) | ☑ `orders/03` | ☑ | ☑ | ☑ |
 | 4 | 식약처 응답 파서 | ☑ `orders/04` (실응답+공식필드매핑 확보) | ☑ | ☑ | ☑ |
-| 5 | 월 캘린더 그리드 날짜계산 + 상태판정 | ☑ `orders/05` | ☑ | ☑ | ☐ |
-| 6 | 룰렛 solver | ☐ (Phase4 프리셋 설계 선행 필요) | ☐ | ☐ | ☐ |
+| 5 | 월 캘린더 그리드 날짜계산 + 상태판정 | ☑ `orders/05` | ☑ | ☑ | ☑ |
+| 6 | 일간 합계 집계 | ☑ `orders/06` | ☑ | ☑ | ☐ |
+| 7 | 최근 항목 집계 (빈도·최근성 정렬) | ☐ (프리셋 데이터 모양 선행) | ☐ | ☐ | ☐ |
+| 8 | 룰렛 solver | ☐ (Phase4 프리셋 설계 선행 필요) | ☐ | ☐ | ☐ |
 
 > 문서 중복 제거(`orders/02`, coin-bot·stock)는 이 프로젝트 대기열이 아니라 워크스페이스 루트 `AGENTS.md` 작업이었다 — 완료·커밋됨.
 

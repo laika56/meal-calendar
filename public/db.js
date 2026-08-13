@@ -1,0 +1,154 @@
+// Firestore 연동 계층. 화면 코드(app.js)는 이 파일만 알고, Firebase SDK 를 직접 부르지 않는다.
+//
+// - 데이터 모델은 docs/ARCHITECTURE.md 「데이터 모델」을 따른다
+// - 보안은 firestore.rules 가 담당한다. 여기서 uid 를 확인하는 건 경로를 만들기 위해서지
+//   방어가 아니다 — 방어선은 서버 쪽 규칙 하나뿐이다
+// - 오프라인 퍼시스턴스를 켠다. 지하철·헬스장에서 입력한다 (AGENTS.md 절대규칙 6)
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js';
+import {
+  getAuth, signInAnonymously, onAuthStateChanged,
+} from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js';
+import {
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp,
+} from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js';
+
+import { firebaseConfig } from '/src/firebaseConfig.js';
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+// persistentLocalCache 를 initializeFirestore 시점에 넘긴다.
+// 구버전의 enableIndexedDbPersistence() 는 deprecated 이고, getFirestore() 뒤에 켜면
+// 이미 시작된 인스턴스라 실패한다.
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
+
+/** 익명 로그인. 이미 로그인돼 있으면 그 사용자를 그대로 쓴다. */
+export function signIn() {
+  return new Promise((resolve, reject) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        unsubscribe();
+        resolve(user.uid);
+        return;
+      }
+      signInAnonymously(auth).catch((err) => {
+        unsubscribe();
+        reject(err);
+      });
+    }, (err) => {
+      unsubscribe();
+      reject(err);
+    });
+  });
+}
+
+function requireUid() {
+  const { currentUser } = auth;
+  if (!currentUser) {
+    throw new Error('db: 로그인 전에는 읽고 쓸 수 없다. signIn() 을 먼저 부른다');
+  }
+  return currentUser.uid;
+}
+
+// ── 프로필 ────────────────────────────────────────────────────────────
+// users/{uid} 문서의 profile 필드. 온보딩 입력값 원본이다 (계산 결과 아님).
+
+export async function loadProfile() {
+  const snapshot = await getDoc(doc(db, 'users', requireUid()));
+  return snapshot.exists() ? (snapshot.data().profile ?? null) : null;
+}
+
+export async function saveProfile(profile) {
+  await setDoc(
+    doc(db, 'users', requireUid()),
+    { profile: { ...profile, updatedAt: serverTimestamp() } },
+    { merge: true },
+  );
+}
+
+// ── 목표 ──────────────────────────────────────────────────────────────
+// users/{uid}/goals/{effectiveFrom} — 목표는 바뀌므로 덮어쓰지 않고 이력으로 쌓는다.
+// effectiveFrom 은 YYYY-MM-DD 로컬 날짜다 (절대규칙 5).
+
+export async function saveGoal(effectiveFrom, goal) {
+  await setDoc(doc(db, 'users', requireUid(), 'goals', effectiveFrom), {
+    ...goal,
+    effectiveFrom,
+    createdAt: serverTimestamp(),
+  });
+}
+
+/**
+ * 주어진 날짜에 유효한 목표를 찾는다 — effectiveFrom 이 그 날짜 이하인 것 중 가장 최근.
+ * 없으면 null. 문서 ID 가 곧 날짜라 ID 로 정렬·비교한다.
+ */
+export async function loadGoalFor(dateStr) {
+  const goalsRef = collection(db, 'users', requireUid(), 'goals');
+  const snapshot = await getDocs(query(goalsRef, where('effectiveFrom', '<=', dateStr)));
+  if (snapshot.empty) return null;
+
+  let latest = null;
+  snapshot.forEach((entry) => {
+    const data = entry.data();
+    if (!latest || data.effectiveFrom > latest.effectiveFrom) latest = data;
+  });
+  return latest;
+}
+
+/** 목표 전체를 최신순으로. 아직 쓰는 화면은 없지만 추이·이력에서 쓴다. */
+export async function loadAllGoals() {
+  const snapshot = await getDocs(collection(db, 'users', requireUid(), 'goals'));
+  return snapshot.docs
+    .map((entry) => entry.data())
+    .sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? 1 : -1));
+}
+
+// ── 하루 기록 ─────────────────────────────────────────────────────────
+// users/{uid}/days/{YYYY-MM-DD}
+
+const EMPTY_SLOTS = { breakfast: [], lunch: [], dinner: [], snack: [] };
+
+export async function loadDay(dateStr) {
+  const snapshot = await getDoc(doc(db, 'users', requireUid(), 'days', dateStr));
+  if (!snapshot.exists()) return null;
+
+  const data = snapshot.data();
+  return { ...data, slots: { ...EMPTY_SLOTS, ...(data.slots ?? {}) } };
+}
+
+/**
+ * 한 달치를 한 번에. 캘린더가 30~31칸을 그리므로 날마다 요청하지 않는다.
+ * 문서 ID 가 YYYY-MM-DD 라 문자열 범위 비교가 곧 날짜 범위 비교다.
+ */
+export async function loadMonth(year, month) {
+  const prefix = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
+  const daysRef = collection(db, 'users', requireUid(), 'days');
+  const snapshot = await getDocs(query(
+    daysRef,
+    where('date', '>=', `${prefix}-01`),
+    where('date', '<=', `${prefix}-31`),
+  ));
+
+  const byDate = new Map();
+  snapshot.forEach((entry) => byDate.set(entry.id, entry.data()));
+  return byDate;
+}
+
+/**
+ * 하루 문서를 통째로 쓴다. totals 는 호출부가 계산해서 넘긴다 —
+ * 여기서 계산하면 순수 로직(dayTotals.js)이 네트워크 계층에 섞인다.
+ */
+export async function saveDay(dateStr, { slots, totals, weightKg }) {
+  const payload = {
+    date: dateStr, // 쿼리용. 문서 ID 와 같은 값이지만 where 절에 쓰려면 필드로도 있어야 한다
+    slots,
+    totals,
+    updatedAt: serverTimestamp(),
+  };
+  if (weightKg !== undefined) payload.weightKg = weightKg;
+
+  await setDoc(doc(db, 'users', requireUid(), 'days', dateStr), payload, { merge: true });
+}

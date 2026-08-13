@@ -130,8 +130,38 @@
     border: 1px solid var(--line); border-radius: 12px; padding: 12px;
     background: var(--card);
   }
-  .slot h3 { font-size: 14px; margin: 0 0 6px; }
+  .slot-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .slot h3 { font-size: 14px; margin: 0; }
+  .slot-add {
+    -webkit-appearance: none; appearance: none; border: 1px solid var(--line);
+    background: var(--bg); color: var(--fg); font: inherit; font-size: 13px;
+    min-height: 32px; padding: 0 12px; border-radius: 8px;
+  }
   .slot-items { color: var(--muted); font-size: 13px; }
+  .entry-line {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    padding: 6px 0; border-top: 1px solid var(--line); color: var(--fg);
+  }
+  .entry-line:first-child { border-top: 0; }
+  .entry-name { font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .entry-kcal { font-size: 13px; font-weight: 600; flex: 0 0 auto; }
+  .entry-del {
+    -webkit-appearance: none; appearance: none; border: 0; background: none;
+    color: var(--muted); font: inherit; font-size: 16px; padding: 0 2px; flex: 0 0 auto;
+  }
+  .macro-row {
+    display: flex; gap: 12px; margin-top: 8px;
+    color: var(--muted); font-size: 12px;
+  }
+  .save-state {
+    margin-top: 14px; font-size: 12px; color: var(--muted);
+    text-align: center;
+  }
+  .save-state.pending { color: var(--under); }
+  .save-state.failed { color: var(--over); font-weight: 600; }
 
   /* 목표 설정 폼 */
   .profile-form { display: flex; flex-direction: column; gap: 14px; }
@@ -224,13 +254,46 @@
     <div class="totals">
       <div class="total-row"><span>칼로리</span><b id="totalKcal">0 / 0 kcal</b></div>
       <div class="bar"><div class="bar-fill" id="kcalBar"></div></div>
+      <div class="macro-row" id="macroRow"></div>
     </div>
-    <div class="slots">
-      <section class="slot"><h3>아침</h3><div class="slot-items">— 아직 기록 없음</div></section>
-      <section class="slot"><h3>점심</h3><div class="slot-items">— 아직 기록 없음</div></section>
-      <section class="slot"><h3>저녁</h3><div class="slot-items">— 아직 기록 없음</div></section>
-      <section class="slot"><h3>간식</h3><div class="slot-items">— 아직 기록 없음</div></section>
+    <div class="slots" id="slots"></div>
+    <div id="saveState" class="save-state" hidden></div>
+  </div>
+</div>
+
+<div id="entryForm" class="sheet" hidden>
+  <div class="sheet-inner">
+    <div class="sheet-header">
+      <button id="closeEntry" aria-label="돌아가기">‹ 뒤로</button>
+      <h2 id="entryTitle">항목 추가</h2>
     </div>
+    <form id="manualEntryForm" class="profile-form">
+      <label>이름
+        <input name="name" type="text" required placeholder="직접 입력">
+      </label>
+      <label>양 (g)
+        <input name="amountG" type="number" inputmode="decimal" min="0" step="0.1" required>
+      </label>
+      <p class="calc-note">
+        아래 4개는 <b>먹은 양 전체</b>의 값이다 (100g 기준 아님).
+        모르는 값은 비워두지 말고 포장지·조회 결과에서 확인해 넣는다 —
+        추정치로 채우면 기록이 거짓이 된다.
+      </p>
+      <label>칼로리 (kcal)
+        <input name="kcal" type="number" inputmode="decimal" min="0" step="0.1" required>
+      </label>
+      <label>탄수화물 (g)
+        <input name="carbG" type="number" inputmode="decimal" min="0" step="0.1" required>
+      </label>
+      <label>단백질 (g)
+        <input name="proteinG" type="number" inputmode="decimal" min="0" step="0.1" required>
+      </label>
+      <label>지방 (g)
+        <input name="fatG" type="number" inputmode="decimal" min="0" step="0.1" required>
+      </label>
+      <div id="entryError" class="form-error" hidden></div>
+      <button type="submit">추가</button>
+    </form>
   </div>
 </div>
 
