@@ -1,7 +1,10 @@
 import { buildMonthGrid, dayStatus } from '/src/lib/calendarGrid.js';
+import { buildGoalProfile, ImpossibleTargetError } from '/src/lib/metabolism.js';
 
-// Phase 1 — 더미 데이터. Firestore 연동은 Phase 3.
+// Phase 1 더미 데이터는 그대로 두되, 목표 칼로리는 Phase 2부터 실제 계산값을 쓴다.
+// Firestore 연동 전이라 프로필은 localStorage에 둔다 — Phase 3에서 Firestore로 옮긴다.
 const DUMMY_TARGET_KCAL = 2000;
+const PROFILE_STORAGE_KEY = 'meal-calendar:profile-v1';
 
 function todayLocalDate() {
   const now = new Date();
@@ -9,6 +12,26 @@ function todayLocalDate() {
   const m = String(now.getMonth() + 1).padStart(2, '0');
   const d = String(now.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+function loadProfile() {
+  try {
+    const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.result?.kcal !== 'number') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveProfile(input, result) {
+  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify({ input, result }));
+}
+
+function targetKcal() {
+  return loadProfile()?.result.kcal ?? DUMMY_TARGET_KCAL;
 }
 
 // 날짜 문자열을 시드로 쓰는 결정적 의사난수 — 매번 같은 더미 값이 나오게 한다.
@@ -27,14 +50,14 @@ function seededRatio(dateStr) {
   return (hash % 1000) / 1000; // 0.000 ~ 0.999
 }
 
-function dummyDayRecord(dateStr, today) {
+function dummyDayRecord(dateStr, today, target) {
   // 오늘 이후 날짜는 기록이 없다고 가정 (더미 데이터의 "현재 시점" 흉내)
   if (dateStr > today) return { hasRecord: false, kcal: 0 };
   // 7일에 한 번은 미기록으로 섞는다 — '없음' 상태도 그리드에서 보이게
   if (seededRatio(dateStr + 'skip') < 1 / 7) return { hasRecord: false, kcal: 0 };
 
   const ratio = 0.6 + seededRatio(dateStr) * 0.7; // 0.6 ~ 1.3 사이로 흩뿌린다
-  return { hasRecord: true, kcal: Math.round(DUMMY_TARGET_KCAL * ratio) };
+  return { hasRecord: true, kcal: Math.round(target * ratio) };
 }
 
 const STATUS_LABEL = {
@@ -43,8 +66,6 @@ const STATUS_LABEL = {
   over: { symbol: '△', text: '초과' },
   none: { symbol: '·', text: '미기록' },
 };
-
-const WEEKDAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 
 const state = {
   year: Number(todayLocalDate().slice(0, 4)),
@@ -60,16 +81,17 @@ const kcalBarEl = document.getElementById('kcalBar');
 
 function renderMonth() {
   const today = todayLocalDate();
+  const target = targetKcal();
   monthLabelEl.textContent = `${state.year}년 ${state.month}월`;
 
   const cells = buildMonthGrid({ year: state.year, month: state.month, weekStartsOn: 0 });
   gridEl.innerHTML = '';
 
   for (const cell of cells) {
-    const record = dummyDayRecord(cell.date, today);
+    const record = dummyDayRecord(cell.date, today, target);
     const status = dayStatus({
       kcal: record.kcal,
-      targetKcal: DUMMY_TARGET_KCAL,
+      targetKcal: target,
       hasRecord: record.hasRecord,
     });
     const label = STATUS_LABEL[status];
@@ -84,15 +106,15 @@ function renderMonth() {
       <span class="day-kcal">${record.hasRecord ? record.kcal : ''}</span>
       <span class="day-badge">${label.symbol} ${label.text}</span>
     `;
-    el.addEventListener('click', () => openDayDetail(cell.date, record));
+    el.addEventListener('click', () => openDayDetail(cell.date, record, target));
     gridEl.appendChild(el);
   }
 }
 
-function openDayDetail(dateStr, record) {
+function openDayDetail(dateStr, record, target) {
   detailDateEl.textContent = dateStr;
-  totalKcalEl.textContent = `${record.hasRecord ? record.kcal : 0} / ${DUMMY_TARGET_KCAL} kcal`;
-  const pct = Math.min(100, Math.round(((record.hasRecord ? record.kcal : 0) / DUMMY_TARGET_KCAL) * 100));
+  totalKcalEl.textContent = `${record.hasRecord ? record.kcal : 0} / ${target} kcal`;
+  const pct = Math.min(100, Math.round(((record.hasRecord ? record.kcal : 0) / target) * 100));
   kcalBarEl.style.width = `${pct}%`;
   detailEl.hidden = false;
 }
@@ -110,6 +132,83 @@ document.getElementById('prevMonth').addEventListener('click', () => {
 document.getElementById('nextMonth').addEventListener('click', () => {
   state.month += 1;
   if (state.month > 12) { state.month = 1; state.year += 1; }
+  renderMonth();
+});
+
+// 목표 설정
+const settingsEl = document.getElementById('settings');
+const profileFormEl = document.getElementById('profileForm');
+const formErrorEl = document.getElementById('formError');
+const formResultEl = document.getElementById('formResult');
+
+function fillFormFromProfile() {
+  const saved = loadProfile();
+  if (!saved) return;
+  const { input } = saved;
+  profileFormEl.sex.value = input.sex;
+  profileFormEl.heightCm.value = input.heightCm;
+  profileFormEl.weightKg.value = input.weightKg;
+  profileFormEl.birthYear.value = input.birthYear;
+  profileFormEl.weeklyWorkouts.value = String(input.weeklyWorkouts);
+  profileFormEl.goal.value = input.goal;
+  showResult(saved.result);
+}
+
+function showResult(result) {
+  formResultEl.hidden = false;
+  formResultEl.innerHTML = `
+    BMR <b>${result.bmr}</b> kcal · TDEE <b>${result.tdee}</b> kcal<br>
+    목표 <b>${result.kcal}</b> kcal
+    (탄 ${result.carbG}g · 단 ${result.proteinG}g · 지 ${result.fatG}g)
+  `;
+}
+
+document.getElementById('openSettings').addEventListener('click', () => {
+  formErrorEl.hidden = true;
+  fillFormFromProfile();
+  settingsEl.hidden = false;
+});
+
+document.getElementById('closeSettings').addEventListener('click', () => {
+  settingsEl.hidden = true;
+});
+
+profileFormEl.addEventListener('submit', (event) => {
+  event.preventDefault();
+  formErrorEl.hidden = true;
+
+  const data = new FormData(profileFormEl);
+  const input = {
+    sex: data.get('sex'),
+    heightCm: Number(data.get('heightCm')),
+    weightKg: Number(data.get('weightKg')),
+    birthYear: Number(data.get('birthYear')),
+    weeklyWorkouts: Number(data.get('weeklyWorkouts')),
+    goal: data.get('goal'),
+  };
+  const age = new Date().getFullYear() - input.birthYear;
+
+  let result;
+  try {
+    result = buildGoalProfile({
+      sex: input.sex,
+      heightCm: input.heightCm,
+      weightKg: input.weightKg,
+      age,
+      weeklyWorkouts: input.weeklyWorkouts,
+      goal: input.goal,
+    });
+  } catch (err) {
+    formErrorEl.hidden = false;
+    formErrorEl.textContent = err instanceof ImpossibleTargetError
+      ? '이 조합으로는 목표를 계산할 수 없다 (탄수화물이 음수가 됨). 목적이나 체중을 다시 확인해라.'
+      : err.message;
+    formResultEl.hidden = true;
+    return;
+  }
+
+  saveProfile(input, result);
+  showResult(result);
   renderMonth();
 });
 

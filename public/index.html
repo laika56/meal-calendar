@@ -53,6 +53,8 @@
     color: var(--fg); width: 40px; height: 40px; border-radius: 10px;
     font-size: 20px; line-height: 1;
   }
+  #openSettings { font-size: 17px; }
+  .header-right { display: flex; gap: 8px; }
   h1 { font-size: 19px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 
   #weekdays {
@@ -131,6 +133,33 @@
   .slot h3 { font-size: 14px; margin: 0 0 6px; }
   .slot-items { color: var(--muted); font-size: 13px; }
 
+  /* 목표 설정 폼 */
+  .profile-form { display: flex; flex-direction: column; gap: 14px; }
+  .profile-form label {
+    display: flex; flex-direction: column; gap: 6px;
+    font-size: 13px; font-weight: 600; color: var(--muted);
+  }
+  .profile-form input, .profile-form select {
+    -webkit-appearance: none; appearance: none;
+    font: inherit; font-size: 16px; color: var(--fg); background: var(--card);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  }
+  .calc-note { color: var(--muted); font-size: 12px; margin: 0; line-height: 1.5; }
+  .form-error {
+    color: var(--over); background: var(--over-bg); border: 1px solid var(--over);
+    border-radius: 10px; padding: 10px 12px; font-size: 13px;
+  }
+  .form-result {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; font-size: 13px; line-height: 1.7;
+  }
+  .form-result b { font-size: 15px; }
+  .profile-form button[type="submit"] {
+    -webkit-appearance: none; appearance: none; border: 0;
+    min-height: 48px; font: inherit; font-weight: 600; font-size: 16px;
+    color: var(--bg); background: var(--fg); border-radius: 12px;
+  }
+
   /* 모바일 기본: 래퍼가 레이아웃에 안 끼어든다 */
   #app { display: contents; }
   .sheet-inner { display: contents; }
@@ -173,7 +202,10 @@
 <header>
   <button id="prevMonth" aria-label="이전 달">‹</button>
   <h1 id="monthLabel"></h1>
-  <button id="nextMonth" aria-label="다음 달">›</button>
+  <div class="header-right">
+    <button id="openSettings" aria-label="목표 설정">⚙</button>
+    <button id="nextMonth" aria-label="다음 달">›</button>
+  </div>
 </header>
 
 <div id="weekdays">
@@ -199,6 +231,57 @@
       <section class="slot"><h3>저녁</h3><div class="slot-items">— 아직 기록 없음</div></section>
       <section class="slot"><h3>간식</h3><div class="slot-items">— 아직 기록 없음</div></section>
     </div>
+  </div>
+</div>
+
+<div id="settings" class="sheet" hidden>
+  <div class="sheet-inner">
+    <div class="sheet-header">
+      <button id="closeSettings" aria-label="캘린더로 돌아가기">‹ 캘린더</button>
+      <h2>목표 설정</h2>
+    </div>
+    <form id="profileForm" class="profile-form">
+      <label>성별
+        <select name="sex" required>
+          <option value="male">남성</option>
+          <option value="female">여성</option>
+        </select>
+      </label>
+      <label>키 (cm)
+        <input name="heightCm" type="number" inputmode="decimal" min="100" max="250" step="0.1" required>
+      </label>
+      <label>체중 (kg)
+        <input name="weightKg" type="number" inputmode="decimal" min="20" max="300" step="0.1" required>
+      </label>
+      <label>태어난 연도
+        <input name="birthYear" type="number" inputmode="numeric" min="1906" max="2016" step="1" required>
+      </label>
+      <label>주간 운동 횟수
+        <select name="weeklyWorkouts" required>
+          <option value="0">0회</option>
+          <option value="1">1회</option>
+          <option value="2">2회</option>
+          <option value="3">3회</option>
+          <option value="4">4회</option>
+          <option value="5">5회</option>
+          <option value="6">6회</option>
+          <option value="7">7회</option>
+        </select>
+      </label>
+      <label>목적
+        <select name="goal" required>
+          <option value="diet">다이어트 (TDEE − 15%)</option>
+          <option value="leanbulk">린매스업 (TDEE + 5%)</option>
+          <option value="bulk">벌크업 (TDEE + 15%)</option>
+        </select>
+      </label>
+
+      <p class="calc-note">공식(Mifflin-St Jeor)의 추정치다. 의학적 권고가 아니다 — 결과가 이상하면 직접 조정해도 된다.</p>
+      <div id="formError" class="form-error" hidden></div>
+      <div id="formResult" class="form-result" hidden></div>
+
+      <button type="submit">계산하고 저장</button>
+    </form>
   </div>
 </div>
 

@@ -9,6 +9,7 @@ const SHELL_FILES = [
   '/public/icon-192.png',
   '/public/icon-512.png',
   '/src/lib/calendarGrid.js',
+  '/src/lib/metabolism.js',
 ];
 
 self.addEventListener('install', (event) => {
