@@ -161,6 +161,7 @@ Blaze는 카드 등록 필요(개인 사용량은 사실상 무료) — 과금 �
 | `src/lib/mfdsParser.js` 기준단위·쉼표·1회분 의미 교정 + 테스트 | **Codex** | **완료·Claude 검수대기** — 144/144 → `orders/10`. `100mL` 기준·엄격한 천단위 쉼표·총량/1회분 분리·`resolveServing` 반영 |
 | `src/lib/mfdsParser.js` 자유 텍스트 수량 보존 + 테스트 | **Codex** | **완료·Claude 검수대기** — 145/145 → `orders/11`. 파싱 불가 문자열은 원문 note로 보존, 비문자열만 `TypeError` |
 | `src/lib/mfdsParser.js` 식품군 기준 1회분 판정 + 테스트 | **Codex** | **구현·단위검증 완료, 실데이터 검증 막힘** — 151/151. `verify-mfds.mjs`는 실행 환경 네트워크 차단으로 `fetch failed` → `orders/12` |
+| `src/lib/searchResults.js`, `tests/searchResults.test.js` | **Codex** | **작업 중** — 다중 질의 결과 병합·중복제거·순위 → `orders/13` |
 | `public/index.html`, `app.js`, `sw.js`, `db.js`, `firebase.json`, `firestore.rules` | Claude | **완료·배포·실측검증 통과** |
 | `functions/index.js`, `functions/shared/mfdsParser.js` (searchFoods) | Claude | **완료·배포·실측검증 통과** — Blaze 업그레이드 후 |
 | `../coin-bot/{AGENTS,CLAUDE}.md`, `../scripts/check-doc-split.sh` | **Codex** | **완료·커밋** (`coin-bot` `da1d4e2`, root `c260784`) |
