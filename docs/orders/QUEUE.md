@@ -17,7 +17,10 @@
 
 | | 발주서 | 내용 | 의존 |
 |---|---|---|---|
-| ☐ | `12-serving-by-foodgroup.md` | 1회분 판정을 `isFranchise` 대신 **`DB_GRP_NM`** 기준으로 교정 | 11 이후 |
+| ☐ | `13-search-results-merge.md` | 다중 질의 결과 병합·중복제거·순위 (`searchResults.js` 신규) | 09 이후 (이미 됨) |
+
+> **대기열이 1건이다.** `../AGENTS.md` 「할당량」 규칙은 2건 이상을 요구한다.
+> Claude 가 다음에 살아나면 **명세부터 하나 더 쓴다.**
 
 ## 완료
 
@@ -26,6 +29,11 @@
 | ☑ | `09-brand-and-serving-weight.md` | `searchPlan.js` 신규 + 파서 필드 3개. 127/127 |
 | ☑ | `10-serving-basis-fix.md` | `100mL` 기준·천단위 쉼표·총중량 의미 교정. 144/144 |
 | ☑ | `11-serving-freetext.md` | 수량 자유텍스트를 `null`+note 로. 145/145, **실데이터 725/725** |
+| ☑ | `12-serving-by-foodgroup.md` | 1회분 판정을 `DB_GRP_CM` 기준으로. 151/151, **판정불가 157→46건** |
+
+> **발주 12 는 한 번 헛돌았다.** Codex 가 "이 설계대로 실행해도 될까요?" 로 끝내고
+> `exit 0` 했는데 파일이 하나도 안 바뀌었다. `npm test` 도 통과했다 — 코드가 안 바뀌었으니 당연하다.
+> 지금은 `codex-order.sh` 가 실행 전후 `git status` 를 비교해 **변경이 없으면 exit 65** 로 잡는다.
 
 ---
 
