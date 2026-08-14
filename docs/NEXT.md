@@ -6,6 +6,16 @@
 
 ## 지금 상태
 
+**룰렛 후보를 검색 캐시 전체로 넓힘, 실측 확인 (2026-08-14).** 발주23·25로 만든
+`buildCachedFoodCandidates`·`capCandidatePoolSize`를 `app.js`/`db.js`에 배선함
+— `db.loadCachedFoods()`가 `foods/` 컬렉션(최근 200건)을 읽어 프리셋·최근항목과
+합친다. 배선 중 "김밥 undefinedg" 표시 버그를 발견해 고침(entries에 `amountG`
+누락 — Firestore 저장 시 undefined 거부 함정과 같은 종류). 로컬+실서버 양쪽
+브라우저로 직접 눌러서 정상 표시 확인, 배포 완료.
+
+**iOS 실기기 확인 — 사용자 실측 통과 (2026-08-14).** `docs/IOS-AUTH-CHECK.md`
+체크리스트 전 항목 확인함(구두 확인, 항목별 세부 기록은 없음).
+
 **Phase 5 완료 — 체중 + 추이 (2026-08-14). v1 완성.**
 일간 상세에 체중 입력 한 칸(입력 멎고 800ms + blur 시 저장), 캘린더 상단에 추세 요약.
 `weightTrend.js`(발주14)의 이동평균·주당변화(최소제곱 기울기)·방향 판정을 그대로 쓴다.
