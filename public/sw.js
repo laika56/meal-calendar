@@ -1,10 +1,14 @@
 // 앱 셸만 캐싱한다. 영양 데이터는 Firestore가 오프라인 퍼시스턴스로 알아서 한다.
 // ARCHITECTURE.md 「오프라인」 참조.
-const CACHE_NAME = 'meal-calendar-shell-v4';
+const CACHE_NAME = 'meal-calendar-shell-v5';
 
 // app.js / db.js 가 실제로 import 하는 것을 전부 적는다.
 // 하나라도 빠지면 오프라인에서 앱이 아예 안 뜬다 (절대규칙 6).
-// import 를 추가하면 여기도 추가한다 — 자동으로 따라오지 않는다.
+//
+// **이 목록은 tests/shellFiles.test.js 가 실제 import 와 대조한다.**
+// 2026-08-14 에 roulette·servingEstimate·weightTrend 가 몇 시간 동안 빠져 있었다 —
+// 온라인에선 멀쩡해 보여서 아무도 몰랐고, 새 배포가 사용자에게 안 닿는 원인이기도 했다.
+// 주석으로 「잊지 말자」고 적어두는 것으론 안 잡힌다. 그래서 테스트로 옮겼다.
 const SHELL_FILES = [
   '/',
   '/public/index.html',
@@ -19,9 +23,16 @@ const SHELL_FILES = [
   '/src/lib/calendarGrid.js',
   '/src/lib/dayTotals.js',
   '/src/lib/metabolism.js',
+  '/src/lib/mfdsParser.js',
   '/src/lib/quickFoodInput.js',
+  '/src/lib/roulette.js',
+  '/src/lib/servingEstimate.js',
   '/src/lib/units.js',
+  '/src/lib/weightTrend.js',
+  // 1인분 참고표. 필요할 때만 fetch 하지만 오프라인에서도 참고값이 떠야 한다
+  '/src/data/servingByCategory.json',
 ];
+
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
