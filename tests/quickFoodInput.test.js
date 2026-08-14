@@ -302,6 +302,62 @@ test('selectBestFood includes maker tokens while preserving name relevance and f
   assert.equal(selectBestFood('맥도날드 빅맥', noMatch), noMatch[0]);
 });
 
+test('selectBestFood chooses Big Mac over Double Big Mac regardless of candidate order', () => {
+  const bigMac = { name: '버거_빅맥 버거', maker: '맥도날드' };
+  const doubleBigMac = { name: '버거_더블빅맥 버거', maker: '맥도날드' };
+
+  assert.equal(selectBestFood('맥도날드 빅맥', [doubleBigMac, bigMac]), bigMac);
+  assert.equal(selectBestFood('맥도날드 빅맥', [bigMac, doubleBigMac]), bigMac);
+});
+
+test('selectBestFood chooses the less-qualified name for a Big Mac-only query', () => {
+  const doubleBigMac = { name: '버거_더블빅맥 버거', maker: '맥도날드' };
+  const bigMac = { name: '버거_빅맥 버거', maker: '맥도날드' };
+
+  assert.equal(selectBestFood('빅맥', [doubleBigMac, bigMac]), bigMac);
+});
+
+test('selectBestFood still chooses Double Big Mac for an explicit Double Big Mac query', () => {
+  const bigMac = { name: '버거_빅맥 버거', maker: '맥도날드' };
+  const doubleBigMac = { name: '버거_더블빅맥 버거', maker: '맥도날드' };
+
+  assert.equal(selectBestFood('더블빅맥', [bigMac, doubleBigMac]), doubleBigMac);
+});
+
+test('selectBestFood gives an exact food name priority over qualified names', () => {
+  const kimchiGimbap = { name: '김밥_김치', maker: null };
+  const gimbap = { name: '김밥', maker: null };
+  const tunaGimbap = { name: '김밥_참치', maker: null };
+
+  assert.equal(selectBestFood('김밥', [kimchiGimbap, gimbap, tunaGimbap]), gimbap);
+});
+
+test('selectBestFood preserves input order when equally qualified names remain tied', () => {
+  const kimchiGimbap = { name: '김밥_김치', maker: null };
+  const tunaGimbap = { name: '김밥_참치', maker: null };
+
+  assert.equal(selectBestFood('김밥', [kimchiGimbap, tunaGimbap]), kimchiGimbap);
+});
+
+test('selectBestFood uses shorter names when only the maker matches', () => {
+  const doubleBigMac = { name: '버거_더블빅맥 버거', maker: '맥도날드' };
+  const bigMac = { name: '버거_빅맥 버거', maker: '맥도날드' };
+
+  assert.equal(selectBestFood('맥도날드', [doubleBigMac, bigMac]), bigMac);
+});
+
+test('selectBestFood keeps its single-candidate, no-match, and empty-list fallbacks', () => {
+  const onlyFood = { name: '아무 음식', maker: null };
+  const noMatches = [
+    { name: '김밥', maker: null },
+    { name: '우유', maker: null },
+  ];
+
+  assert.equal(selectBestFood('무엇이든', [onlyFood]), onlyFood);
+  assert.equal(selectBestFood('빅맥', noMatches), noMatches[0]);
+  assert.equal(selectBestFood('빅맥', []), null);
+});
+
 test('selectBestFood validates its boundary inputs', () => {
   assert.throws(
     () => selectBestFood(null, []),

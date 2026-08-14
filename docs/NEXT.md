@@ -180,6 +180,7 @@ Blaze는 카드 등록 필요(개인 사용량은 사실상 무료) — 과금 �
 | `src/lib/quickFoodInput.js`, `tests/quickFoodInput.test.js` 다중 빠른 입력 분리 | **Codex** | **완료·Claude 검수대기** — 타깃 21/21, 전체 216/216. `verify-mfds.mjs`는 첫 질의 `김밥`에서 `fetch failed` (exit 2) → `orders/17` |
 | `src/lib/quickFoodInput.js`, `tests/quickFoodInput.test.js` `unsupported-serving` 수량·단위 보존 | **Codex** | **완료·Claude 검수대기** — 타깃 23/23, 전체 218/218, shared-sync 통과. `verify-mfds.mjs`는 첫 질의 `김밥`에서 `fetch failed` (exit 2) → `orders/18` |
 | `src/lib/quickFoodInput.js`, `tests/quickFoodInput.test.js` 이름 대조에 제조사 포함 | **Codex** | **완료·Claude 검수대기** — 타깃 27/27, 전체 222/222, shared-sync 통과. `verify-mfds.mjs`는 첫 질의 `김밥`에서 `fetch failed` (exit 2) → `orders/19` |
+| `src/lib/quickFoodInput.js`, `tests/quickFoodInput.test.js` 더 정확한 후보 선택 | **Codex** | **완료·Claude 검수대기** — 타깃 34/34, 전체 229/229, shared-sync 통과. `verify-mfds.mjs`는 첫 질의 `김밥`에서 `fetch failed` (exit 2) → `orders/20` |
 | `public/index.html`, `app.js`, `sw.js`, `db.js`, `firebase.json`, `firestore.rules` | Claude | **완료·배포·실측검증 통과** |
 | `functions/index.js`, `functions/shared/mfdsParser.js` (searchFoods) | Claude | **완료·배포·실측검증 통과** — Blaze 업그레이드 후 |
 | `../coin-bot/{AGENTS,CLAUDE}.md`, `../scripts/check-doc-split.sh` | **Codex** | **완료·커밋** (`coin-bot` `da1d4e2`, root `c260784`) |

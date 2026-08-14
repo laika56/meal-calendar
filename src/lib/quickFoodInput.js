@@ -182,7 +182,55 @@ function findByName(query, foods) {
 export function selectBestFood(query, foods) {
   validateMatchArgs('selectBestFood', query, foods);
   if (foods.length === 0) return null;
-  return findByName(query, foods) ?? foods[0];
+
+  const normalizedQuery = normalizeText(query);
+  if (!normalizedQuery) return foods[0];
+
+  const queryTokens = normalizedQuery.split(' ');
+  let bestFood;
+  let bestScore = -Infinity;
+
+  for (const food of foods) {
+    const normalizedName = normalizeText(food.name);
+    const underscoreParts = normalizedName.split('_');
+    const nameParts = [
+      ...underscoreParts,
+      ...underscoreParts.flatMap((part) => part.split(' ')),
+    ];
+    const normalizedMaker = typeof food.maker === 'string' ? normalizeText(food.maker) : '';
+    let score = -normalizedName.length * 0.1;
+    let matched = false;
+
+    if (normalizedName === normalizedQuery) {
+      score += 100;
+      matched = true;
+    }
+    if (nameParts.some((part) => part === normalizedQuery)) {
+      score += 80;
+      matched = true;
+    }
+    if (normalizedName.startsWith(normalizedQuery)) {
+      score += 40;
+      matched = true;
+    }
+    if (normalizedName.includes(normalizedQuery)) {
+      score += 20;
+      matched = true;
+    }
+    for (const token of queryTokens) {
+      if (normalizedMaker.includes(token)) {
+        score += 10;
+        matched = true;
+      }
+    }
+
+    if (matched && score > bestScore) {
+      bestFood = food;
+      bestScore = score;
+    }
+  }
+
+  return bestFood ?? foods[0];
 }
 
 /**
