@@ -213,6 +213,16 @@
     margin-left: auto; margin-right: 8px;
   }
 
+  /* 룰렛 제안 */
+  .roulette-slot {
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px;
+    background: var(--card); margin-bottom: 12px;
+  }
+  .roulette-slot h3 { font-size: 14px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: baseline; }
+  .roulette-slot h3 span { font-size: 12px; font-weight: 400; color: var(--muted); }
+  .roulette-empty { font-size: 13px; color: var(--muted); }
+  .roulette-fit { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
   /* 앱 내 입력 시트 — window.prompt 대체 (iOS standalone 에서 신뢰 불가) */
   .ask-sheet { display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.45); }
   .ask-sheet[hidden] { display: none; }
@@ -442,6 +452,7 @@
     <div class="sheet-header">
       <button id="closeDetail" aria-label="캘린더로 돌아가기">‹ 캘린더</button>
       <h2 id="detailDate"></h2>
+      <button id="openRoulette" class="ghost-btn" type="button">🎲 룰렛</button>
       <button id="copyYesterday" class="ghost-btn" type="button">어제 복사</button>
     </div>
     <div class="totals">
@@ -683,6 +694,21 @@
 
       <button type="submit">계산하고 저장</button>
     </form>
+  </div>
+</div>
+
+<div id="roulettePrompt" class="sheet" hidden>
+  <div class="sheet-inner">
+    <div class="sheet-header">
+      <button id="closeRoulette" type="button" aria-label="일간 상세로 돌아가기">‹ 돌아가기</button>
+      <h2>룰렛 제안</h2>
+      <button id="rerollRoulette" class="ghost-btn" type="button">다시 돌리기</button>
+    </div>
+    <div id="rouletteNotice" class="month-notice" hidden></div>
+    <div id="rouletteResult"></div>
+    <div class="account-actions">
+      <button id="acceptRoulette" type="button">이대로 기록하기</button>
+    </div>
   </div>
 </div>
 

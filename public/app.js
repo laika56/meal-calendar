@@ -3,6 +3,7 @@ import { buildGoalProfile, ImpossibleTargetError } from '/src/lib/metabolism.js'
 import { calcDayTotals } from '/src/lib/dayTotals.js';
 import { scaleNutrients } from '/src/lib/units.js';
 import { summarizeWeightTrend } from '/src/lib/weightTrend.js';
+import { buildCandidatePool, buildRouletteProposal } from '/src/lib/roulette.js';
 import { validateSignUpForm } from '/src/lib/authValidation.js';
 import { authErrorMessage, validationMessage } from '/src/lib/authMessages.js';
 import {
@@ -67,6 +68,13 @@ const el = {
   weightTrend: document.getElementById('weightTrend'),
   dayWeight: document.getElementById('dayWeight'),
   weightState: document.getElementById('weightState'),
+  openRoulette: document.getElementById('openRoulette'),
+  roulettePrompt: document.getElementById('roulettePrompt'),
+  rouletteResult: document.getElementById('rouletteResult'),
+  rouletteNotice: document.getElementById('rouletteNotice'),
+  acceptRoulette: document.getElementById('acceptRoulette'),
+  rerollRoulette: document.getElementById('rerollRoulette'),
+  closeRoulette: document.getElementById('closeRoulette'),
   grid: document.getElementById('grid'),
   detail: document.getElementById('dayDetail'),
   detailDate: document.getElementById('detailDate'),
@@ -365,6 +373,169 @@ async function persistDay(slots) {
     setSaveState('failed', '저장 실패 — 화면에는 반영됐지만 서버에 안 올라갔다. 네트워크 확인 후 다시 시도해라.');
   }
 }
+
+// ── 룰렛 (Phase 6) ────────────────────────────────────────────────────
+// solver 는 src/lib/roulette.js. 여기서는 입력을 모으고 결과를 그리고 수락을 받는다.
+//
+// **결과는 제안이다.** 사용자가 「이대로 기록하기」를 눌러야 저장된다 (SPEC).
+
+let rouletteProposal = null;
+
+/** 슬롯 목표 대비 오차를 % 로. 목표가 0 이면 표시하지 않는다. */
+function fitLabel(macros, target) {
+  if (!target || !(target.kcal > 0)) return '';
+  const diff = Math.round(((macros.kcal - target.kcal) / target.kcal) * 100);
+  const sign = diff > 0 ? '+' : '';
+  return `목표 ${target.kcal}kcal 대비 ${sign}${diff}%`;
+}
+
+function renderRouletteResult() {
+  el.rouletteResult.innerHTML = '';
+  el.acceptRoulette.hidden = true;
+  el.rouletteNotice.hidden = true;
+
+  if (!rouletteProposal) return;
+
+  if (!rouletteProposal.ok) {
+    el.rouletteNotice.hidden = false;
+    el.rouletteNotice.className = 'month-notice month-notice-error';
+    el.rouletteNotice.textContent = rouletteProposal.reason === 'over-budget'
+      ? '오늘 목표를 이미 채웠습니다. 룰렛을 돌리지 않습니다.'
+      : '빈 슬롯이 없습니다. 이미 네 끼가 다 기록돼 있습니다.';
+    return;
+  }
+
+  // 후보가 부족하면 억지로 채우지 않는다 — 채운 슬롯 수를 그대로 말한다 (절대규칙 7)
+  if (rouletteProposal.filledSlotCount === 0) {
+    el.rouletteNotice.hidden = false;
+    el.rouletteNotice.className = 'month-notice';
+    el.rouletteNotice.textContent =
+      '넣을 후보가 없습니다. 프리셋을 저장하거나 몇 번 기록하면 그걸로 제안합니다.';
+    return;
+  }
+
+  const labels = Object.fromEntries(SLOT_LABELS);
+  for (const [slotKey, slot] of Object.entries(rouletteProposal.slots)) {
+    const section = document.createElement('section');
+    section.className = 'roulette-slot';
+    const kcal = Math.round(slot.macros.kcal);
+    section.innerHTML = `<h3>${labels[slotKey] ?? slotKey}<span>${kcal} kcal</span></h3>`;
+
+    if (slot.entries.length === 0) {
+      const p = document.createElement('p');
+      p.className = 'roulette-empty';
+      p.textContent = '— 채우지 못했습니다 (맞는 후보 없음)';
+      section.appendChild(p);
+    } else {
+      for (const entry of slot.entries) {
+        const line = document.createElement('div');
+        line.className = 'entry-line';
+        line.innerHTML = `<span class="entry-name">${entry.name} ${entry.amountG}g</span>`
+          + `<b class="entry-kcal">${Math.round(entry.kcal)} kcal</b>`;
+        section.appendChild(line);
+      }
+      const fit = document.createElement('div');
+      fit.className = 'roulette-fit';
+      fit.textContent = fitLabel(slot.macros, slot.targetMacros);
+      section.appendChild(fit);
+    }
+    el.rouletteResult.appendChild(section);
+  }
+
+  el.acceptRoulette.hidden = false;
+}
+
+async function runRoulette(seed) {
+  await dbReady;
+  const day = currentDay();
+  const slots = { ...emptySlots(), ...(day.slots ?? {}) };
+  const totals = day.totals ?? calcDayTotals(slots);
+  const goal = state.goal;
+
+  el.rouletteNotice.hidden = false;
+  el.rouletteNotice.className = 'month-notice';
+  el.rouletteNotice.textContent = '후보를 모으는 중…';
+  el.rouletteResult.innerHTML = '';
+  el.acceptRoulette.hidden = true;
+
+  let presets = [];
+  let recent = [];
+  let dislikes = [];
+  try {
+    [presets, recent, dislikes] = await Promise.all([
+      db.listPresets(), db.loadRecentEntries(), db.loadDislikes(),
+    ]);
+  } catch (err) {
+    console.error('[meal-calendar] 룰렛 입력 조회 실패', err);
+    el.rouletteNotice.className = 'month-notice month-notice-error';
+    el.rouletteNotice.textContent = '후보를 불러오지 못했습니다. 네트워크를 확인해주세요.';
+    return;
+  }
+
+  // 목표가 없으면 룰렛의 기준이 없다. 지어내지 않는다
+  if (!goal) {
+    el.rouletteNotice.className = 'month-notice month-notice-error';
+    el.rouletteNotice.textContent = '먼저 ⚙ 에서 목표를 설정해주세요. 목표가 없으면 배분할 기준이 없습니다.';
+    return;
+  }
+
+  const remainingMacros = {
+    kcal: goal.kcal - totals.kcal,
+    carbG: goal.carbG - totals.carbG,
+    proteinG: goal.proteinG - totals.proteinG,
+    fatG: goal.fatG - totals.fatG,
+  };
+  const emptySlotKeys = SLOT_LABELS.map(([k]) => k).filter((k) => (slots[k] ?? []).length === 0);
+
+  // 프리셋은 신·구 스키마가 섞여 있다 — presetEntries 가 둘 다 받는다
+  const normalizedPresets = presets.map((p) => ({
+    id: p.id, label: p.label, entries: db.presetEntries(p),
+  })).filter((p) => p.entries.length > 0);
+
+  rouletteProposal = buildRouletteProposal({
+    remainingMacros,
+    emptySlots: emptySlotKeys,
+    candidatePool: buildCandidatePool(normalizedPresets, recent),
+    dislikes,
+    seed,
+  });
+  renderRouletteResult();
+}
+
+/** 시드는 날짜 + 시각에서 만든다. 「다시 돌리기」가 매번 다른 결과를 내야 한다. */
+function newRouletteSeed() {
+  return (Date.now() >>> 0);
+}
+
+el.openRoulette.addEventListener('click', () => {
+  el.roulettePrompt.hidden = false;
+  runRoulette(newRouletteSeed());
+});
+
+el.rerollRoulette.addEventListener('click', () => runRoulette(newRouletteSeed()));
+
+el.closeRoulette.addEventListener('click', () => {
+  el.roulettePrompt.hidden = true;
+  rouletteProposal = null;
+});
+
+el.acceptRoulette.addEventListener('click', async () => {
+  if (!rouletteProposal?.ok) return;
+  const day = currentDay();
+  const slots = { ...emptySlots(), ...(day.slots ?? {}) };
+
+  for (const [slotKey, slot] of Object.entries(rouletteProposal.slots)) {
+    if (slot.entries.length === 0) continue;
+    slots[slotKey] = [
+      ...slots[slotKey],
+      ...slot.entries.map((e) => buildEntry({ ...e, addedBy: 'roulette' })),
+    ];
+  }
+
+  el.roulettePrompt.hidden = true;
+  rouletteProposal = null;
+  await persistDay(slots);
+});
 
 // ── 체중 (Phase 5) ────────────────────────────────────────────────────
 // 하루 문서에 숫자 하나. ROADMAP: "체중이 유일한 결과 지표다" — 매크로 추이는 안 만든다.

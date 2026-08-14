@@ -275,6 +275,23 @@ export async function deletePreset(presetId) {
   await deleteDoc(doc(db, 'users', requireUid(), 'presets', presetId));
 }
 
+// ── 기피 식품 ─────────────────────────────────────────────────────────
+// users/{uid}.dislikes — foodKey 배열. 룰렛이 이걸 제외한다.
+
+export async function loadDislikes() {
+  const snapshot = await getDoc(doc(db, 'users', requireUid()));
+  return snapshot.exists() ? (snapshot.data().dislikes ?? []) : [];
+}
+
+/** foodKey 를 기피 목록에 넣는다. 이미 있으면 아무것도 안 한다. */
+export async function addDislike(foodKey) {
+  const current = await loadDislikes();
+  if (current.includes(foodKey)) return current;
+  const next = [...current, foodKey];
+  await setDoc(doc(db, 'users', requireUid()), { dislikes: next }, { merge: true });
+  return next;
+}
+
 // ── 최근 항목 ─────────────────────────────────────────────────────────
 // users/{uid}.recentEntries — 최신순, 이름 기준 dedupe, 최대 10개.
 // 별도 컬렉션·쿼리를 안 쓴다 — 이 정도 개수는 문서 하나에 배열로 두는 게
