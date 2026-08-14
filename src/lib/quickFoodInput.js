@@ -27,6 +27,9 @@ const SERVING_RULES = [
 export const SERVING_SOURCE_LABELS = {
   'mfds-egg-50g': '식약처 달걀 1개 50g 기준',
   'kdca-rice-bowl-200g': '질병관리청 밥 1공기 200g 기준',
+  // 대표중량 표에 없는 단위를, 검색된 식품의 DB 1회분(resolveServing)으로 환산한 경우.
+  // 지어낸 값이 아니라 식약처 데이터다 — 김밥 1개 = 230g, 빅맥 1개 = 223g.
+  'mfds-serving': '식약처 1회 제공량 기준',
 };
 
 function formatValue(value) {

@@ -721,6 +721,7 @@ async function runMultiQuickInput(pieces) {
     el.searchStatus.textContent = `${added}개 추가했습니다.`;
     el.searchInput.value = '';
     el.entrySheet.hidden = true;
+    state.pendingSlot = null;
     return;
   }
   // 실패한 조각을 입력칸에 되돌려준다 — 다시 타이핑하게 만들지 않는다
@@ -835,14 +836,20 @@ async function addSearchedFood(food, amountG, quickInput = null, { batch = false
   }
 
   const slotKey = state.pendingSlot;
-  if (!batch) el.entrySheet.hidden = true;
-  state.pendingSlot = null;
+  if (!batch) {
+    el.entrySheet.hidden = true;
+    // batch 에서는 지우지 않는다 — 다음 조각도 같은 슬롯에 넣어야 한다.
+    // 지웠더니 두 번째 조각에서 slots[null] 이 되어 "not iterable" 로 터졌다.
+    state.pendingSlot = null;
+  }
   showPortionPrompt(false);
 
+  // Firestore 는 undefined 필드를 거부한다 — setDoc 이 통째로 실패해서 기록이 안 들어간다.
+  // 라벨 표에 없는 source 를 만나도 저장은 되어야 한다. 표기는 없어도 숫자는 남는 게 낫다.
   const estimate = quickInput?.estimated ? {
-    displayAmount: quickInput.displayAmount,
-    source: quickInput.servingSource,
-    sourceLabel: SERVING_SOURCE_LABELS[quickInput.servingSource],
+    displayAmount: quickInput.displayAmount ?? '',
+    source: quickInput.servingSource ?? null,
+    sourceLabel: SERVING_SOURCE_LABELS[quickInput.servingSource] ?? null,
   } : null;
 
   await addEntryToSlot(slotKey, buildEntry({
