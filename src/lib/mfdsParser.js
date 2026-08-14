@@ -151,6 +151,7 @@ export function resolveServing(parsed) {
   if (
     parsed.foodGroup === 'dish'
     && parsed.totalAmount != null
+    && parsed.totalAmount !== 100
     && (parsed.totalUnit == null || parsed.totalUnit === parsed.basis)
   ) {
     return {

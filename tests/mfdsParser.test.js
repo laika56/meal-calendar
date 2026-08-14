@@ -348,6 +348,85 @@ test('resolves measured D-group Big Mac and non-franchise gimbap totals as one s
   });
 });
 
+test('rejects measured dish totals that exactly repeat the 100-unit nutrient basis', () => {
+  for (const name of ['라멘_미소라멘', '김치찌개_김치만']) {
+    assert.equal(resolveServing({
+      name,
+      foodGroup: 'dish',
+      totalAmount: 100,
+      totalUnit: 'g',
+      basis: 'g',
+      servingAmount: null,
+      servingUnit: null,
+    }), null);
+  }
+});
+
+test('keeps every specified dish total immediately outside the exact 100 boundary', () => {
+  const cases = [
+    ['삼각김밥', 94.5, 'mL'],
+    ['99.9g 조리음식', 99.9, 'g'],
+    ['100.5g 조리음식', 100.5, 'g'],
+    ['김밥', 230, 'g'],
+    ['버거_빅맥 버거', 223, 'g'],
+  ];
+
+  for (const [name, amount, basis] of cases) {
+    assert.deepEqual(resolveServing({
+      name,
+      foodGroup: 'dish',
+      totalAmount: amount,
+      totalUnit: basis,
+      basis,
+      servingAmount: null,
+      servingUnit: null,
+    }), {
+      amount,
+      unit: basis,
+      source: 'dish-total',
+    });
+  }
+});
+
+test('falls through a rejected 100-unit dish total to its separate serving field', () => {
+  assert.deepEqual(resolveServing({
+    foodGroup: 'dish',
+    totalAmount: 100,
+    totalUnit: 'g',
+    basis: 'g',
+    servingAmount: 40,
+    servingUnit: 'g',
+  }), {
+    amount: 40,
+    unit: 'g',
+    source: 'serving-field',
+  });
+});
+
+test('keeps processed-product totals and 100-unit serving fields on their existing paths', () => {
+  assert.equal(resolveServing({
+    foodGroup: 'processed',
+    totalAmount: 100,
+    totalUnit: 'g',
+    basis: 'g',
+    servingAmount: null,
+    servingUnit: null,
+  }), null);
+
+  assert.deepEqual(resolveServing({
+    foodGroup: 'processed',
+    totalAmount: 500,
+    totalUnit: 'g',
+    basis: 'g',
+    servingAmount: 100,
+    servingUnit: 'g',
+  }), {
+    amount: 100,
+    unit: 'g',
+    source: 'serving-field',
+  });
+});
+
 test('prefers a dish total when both total and serving fields are present', () => {
   assert.deepEqual(resolveServing({
     foodGroup: 'dish',

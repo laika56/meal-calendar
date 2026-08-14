@@ -78,7 +78,7 @@ export function parseQuickFoodInput(input) {
   }
 
   const servingMatch = normalized.match(
-    /^(.*?)(\d+(?:\.\d+)?|한|두|세|네|반)\s*(개|공기|팩|봉|봉지)$/,
+    /^(.*?)(\d+(?:\.\d+)?|한|두|세|네|반)\s*(개|공기|팩|봉|봉지|그릇|인분|잔|조각|장|줄)$/,
   );
   if (!servingMatch) {
     return { ok: false, reason: 'quantity-required', query: normalized };
