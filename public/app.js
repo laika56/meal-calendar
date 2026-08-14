@@ -669,7 +669,11 @@ async function runMultiQuickInput(pieces) {
     el.searchStatus.hidden = false;
     el.searchStatus.textContent = `${piece.text} … (${added + failed.length + 1}/${pieces.length})`;
 
-    if (!piece.parsed.ok) { failed.push(piece.text); continue; }
+    // 'unsupported-serving' 은 「단위는 알아들었는데 대표 중량 표에 없다」는 뜻이다.
+    // 예전엔 여기서 포기했는데, 이제 DB 가 1인분을 안다(김밥 230g, 빅맥 223g).
+    // 검색해서 resolveServing 값이 있으면 그걸 개수에 곱한다 — 지어내는 게 아니라 DB 값이다.
+    const usable = piece.parsed.ok || piece.parsed.reason === 'unsupported-serving';
+    if (!usable) { failed.push(piece.text); continue; }
 
     let items;
     try {
@@ -687,7 +691,28 @@ async function runMultiQuickInput(pieces) {
     }
 
     const food = selectBestFood(piece.parsed.query, items);
-    const ok = await addSearchedFood(food, piece.parsed.amountG, piece.parsed, { batch: true });
+
+    let amountG = piece.parsed.amountG;
+    let quickInput = piece.parsed;
+    if (!piece.parsed.ok) {
+      // DB 가 1인분을 모르면 여기서도 포기한다. 개수를 g 으로 바꿀 근거가 없다
+      if (!food.serving) { failed.push(piece.text); continue; }
+      // count 는 발주 18 이 붙여준다. 없으면 곱할 수가 없으니 포기한다 —
+      // undefined 를 곱해서 NaN 을 기록하는 것보다 "못 알아들었다"가 낫다
+      const count = piece.parsed.count;
+      if (!Number.isFinite(count) || count <= 0) { failed.push(piece.text); continue; }
+      amountG = food.serving.amount * count;
+      quickInput = {
+        ...piece.parsed,
+        ok: true,
+        amountG,
+        displayAmount: `${count}개`,
+        estimated: true,
+        servingSource: 'mfds-serving',
+      };
+    }
+
+    const ok = await addSearchedFood(food, amountG, quickInput, { batch: true });
     if (ok) added += 1; else failed.push(piece.text);
   }
 
