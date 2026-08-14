@@ -88,7 +88,13 @@ export function parseQuickFoodInput(input) {
     candidate.unit === unit
     && candidate.aliases.some((alias) => compactQuery.includes(compact(alias)))
   ));
-  if (!rule) return { ok: false, reason: 'unsupported-serving', query };
+  if (!rule) return {
+    ok: false,
+    reason: 'unsupported-serving',
+    query,
+    count: amount,
+    unit,
+  };
 
   return {
     ok: true,

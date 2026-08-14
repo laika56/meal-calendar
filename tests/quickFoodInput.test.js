@@ -153,11 +153,73 @@ test('converts rice bowl amounts with the documented 200g representative weight'
   assert.equal(parseQuickFoodInput('흰쌀밥 1.5공기').amountG, 300);
 });
 
-test('returns a searchable query when the serving unit is unsupported', () => {
-  assert.deepEqual(parseQuickFoodInput('닭가슴살 한 팩'), {
-    ok: false,
-    reason: 'unsupported-serving',
-    query: '닭가슴살',
+test('keeps every specified count and original unit for unsupported servings', () => {
+  const cases = [
+    ['김밥 1개', '김밥', 1, '개'],
+    ['빅맥 2개', '빅맥', 2, '개'],
+    ['만두 1.5개', '만두', 1.5, '개'],
+    ['라면 한 개', '라면', 1, '개'],
+    ['만두 두 개', '만두', 2, '개'],
+    ['피자 세 개', '피자', 3, '개'],
+    ['치킨 네 개', '치킨', 4, '개'],
+    ['케이크 반 개', '케이크', 0.5, '개'],
+    ['국 한 공기', '국', 1, '공기'],
+    ['고기 2팩', '고기', 2, '팩'],
+    ['견과 2봉', '견과', 2, '봉'],
+    ['과자 3봉지', '과자', 3, '봉지'],
+  ];
+
+  for (const [input, query, count, unit] of cases) {
+    assert.deepEqual(parseQuickFoodInput(input), {
+      ok: false,
+      reason: 'unsupported-serving',
+      query,
+      count,
+      unit,
+    });
+  }
+});
+
+test('does not expose count or unit when the amount could not be read', () => {
+  const cases = [
+    ['   ', 'empty'],
+    ['150g', 'food-required'],
+    ['반숙란 0개', 'invalid-amount'],
+    ['김치찌개', 'quantity-required'],
+  ];
+
+  for (const [input, reason] of cases) {
+    const result = parseQuickFoodInput(input);
+    assert.equal(result.reason, reason);
+    assert.strictEqual(result.count, undefined);
+    assert.strictEqual(result.unit, undefined);
+  }
+});
+
+test('keeps successful quick-input return objects unchanged', () => {
+  assert.deepEqual(parseQuickFoodInput('반숙란 2개'), {
+    ok: true,
+    query: '반숙란',
+    amountG: 100,
+    displayAmount: '2개',
+    estimated: true,
+    servingSource: 'mfds-egg-50g',
+  });
+  assert.deepEqual(parseQuickFoodInput('밥 한 공기'), {
+    ok: true,
+    query: '밥',
+    amountG: 200,
+    displayAmount: '한 공기',
+    estimated: true,
+    servingSource: 'kdca-rice-bowl-200g',
+  });
+  assert.deepEqual(parseQuickFoodInput('우유 200g'), {
+    ok: true,
+    query: '우유',
+    amountG: 200,
+    displayAmount: '200g',
+    estimated: false,
+    servingSource: null,
   });
 });
 
