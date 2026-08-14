@@ -2,7 +2,7 @@
 
 **이 파일이 현재 상태의 단일 출처다.** 다른 곳에 진행 목록을 만들지 않는다.
 
-최종 갱신: 2026-08-13
+최종 갱신: 2026-08-14
 
 ## 지금 상태
 
@@ -162,7 +162,7 @@ Blaze는 카드 등록 필요(개인 사용량은 사실상 무료) — 과금 �
 | `src/lib/mfdsParser.js` 자유 텍스트 수량 보존 + 테스트 | **Codex** | **완료·Claude 검수대기** — 145/145 → `orders/11`. 파싱 불가 문자열은 원문 note로 보존, 비문자열만 `TypeError` |
 | `src/lib/mfdsParser.js` 식품군 기준 1회분 판정 + 테스트 | **Codex** | **구현·단위검증 완료, 실데이터 검증 막힘** — 151/151. `verify-mfds.mjs`는 실행 환경 네트워크 차단으로 `fetch failed` → `orders/12` |
 | `src/lib/searchResults.js`, `tests/searchResults.test.js` | **Codex** | **완료·Claude 검수대기** — 169/169. 병합·중복제거·안정 순위 구현. `verify-mfds.mjs`는 DNS 차단(`ENOTFOUND apis.data.go.kr`)으로 판정 불가 → `orders/13` |
-| `src/lib/weightTrend.js`, `tests/weightTrend.test.js` | **Codex** | **작업 중** — `orders/14` |
+| `src/lib/weightTrend.js`, `tests/weightTrend.test.js` | **Codex** | **완료·Claude 검수대기** — 203/203. `verify-mfds.mjs`는 외부 요청 단계에서 `fetch failed` → `orders/14` |
 | `scripts/check-shared-sync.mjs`, `tests/sharedSync.test.js`, `functions/shared/*` 동기화 | **Codex** | **완료·Claude 검수대기** — 171/171. 검사 모드 exit 0, `mfdsParser.js` 동기화 완료. `verify-mfds.mjs`는 실행 환경 네트워크 차단으로 `fetch failed` → `orders/15` |
 | `public/index.html`, `app.js`, `sw.js`, `db.js`, `firebase.json`, `firestore.rules` | Claude | **완료·배포·실측검증 통과** |
 | `functions/index.js`, `functions/shared/mfdsParser.js` (searchFoods) | Claude | **완료·배포·실측검증 통과** — Blaze 업그레이드 후 |

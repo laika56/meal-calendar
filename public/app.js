@@ -94,6 +94,8 @@ const el = {
   portionTitle: document.getElementById('portionTitle'),
   portionAmount: document.getElementById('portionAmount'),
   portionPreview: document.getElementById('portionPreview'),
+  servingChips: document.getElementById('servingChips'),
+  servingNote: document.getElementById('servingNote'),
   confirmPortion: document.getElementById('confirmPortion'),
   cancelPortion: document.getElementById('cancelPortion'),
   authGate: document.getElementById('authGate'),
@@ -584,10 +586,44 @@ function renderPortionPreview() {
   `;
 }
 
-function openPortionPrompt(food, amountG = 100) {
+/**
+ * 1인분을 아는 식품이면 「1개」 버튼들을 띄운다.
+ *
+ * 100g 단위 입력은 실사용과 안 맞는다 — 밥 한 줄 기록하려고 그램수를 잴 수는 없다.
+ * 서버가 `serving`(= resolveServing 결과)을 실어 보내면 그 배수로 받는다.
+ * **`serving` 이 null 이면 아무것도 추측하지 않고 지금처럼 g 을 받는다** —
+ * 포장 총중량을 1회분으로 때우면 프로틴 1kg 통이 3,950kcal 로 기록된다.
+ */
+function renderServingChips(food) {
+  const serving = food.serving;
+  el.servingChips.innerHTML = '';
+  el.servingChips.hidden = !serving;
+  el.servingNote.hidden = !food.servingNote;
+  if (food.servingNote) el.servingNote.textContent = `1회 제공량 표기: ${food.servingNote}`;
+  if (!serving) return;
+
+  // 단위가 mL 여도 per100g 는 100mL 기준이라(basis) 같은 산술이 성립한다
+  const unit = serving.unit ?? 'g';
+  for (const [label, mult] of [['½개', 0.5], ['1개', 1], ['1½개', 1.5], ['2개', 2]]) {
+    const amount = Math.round(serving.amount * mult * 10) / 10;
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.textContent = `${label} · ${amount}${unit}`;
+    chip.addEventListener('click', () => {
+      el.portionAmount.value = amount;
+      renderPortionPreview();
+    });
+    el.servingChips.appendChild(chip);
+  }
+}
+
+function openPortionPrompt(food, amountG) {
   selectedFood = food;
   el.portionTitle.textContent = food.name;
-  el.portionAmount.value = amountG;
+  renderServingChips(food);
+  // 1인분을 알면 그걸 기본값으로. 모르면 예전처럼 100 에서 시작한다
+  el.portionAmount.value = amountG ?? food.serving?.amount ?? 100;
   renderPortionPreview();
   showPortionPrompt(true);
 }

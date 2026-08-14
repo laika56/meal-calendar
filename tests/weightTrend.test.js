@@ -31,11 +31,11 @@ test('movingAverageKg averages consecutive samples and rounds to one decimal pla
   assert.deepEqual(
     movingAverageKg([
       point('2026-08-01', 70),
-      point('2026-08-02', 72),
+      point('2026-08-02', 70.1),
     ], 7),
     [
       { date: '2026-08-01', avgKg: 70, sampleCount: 1 },
-      { date: '2026-08-02', avgKg: 71, sampleCount: 2 },
+      { date: '2026-08-02', avgKg: 70.1, sampleCount: 2 },
     ],
   );
 });
@@ -322,6 +322,24 @@ test('summarizeWeightTrend applies a custom flat threshold', () => {
       { flatThresholdKgPerWeek: 0.2 },
     ).direction,
     'flat',
+  );
+});
+
+test('summarizeWeightTrend uses the later duplicate as the latest correction', () => {
+  assert.deepEqual(
+    summarizeWeightTrend([
+      point('2026-08-08', 72),
+      point('2026-08-01', 70),
+      point('2026-08-08', 69),
+    ]),
+    {
+      direction: 'down',
+      kgPerWeek: -1,
+      spanDays: 7,
+      sampleCount: 2,
+      latestKg: 69,
+      latestDate: '2026-08-08',
+    },
   );
 });
 

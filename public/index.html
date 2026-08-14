@@ -205,6 +205,18 @@
   .quick-section { margin-bottom: 16px; }
   .quick-section h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
   .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* 1인분 배수 칩 — 「1개」로 받는다. 100g 단위 입력은 실사용과 안 맞는다 */
+  .serving-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .serving-chips button {
+    -webkit-appearance: none; appearance: none;
+    border: 1px solid var(--line); background: var(--card); color: var(--fg);
+    border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 13px; font-weight: 600;
+  }
+  .serving-note {
+    font-size: 12px; color: var(--muted); line-height: 1.5; margin-bottom: 12px;
+  }
+  .serving-note[hidden], .serving-chips[hidden] { display: none; }
+
   .chip {
     display: flex; align-items: center; gap: 6px;
     border: 1px solid var(--line); background: var(--card); border-radius: 999px;
@@ -457,6 +469,8 @@
         <button id="cancelPortion" type="button" aria-label="검색 결과로 돌아가기">‹ 검색 결과</button>
         <h2 id="portionTitle"></h2>
       </div>
+      <div id="servingChips" class="serving-chips" hidden></div>
+      <div id="servingNote" class="serving-note" hidden></div>
       <label>양 (g)
         <input id="portionAmount" type="number" inputmode="decimal" min="0" step="0.1" value="100">
       </label>
