@@ -6,7 +6,7 @@ import { summarizeWeightTrend } from '/src/lib/weightTrend.js';
 import { validateSignUpForm } from '/src/lib/authValidation.js';
 import { authErrorMessage, validationMessage } from '/src/lib/authMessages.js';
 import {
-  parseQuickFoodInput, selectBestFood, hasNameMatch, SERVING_SOURCE_LABELS,
+  parseQuickFoodInput, splitQuickFoodInput, selectBestFood, hasNameMatch, SERVING_SOURCE_LABELS,
 } from '/src/lib/quickFoodInput.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
@@ -654,9 +654,68 @@ function showPortionPrompt(show) {
   el.portionPrompt.hidden = !show;
 }
 
+/**
+ * 한 줄에 여러 음식(`반숙란 2개, 우유 200g`)을 넣었을 때.
+ *
+ * 조각마다 검색·추가를 순차로 돌린다. **한 조각이 실패해도 나머지를 계속한다** —
+ * 하나 때문에 전체를 버리는 게 이 프로젝트에서 가장 비쌌던 버그였다.
+ * 끝나고 못 넣은 조각을 사람에게 그대로 보여준다 (절대규칙 7).
+ */
+async function runMultiQuickInput(pieces) {
+  const failed = [];
+  let added = 0;
+
+  for (const piece of pieces) {
+    el.searchStatus.hidden = false;
+    el.searchStatus.textContent = `${piece.text} … (${added + failed.length + 1}/${pieces.length})`;
+
+    if (!piece.parsed.ok) { failed.push(piece.text); continue; }
+
+    let items;
+    try {
+      items = await db.searchFoods(piece.parsed.query);
+    } catch (err) {
+      console.error('[meal-calendar] 검색 실패', piece.text, err);
+      failed.push(piece.text);
+      continue;
+    }
+
+    // 이름이 실제로 맞아떨어질 때만 자동 기록한다 — 엉뚱한 식품의 숫자가 들어가면 안 된다
+    if (items.length === 0 || !hasNameMatch(piece.parsed.query, items)) {
+      failed.push(piece.text);
+      continue;
+    }
+
+    const food = selectBestFood(piece.parsed.query, items);
+    const ok = await addSearchedFood(food, piece.parsed.amountG, piece.parsed, { batch: true });
+    if (ok) added += 1; else failed.push(piece.text);
+  }
+
+  el.searchStatus.hidden = false;
+  if (failed.length === 0) {
+    el.searchStatus.textContent = `${added}개 추가했습니다.`;
+    el.searchInput.value = '';
+    el.entrySheet.hidden = true;
+    return;
+  }
+  // 실패한 조각을 입력칸에 되돌려준다 — 다시 타이핑하게 만들지 않는다
+  el.searchInput.value = failed.join(', ');
+  el.searchStatus.textContent = added > 0
+    ? `${added}개 추가. 아래 ${failed.length}개는 못 알아들었습니다 — 하나씩 확인해주세요.`
+    : `${failed.length}개 모두 못 알아들었습니다 — 하나씩 확인해주세요.`;
+}
+
 el.searchForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   await dbReady;
+
+  // 구분자가 있으면 다중 처리로 간다. 하나뿐이면 기존 흐름 그대로 —
+  // 단일 입력은 검색 결과를 보여주고 고르게 하는 경로가 이미 잘 돌고 있다
+  const pieces = splitQuickFoodInput(el.searchInput.value);
+  if (pieces.length > 1) {
+    await runMultiQuickInput(pieces);
+    return;
+  }
 
   const parsed = parseQuickFoodInput(el.searchInput.value);
   if (parsed.reason === 'empty' || parsed.reason === 'food-required') return;
@@ -736,15 +795,22 @@ function fillManualEntry(food, amountG, scaled) {
   showPortionPrompt(false);
 }
 
-async function addSearchedFood(food, amountG, quickInput = null) {
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.batch] 다중 입력 루프 안인가.
+ *   true 면 **수동입력 폼을 띄우지 않고 시트도 닫지 않는다** — 루프 도중에 화면을
+ *   갈아치우면 다음 조각의 진행 표시가 숨겨진 곳에 찍히고, 폼이 덮어써진다.
+ *   대신 false 를 돌려주면 호출부가 「못 넣은 조각」으로 모아서 끝에 보여준다.
+ */
+async function addSearchedFood(food, amountG, quickInput = null, { batch = false } = {}) {
   const scaled = scaleNutrients(food.per100g, amountG);
   if (Object.values(scaled).some((value) => value === null)) {
-    fillManualEntry(food, amountG, scaled);
+    if (!batch) fillManualEntry(food, amountG, scaled);
     return false;
   }
 
   const slotKey = state.pendingSlot;
-  el.entrySheet.hidden = true;
+  if (!batch) el.entrySheet.hidden = true;
   state.pendingSlot = null;
   showPortionPrompt(false);
 

@@ -3,9 +3,119 @@ import assert from 'node:assert/strict';
 
 import {
   parseQuickFoodInput,
+  splitQuickFoodInput,
   selectBestFood,
   hasNameMatch,
 } from '../src/lib/quickFoodInput.js';
+
+test('splits comma-separated quick input with or without whitespace after the comma', () => {
+  assert.deepEqual(
+    splitQuickFoodInput('반숙란 2개, 단백질쉐이크 1스쿱').map(({ text }) => text),
+    ['반숙란 2개', '단백질쉐이크 1스쿱'],
+  );
+  assert.deepEqual(
+    splitQuickFoodInput('밥 한 공기,김치 100g').map(({ text }) => text),
+    ['밥 한 공기', '김치 100g'],
+  );
+});
+
+test('splits newline-separated quick input', () => {
+  assert.deepEqual(
+    splitQuickFoodInput('반숙란 2개\n우유 200g').map(({ text }) => text),
+    ['반숙란 2개', '우유 200g'],
+  );
+});
+
+test('returns one normalized item when there is no separator', () => {
+  assert.deepEqual(splitQuickFoodInput('  반숙란   2개  '), [
+    {
+      text: '반숙란 2개',
+      parsed: {
+        ok: true,
+        query: '반숙란',
+        amountG: 100,
+        displayAmount: '2개',
+        estimated: true,
+        servingSource: 'mfds-egg-50g',
+      },
+    },
+  ]);
+});
+
+test('drops empty comma fragments including whitespace-only fragments', () => {
+  assert.deepEqual(
+    splitQuickFoodInput('반숙란 2개,,우유 200g').map(({ text }) => text),
+    ['반숙란 2개', '우유 200g'],
+  );
+  assert.deepEqual(
+    splitQuickFoodInput('반숙란 2개, , 우유 200g').map(({ text }) => text),
+    ['반숙란 2개', '우유 200g'],
+  );
+});
+
+test('returns no items for zero fragments, commas only, empty, or whitespace-only input', () => {
+  assert.deepEqual(splitQuickFoodInput('  , ,  '), []);
+  assert.deepEqual(splitQuickFoodInput(''), []);
+  assert.deepEqual(splitQuickFoodInput('   '), []);
+});
+
+test('keeps plus signs, Korean particles, and spaces inside a single food fragment', () => {
+  assert.deepEqual(splitQuickFoodInput('비타민B+C 10g').map(({ text }) => text), ['비타민B+C 10g']);
+  assert.deepEqual(splitQuickFoodInput('김치와 두부 100g').map(({ text }) => text), ['김치와 두부 100g']);
+  assert.deepEqual(
+    splitQuickFoodInput('반숙란 2개 우유 200g').map(({ text }) => text),
+    ['반숙란 2개 우유 200g'],
+  );
+});
+
+test('normalizes each fragment and supports mixed newlines and commas', () => {
+  assert.deepEqual(
+    splitQuickFoodInput('  반숙란   2개,\n  우유\t200g\n, 밥  한 공기  ').map(({ text }) => text),
+    ['반숙란 2개', '우유 200g', '밥 한 공기'],
+  );
+});
+
+test('keeps a failed parsed fragment alongside a successful fragment without alteration', () => {
+  assert.deepEqual(splitQuickFoodInput('반숙란 2개, 이상한거'), [
+    {
+      text: '반숙란 2개',
+      parsed: {
+        ok: true,
+        query: '반숙란',
+        amountG: 100,
+        displayAmount: '2개',
+        estimated: true,
+        servingSource: 'mfds-egg-50g',
+      },
+    },
+    {
+      text: '이상한거',
+      parsed: { ok: false, reason: 'quantity-required', query: '이상한거' },
+    },
+  ]);
+});
+
+test('keeps ten fragments and truncates an eleventh fragment', () => {
+  const elevenFragments = [
+    '음식 1g', '음식 2g', '음식 3g', '음식 4g', '음식 5g', '음식 6g',
+    '음식 7g', '음식 8g', '음식 9g', '음식 10g', '음식 11g',
+  ];
+
+  assert.deepEqual(
+    splitQuickFoodInput(elevenFragments.slice(0, 10).join(',')).map(({ text }) => text),
+    elevenFragments.slice(0, 10),
+  );
+  assert.deepEqual(
+    splitQuickFoodInput(elevenFragments.join(',')).map(({ text }) => text),
+    elevenFragments.slice(0, 10),
+  );
+});
+
+test('rejects every specified non-string input with TypeError', () => {
+  for (const input of [null, 42, [], {}]) {
+    assert.throws(() => splitQuickFoodInput(input), TypeError);
+  }
+});
 
 test('parses an explicit gram amount without marking it estimated', () => {
   assert.deepEqual(parseQuickFoodInput(' 닭가슴살 150g '), {

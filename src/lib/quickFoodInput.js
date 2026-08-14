@@ -100,6 +100,19 @@ export function parseQuickFoodInput(input) {
   };
 }
 
+export function splitQuickFoodInput(input) {
+  if (typeof input !== 'string') {
+    throw new TypeError(`splitQuickFoodInput: input must be a string, got ${formatValue(input)}`);
+  }
+
+  return input
+    .split(/[,\n]/)
+    .map((fragment) => fragment.trim().replace(/\s+/g, ' '))
+    .filter(Boolean)
+    .slice(0, 10)
+    .map((text) => ({ text, parsed: parseQuickFoodInput(text) }));
+}
+
 function validateMatchArgs(fnName, query, foods) {
   if (typeof query !== 'string') {
     throw new TypeError(`${fnName}: query must be a string, got ${formatValue(query)}`);
