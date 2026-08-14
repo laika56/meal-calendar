@@ -979,7 +979,12 @@ el.searchForm.addEventListener('submit', async (event) => {
         estimated: true,
         servingSource: 'mfds-serving',
       });
-      if (added) return;
+      if (added) {
+        // 성공했으면 「검색 중…」을 지운다. 안 지우면 기록됐는데도 아직 도는 것처럼 보인다
+        el.searchStatus.hidden = true;
+        el.searchInput.value = '';
+        return;
+      }
       // 영양값이 불완전해서 못 넣었다 — 아래 검색 결과로 내려가되 이유를 정확히 말한다
       el.searchStatus.hidden = false;
       el.searchStatus.textContent = 'DB에 탄단지가 없어 직접 입력이 필요합니다.';
