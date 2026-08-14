@@ -98,6 +98,29 @@ export function resendVerification() {
   return sendEmailVerification(currentUser);
 }
 
+/**
+ * 서버에서 사용자 상태를 다시 읽어 `emailVerified` 를 갱신한다.
+ *
+ * **왜 필요한가:** `observeAuth` 는 `onIdTokenChanged` 라 **토큰이 바뀔 때만** 불린다.
+ * 그런데 인증 메일 링크는 **다른 브라우저 컨텍스트**에서 열린다(PWA 가 아니라 사파리).
+ * 거기서 인증이 끝나도 앱 쪽 토큰은 그대로라 콜백이 영영 안 불린다 —
+ * 앱을 껐다 켜야 반영되던 게 이 때문이다 (2026-08-14 사용자 제보).
+ *
+ * 부수 효과로 「인증 메일 다시 보내기」 버튼도 고쳐진다. 그 버튼은 `emailVerified`
+ * 로 숨기는데 값이 낡아서 계속 보였고, 이미 인증된 사람이 눌러서
+ * `auth/too-many-requests` 를 맞고 있었다. 두 증상이 같은 원인이었다.
+ *
+ * 할 일이 없으면(비로그인·익명·이미 인증됨) **네트워크를 타지 않고** `null` 을 준다.
+ *
+ * @returns 갱신된 사용자 스냅샷 | null
+ */
+export async function refreshVerification() {
+  const { currentUser } = auth;
+  if (!currentUser || currentUser.isAnonymous || currentUser.emailVerified) return null;
+  await currentUser.reload();
+  return snapshotUser(auth.currentUser);
+}
+
 export function sendReset(email) {
   return sendPasswordResetEmail(auth, email);
 }

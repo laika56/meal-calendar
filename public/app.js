@@ -1819,6 +1819,26 @@ async function start() {
       setSaveState('failed', '초기화 실패 — 새로고침해주세요.');
     });
   });
+
+  // 메일 링크로 인증하고 앱으로 돌아왔을 때 「⚠ 이메일 미인증」이 안 사라지던 것을 고친다.
+  // 인증은 다른 브라우저 컨텍스트(사파리)에서 일어나서 앱 쪽 토큰이 안 바뀌고,
+  // observeAuth(onIdTokenChanged)는 토큰이 바뀔 때만 불린다 — 그래서 영영 안 불렸다.
+  //
+  // **폴링하지 않는다.** 주기적으로 두드리면 auth/too-many-requests 를 더 자주 만든다.
+  // 앱이 포그라운드로 돌아온 그 순간에만 한 번 확인한다 — 사용자가 메일에서
+  // 돌아오는 경로가 정확히 이것이다.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    db.refreshVerification()
+      .then((user) => {
+        if (!user) return; // 확인할 게 없었다(비로그인·익명·이미 인증됨)
+        return applyAuthState(user);
+      })
+      .catch((err) => {
+        // 배경 확인이라 실패해도 화면을 막지 않는다. 다음 포그라운드 복귀 때 다시 해본다.
+        console.error('[meal-calendar] 인증 상태 재확인 실패', err);
+      });
+  });
 }
 
 start();
