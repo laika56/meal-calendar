@@ -405,6 +405,70 @@
     color: var(--bg); background: var(--fg); border-radius: 12px;
   }
 
+  /* ── 반응(反應) ────────────────────────────────────────────────────
+     이 앱은 매일 쓰는 도구다. 모션은 "예뻐 보이려고"가 아니라
+     **지금 뭐가 일어났는지 알려주려고**만 쓴다. 두 가지뿐이다:
+       1) 시트가 어디서 왔는지 (아래에서 올라온다 = 뒤로가기로 내려간다)
+       2) 내가 누른 게 눌렸는지 (탭 피드백)
+
+     특히 2번은 필수다 — `*`에 `-webkit-tap-highlight-color: transparent`
+     를 걸어서 브라우저 기본 탭 하이라이트를 껐기 때문에, :active 를 안 주면
+     폰에서 눌러도 **아무 반응이 없어서 먹통처럼 느껴진다.** */
+
+  @keyframes sheet-rise {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+  /* 시트는 전체화면이라 위치가 안 바뀐다 — 어디서 왔는지를 움직임으로 말해준다.
+     곡선은 빨리 나갔다 부드럽게 서는 iOS 감속 곡선이다. */
+  .sheet { animation: sheet-rise .26s cubic-bezier(.32, .72, 0, 1); }
+
+  /* 눌린 순간은 즉시(전환 없이) 반응하고, 뗄 때만 부드럽게 돌아온다 —
+     반대로 하면 톡 눌렀을 때 반응이 늦게 와서 씹힌 것처럼 느껴진다. */
+  header button, .day, .ghost-btn, .chip, .chip-add, .chip-del,
+  .search-result, .search-row button, .serving-chips button,
+  .gate-tabs button, .link-button, .sheet-header button,
+  .profile-form button[type="submit"] {
+    transition: transform .18s ease, background-color .18s ease, opacity .18s ease;
+  }
+  header button:active, .day:active, .ghost-btn:active, .chip:active,
+  .chip-add:active, .chip-del:active, .search-result:active,
+  .search-row button:active, .serving-chips button:active,
+  .gate-tabs button:active, .profile-form button[type="submit"]:active {
+    transform: scale(.96);
+    transition: none;
+  }
+  /* 텍스트 버튼은 크기가 작아서 scale 이 안 보인다 — 흐려지는 걸로 대신한다 */
+  .link-button:active, .sheet-header button:active {
+    opacity: .5;
+    transition: none;
+  }
+
+  /* 키보드 사용자에게 지금 어디 있는지 보여준다. :focus 가 아니라
+     :focus-visible 이라 마우스로 눌렀을 땐 안 뜬다. */
+  :focus-visible {
+    outline: 2px solid var(--fg);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  /* 모션에 민감한 사용자를 위해 움직임만 끈다. 눌린 표시(색·투명도)는
+     정보라서 남긴다 — 접근성은 피드백을 없애는 게 아니다. */
+  @media (prefers-reduced-motion: reduce) {
+    .sheet { animation: none; }
+    *, *::before, *::after {
+      transition-duration: .01ms !important;
+      animation-duration: .01ms !important;
+    }
+    header button:active, .day:active, .ghost-btn:active, .chip:active,
+    .chip-add:active, .chip-del:active, .search-result:active,
+    .search-row button:active, .serving-chips button:active,
+    .gate-tabs button:active, .profile-form button[type="submit"]:active {
+      transform: none;
+      opacity: .6;
+    }
+  }
+
   /* 모바일 기본: 래퍼가 레이아웃에 안 끼어든다 */
   #app { display: contents; }
   .sheet-inner { display: contents; }
@@ -437,6 +501,27 @@
       width: 100%; max-width: 520px; max-height: 85vh; overflow-y: auto;
       background: var(--bg); border-radius: 16px; padding: 28px;
       box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
+    }
+
+    /* 여기선 시트가 전체화면이 아니라 「어두운 배경 + 가운데 카드」다.
+       배경까지 통째로 밀어올리면 어색하니 배경은 밝아지기만 하고,
+       올라오는 건 카드만이다. */
+    .sheet {
+      animation: backdrop-in .2s ease;
+    }
+    .sheet-inner {
+      animation: card-rise .24s cubic-bezier(.32, .72, 0, 1);
+    }
+    @keyframes backdrop-in {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes card-rise {
+      from { opacity: 0; transform: translateY(10px) scale(.985); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .sheet, .sheet-inner { animation: none; }
     }
   }
 </style>
