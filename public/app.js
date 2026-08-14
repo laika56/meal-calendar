@@ -3,7 +3,7 @@ import { buildGoalProfile, ImpossibleTargetError } from '/src/lib/metabolism.js'
 import { calcDayTotals } from '/src/lib/dayTotals.js';
 import { scaleNutrients } from '/src/lib/units.js';
 import { summarizeWeightTrend } from '/src/lib/weightTrend.js';
-import { buildCandidatePool, buildRouletteProposal } from '/src/lib/roulette.js';
+import { buildCandidatePool, buildCachedFoodCandidates, buildRouletteProposal } from '/src/lib/roulette.js';
 import { validateSignUpForm } from '/src/lib/authValidation.js';
 import { authErrorMessage, validationMessage } from '/src/lib/authMessages.js';
 import {
@@ -472,6 +472,15 @@ async function runRoulette(seed) {
     return;
   }
 
+  // 검색 캐시는 후보를 넓히는 보너스지 핵심 기능이 아니다 — 실패해도 프리셋/최근항목만으로
+  // 계속 진행한다(functions/index.js의 foods/ 캐시 쓰기 실패 처리와 같은 원칙).
+  let cachedFoods = [];
+  try {
+    cachedFoods = await db.loadCachedFoods();
+  } catch (err) {
+    console.error('[meal-calendar] 검색 캐시 조회 실패 — 프리셋/최근항목만으로 진행', err);
+  }
+
   // 목표가 없으면 룰렛의 기준이 없다. 지어내지 않는다
   if (!goal) {
     el.rouletteNotice.className = 'month-notice month-notice-error';
@@ -495,7 +504,10 @@ async function runRoulette(seed) {
   rouletteProposal = buildRouletteProposal({
     remainingMacros,
     emptySlots: emptySlotKeys,
-    candidatePool: buildCandidatePool(normalizedPresets, recent),
+    candidatePool: [
+      ...buildCandidatePool(normalizedPresets, recent),
+      ...buildCachedFoodCandidates(cachedFoods),
+    ],
     dislikes,
     seed,
   });

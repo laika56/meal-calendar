@@ -447,6 +447,7 @@ test('buildCachedFoodCandidates scales one known dish serving into one candidate
       entries: [{
         name: '김치찌개',
         foodKey: 'mfds_D101-aaa',
+        amountG: 230,
         kcal: 105.8,
         carbG: 6.9,
         proteinG: 9.2,
@@ -489,20 +490,36 @@ test('buildCachedFoodCandidates keeps only valid mixed items in their input orde
       INCOMPLETE_NUTRIENTS_FOOD,
     ]),
     [
-      candidate(
-        'cache_mfds_D101-aaa',
-        '김치찌개',
-        { kcal: 105.8, carbG: 6.9, proteinG: 9.2, fatG: 4.6 },
-        0,
-        'mfds_D101-aaa',
-      ),
-      candidate(
-        'cache_mfds_P200-ccc',
-        '그릭요거트',
-        { kcal: 18, carbG: 1.2, proteinG: 3, fatG: 0.1 },
-        0,
-        'mfds_P200-ccc',
-      ),
+      {
+        id: 'cache_mfds_D101-aaa',
+        label: '김치찌개',
+        entries: [{
+          name: '김치찌개',
+          foodKey: 'mfds_D101-aaa',
+          amountG: 230,
+          kcal: 105.8,
+          carbG: 6.9,
+          proteinG: 9.2,
+          fatG: 4.6,
+        }],
+        macros: { kcal: 105.8, carbG: 6.9, proteinG: 9.2, fatG: 4.6 },
+        recencyPenalty: 0,
+      },
+      {
+        id: 'cache_mfds_P200-ccc',
+        label: '그릭요거트',
+        entries: [{
+          name: '그릭요거트',
+          foodKey: 'mfds_P200-ccc',
+          amountG: 30,
+          kcal: 18,
+          carbG: 1.2,
+          proteinG: 3,
+          fatG: 0.1,
+        }],
+        macros: { kcal: 18, carbG: 1.2, proteinG: 3, fatG: 0.1 },
+        recencyPenalty: 0,
+      },
     ],
   );
 });

@@ -229,6 +229,7 @@ export function buildCachedFoodCandidates(cachedFoods) {
       entries: [{
         name: food.name,
         foodKey: food.foodKey,
+        amountG: serving.amount,
         kcal: scaled.kcal,
         carbG: scaled.carbG,
         proteinG: scaled.proteinG,

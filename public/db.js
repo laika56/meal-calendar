@@ -14,7 +14,7 @@ import {
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
   doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, serverTimestamp,
-  limit,
+  limit, orderBy,
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js';
 
 import { firebaseConfig } from '/src/firebaseConfig.js';
@@ -309,6 +309,34 @@ export async function pushRecentEntry(entry) {
   const deduped = current.filter((item) => item.name !== entry.name);
   const next = [entry, ...deduped].slice(0, RECENT_ENTRIES_LIMIT);
   await setDoc(doc(db, 'users', requireUid()), { recentEntries: next }, { merge: true });
+}
+
+const CACHED_FOODS_LIMIT = 200;
+
+// `foods/` 는 사용자 전용이 아니라 공용 검색 캐시다(경로가 users/{uid} 밑이 아니다) —
+// 지금까지 누군가 한 번이라도 검색한 음식 전부. 룰렛 후보 풀을 넓히는 데 쓴다
+// (docs/orders/23-cached-food-roulette-candidates.md). 읽기는 firestore.rules 가
+// 로그인한 사용자에게 열어뒀고, 쓰기는 Cloud Functions 만 한다 — 여기선 안 쓴다.
+export async function loadCachedFoods(maxCount = CACHED_FOODS_LIMIT) {
+  const snapshot = await getDocs(query(
+    collection(db, 'foods'),
+    orderBy('fetchedAt', 'desc'),
+    limit(maxCount),
+  ));
+  return snapshot.docs.map((docSnap) => {
+    const data = docSnap.data();
+    return {
+      foodKey: docSnap.id,
+      name: data.name,
+      per100g: data.per100g,
+      basis: data.basis,
+      foodGroup: data.foodGroup,
+      totalAmount: data.totalAmount,
+      totalUnit: data.totalUnit,
+      servingAmount: data.servingAmount,
+      servingUnit: data.servingUnit,
+    };
+  });
 }
 
 // ── 날짜 유틸 ─────────────────────────────────────────────────────────
