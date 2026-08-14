@@ -17,12 +17,11 @@
 
 | | 발주서 | 내용 | 의존 |
 |---|---|---|---|
-| ☐ | `25-candidate-pool-size-cap.md` | 후보 풀이 커지면(발주23 이후) 조합탐색이 폭발한다 — 미리 상한을 건다 | 없음 |
+| (없음) | | | |
 
-> **1건뿐이다.** `../AGENTS.md`는 2건 이상을 권하지만 억지로 두 번째를 만들지 않았다 —
-> 지금 진짜로 명세 가능한 순수 로직 작업이 이거 하나뿐이다. 나머지(Firestore 쿼리
-> 배선, 성능/번들링 판단, iOS 확인, Firebase 콘솔 정리, GitHub PAT, 9 space)는 전부
-> Claude·사용자 몫이라 여기 못 넣는다.
+> **지금 비어 있다.** 남은 건 전부 Claude·사용자 몫(Firestore 쿼리 배선, 성능/번들링
+> 판단, Firebase 콘솔 정리)이라 Codex에 못 넘긴다 — `../docs/NEXT.md` 참고.
+> 순수 로직으로 쪼갤 수 있는 새 작업이 나오면 그때 채운다.
 
 ### 룰렛 배분 정확도 — 원인 규명 완료 (2026-08-14 측정)
 
@@ -69,6 +68,7 @@
 | ☑ | `21-roulette-solver.md` | Phase 6 룰렛 solver 9함수. 268/268, 예시 표 전항목 재현 확인 |
 | ☑ | `22-ramen-serving-guard.md` | 기준값 새어든 총중량 차단 + 단위 6종. 272/272, 판정불가 71→89 |
 | ☑ | `23-cached-food-roulette-candidates.md` | `buildCachedFoodCandidates` 신규 — 검색 캐시를 룰렛 후보로. Claude 리뷰 통과, 279/279 |
+| ☑ | `25-candidate-pool-size-cap.md` | `capCandidatePoolSize` 신규 — 후보 30개 초과시 목표칼로리 근접순 상한. Claude 리뷰 통과, 287/287 |
 | ☑ | `24-serving-field-exact-100-guard.md` | 조리음식 1회분의 정확히 100 기준값 누수 차단. 타깃 56/56, 전체는 shared-sync만 실패(277/279), 실데이터는 `fetch failed` |
 
 > **발주 20 은 한 번 반려됐다.** 명세가 자기모순이었다 — `'맥도날드'` 행에
