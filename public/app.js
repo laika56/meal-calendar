@@ -958,7 +958,11 @@ el.searchForm.addEventListener('submit', async (event) => {
   }
 
   if (items.length === 0) {
-    el.searchStatus.textContent = '검색 결과 없음. 수동 입력을 이용해라.';
+    // 식약처 DB 는 브랜드 메뉴를 거의 안 담는다 — `서브웨이`·`서가원 김밥` 은 이름·제조사
+    // 어느 쪽으로 찾아도 0건이다(2026-08-14 실측). 그건 검색으로 못 푼다.
+    // 그래서 「없다」로 끝내지 않고 **한 번 넣으면 다음부터 1탭**이라는 길을 알려준다.
+    el.searchStatus.textContent =
+      '식약처 DB에 없는 음식입니다. 아래에 직접 입력하고 「프리셋으로 저장」을 체크하면 다음부터 1탭으로 추가됩니다.';
     return;
   }
 
