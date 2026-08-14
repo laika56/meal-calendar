@@ -37,8 +37,12 @@ function formatValue(value) {
   return value === undefined ? 'undefined' : JSON.stringify(value);
 }
 
+function normalizeText(value) {
+  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('ko-KR');
+}
+
 function compact(value) {
-  return value.toLocaleLowerCase('ko-KR').replace(/\s+/g, '');
+  return normalizeText(value).replace(/\s/g, '');
 }
 
 function parseAmount(token) {
@@ -136,13 +140,43 @@ function validateMatchArgs(fnName, query, foods) {
   });
 }
 
-// 이름 매칭 3단계(정확 일치 → 접두 → 부분문자열) 중 하나라도 걸리면 그 식품을 돌려준다.
+function matchRank(wanted, fields) {
+  if (fields.some((field) => field === wanted)) return 3;
+  if (fields.some((field) => field.startsWith(wanted))) return 2;
+  if (fields.some((field) => field.includes(wanted))) return 1;
+  return 0;
+}
+
+function matchScore(query, food) {
+  const normalizedQuery = normalizeText(query);
+  const wantedTokens = normalizedQuery === '' ? [''] : normalizedQuery.split(' ');
+  const fields = [compact(food.name)];
+  if (typeof food.maker === 'string') fields.push(compact(food.maker));
+
+  const tokenRanks = wantedTokens.map((token) => matchRank(compact(token), fields));
+  if (tokenRanks.includes(0)) return null;
+
+  // 기존의 전체 검색어 정확 일치 → 접두 → 부분문자열 우선순위를 보존한다.
+  // 전체가 한 필드에 없을 때만, name과 maker에 흩어진 토큰 점수로 후보를 가른다.
+  const wholeQueryRank = matchRank(compact(query), fields);
+  return wholeQueryRank * 100 + tokenRanks.reduce((sum, rank) => sum + rank, 0);
+}
+
+// 이름과 제조사를 함께 대조한다. 모든 검색어 토큰이 둘 중 한 필드에 걸려야 후보가 된다.
 // 전부 실패하면 undefined다 — 호출부가 foods[0] 폴백을 쓸지, 확인을 요구할지 정한다.
 function findByName(query, foods) {
-  const wanted = compact(query);
-  return foods.find((food) => compact(food.name) === wanted)
-    ?? foods.find((food) => compact(food.name).startsWith(wanted))
-    ?? foods.find((food) => compact(food.name).includes(wanted));
+  let bestFood;
+  let bestScore = -1;
+
+  for (const food of foods) {
+    const score = matchScore(query, food);
+    if (score !== null && score > bestScore) {
+      bestFood = food;
+      bestScore = score;
+    }
+  }
+
+  return bestFood;
 }
 
 export function selectBestFood(query, foods) {
@@ -152,7 +186,7 @@ export function selectBestFood(query, foods) {
 }
 
 /**
- * 이름이 정말로 맞아떨어지는 후보가 있는지 (정확·접두·부분문자열 중 하나).
+ * 이름 또는 제조사가 정말로 맞아떨어지는 후보가 있는지 (정확·접두·부분문자열 중 하나).
  * false 면 selectBestFood 의 결과는 foods[0] 폴백이라는 뜻이다 — 이름이 전혀 안 맞는데
  * 그냥 첫 검색 결과를 고른 것이므로, 호출부는 그 값을 확인 없이 바로 기록하면 안 된다.
  */

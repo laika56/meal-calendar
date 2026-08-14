@@ -260,21 +260,46 @@ test('reports NaN literally instead of JSON.stringify\'s misleading "null"', () 
 
 test('selectBestFood prefers exact, then prefix, then substring, then first result', () => {
   const foods = [
-    { name: '맛있는 반숙란' },
-    { name: '반숙란' },
-    { name: '반숙란 대란' },
+    { name: '맛있는 반숙란', maker: null },
+    { name: '반숙란', maker: null },
+    { name: '반숙란 대란', maker: null },
   ];
   assert.equal(selectBestFood('반숙란', foods), foods[1]);
 
   const withoutExact = [foods[0], foods[2]];
   assert.equal(selectBestFood('반숙란', withoutExact), withoutExact[1]);
 
-  const substringOnly = [{ name: '구운 달걀' }, { name: '촉촉한 반숙란 제품' }];
+  const substringOnly = [
+    { name: '구운 달걀', maker: null },
+    { name: '촉촉한 반숙란 제품', maker: null },
+  ];
   assert.equal(selectBestFood('반숙란', substringOnly), substringOnly[1]);
 
-  const noMatch = [{ name: '첫 결과' }, { name: '둘째 결과' }];
+  const noMatch = [{ name: '첫 결과', maker: null }, { name: '둘째 결과', maker: null }];
   assert.equal(selectBestFood('반숙란', noMatch), noMatch[0]);
   assert.equal(selectBestFood('반숙란', []), null);
+});
+
+test('selectBestFood includes maker tokens while preserving name relevance and fallback order', () => {
+  const bigMac = { name: '버거_빅맥 버거', maker: '맥도날드' };
+  const doubleBigMac = { name: '버거_더블빅맥 버거', maker: '맥도날드' };
+  const foods = [bigMac, doubleBigMac];
+
+  assert.equal(selectBestFood('맥도날드 빅맥', foods), bigMac);
+  assert.equal(selectBestFood('빅맥', foods), bigMac);
+  assert.equal(selectBestFood('맥도날드', foods), bigMac);
+
+  const makerMatchAfterUnrelatedResult = [
+    { name: '버거_와퍼', maker: '버거킹' },
+    bigMac,
+  ];
+  assert.equal(selectBestFood('맥도날드', makerMatchAfterUnrelatedResult), bigMac);
+
+  const noMatch = [
+    { name: '첫 결과', maker: null },
+    { name: '둘째 결과', maker: '다른 제조사' },
+  ];
+  assert.equal(selectBestFood('맥도날드 빅맥', noMatch), noMatch[0]);
 });
 
 test('selectBestFood validates its boundary inputs', () => {
@@ -300,18 +325,46 @@ test('selectBestFood validates its boundary inputs', () => {
 // 그 결과를 확인 없이 바로 기록하면 안 된다. hasNameMatch 가 "진짜 매칭이 있었는지"를 구분해준다.
 test('hasNameMatch is true only when a real match (not the [0] fallback) exists', () => {
   const foods = [
-    { name: '맛있는 반숙란' },
-    { name: '반숙란' },
-    { name: '반숙란 대란' },
+    { name: '맛있는 반숙란', maker: null },
+    { name: '반숙란', maker: null },
+    { name: '반숙란 대란', maker: null },
   ];
   assert.equal(hasNameMatch('반숙란', foods), true); // 정확 일치가 있다
 
-  const substringOnly = [{ name: '구운 달걀' }, { name: '촉촉한 반숙란 제품' }];
+  const substringOnly = [
+    { name: '구운 달걀', maker: null },
+    { name: '촉촉한 반숙란 제품', maker: null },
+  ];
   assert.equal(hasNameMatch('반숙란', substringOnly), true); // 부분문자열 일치가 있다
 
-  const noMatch = [{ name: '첫 결과' }, { name: '둘째 결과' }];
+  const noMatch = [{ name: '첫 결과', maker: null }, { name: '둘째 결과', maker: null }];
   assert.equal(hasNameMatch('반숙란', noMatch), false); // selectBestFood 라면 foods[0] 폴백
   assert.equal(hasNameMatch('반숙란', []), false);
+});
+
+test('hasNameMatch checks name and maker without weakening the all-token safety guard', () => {
+  const bigMac = { name: '버거_빅맥 버거', maker: '맥도날드' };
+
+  assert.equal(hasNameMatch('빅맥', [bigMac]), true);
+  assert.equal(hasNameMatch('맥도날드 빅맥', [bigMac]), true);
+  assert.equal(hasNameMatch('맥도날드', [bigMac]), true);
+  assert.equal(hasNameMatch('김밥', [{ name: '김밥', maker: null }]), true);
+  assert.equal(hasNameMatch('서브웨이 샌드위치', [
+    { name: '샌드위치_참치', maker: null },
+  ]), false);
+  assert.equal(hasNameMatch('빅맥', [{ name: '김밥', maker: null }]), false);
+  assert.equal(hasNameMatch('빅맥', []), false);
+});
+
+test('hasNameMatch normalizes query, name, and maker whitespace and letter case', () => {
+  const foods = [{ name: '  Big   Mac Burger  ', maker: '  McDONALD\'S  ' }];
+
+  assert.equal(hasNameMatch("  mcdonald's   BIG   mac  ", foods), true);
+});
+
+test('hasNameMatch treats an undefined maker the same as a null maker', () => {
+  assert.equal(hasNameMatch('김밥', [{ name: '김밥' }]), true);
+  assert.equal(hasNameMatch('맥도날드 김밥', [{ name: '김밥' }]), false);
 });
 
 test('hasNameMatch validates its boundary inputs the same way selectBestFood does', () => {
