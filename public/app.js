@@ -1729,6 +1729,43 @@ async function start() {
 
 start();
 
+// 홈 화면 앱(standalone PWA)은 사파리의 왼쪽 끝 스와이프-뒤로가기가 없다 —
+// 주소창·탭 히스토리 자체가 없어서다. 열린 시트 중 가장 안쪽 것부터
+// 기존 「‹ 뒤로」 버튼을 그대로 눌러서 같은 동작을 흉내낸다.
+const closeDetailBtn = document.getElementById('closeDetail');
+const closeEntryBtn = document.getElementById('closeEntry');
+const closeSettingsBtn = document.getElementById('closeSettings');
+
+function swipeGoBack() {
+  if (!el.portionPrompt.hidden) { el.cancelPortion.click(); return; }
+  if (!el.askPrompt.hidden) { el.askCancel.click(); return; }
+  if (!el.entrySheet.hidden) { closeEntryBtn.click(); return; }
+  if (!el.roulettePrompt.hidden) { el.closeRoulette.click(); return; }
+  if (!el.settings.hidden) { closeSettingsBtn.click(); return; }
+  if (!el.detail.hidden) { closeDetailBtn.click(); return; }
+}
+
+const EDGE_SWIPE_ZONE_PX = 24;
+const SWIPE_BACK_THRESHOLD_PX = 60;
+let swipeStartX = null;
+let swipeStartY = null;
+
+document.addEventListener('touchstart', (event) => {
+  const touch = event.touches[0];
+  swipeStartX = touch.clientX <= EDGE_SWIPE_ZONE_PX ? touch.clientX : null;
+  swipeStartY = touch.clientY;
+}, { passive: true });
+
+document.addEventListener('touchend', (event) => {
+  if (swipeStartX === null) return;
+  const touch = event.changedTouches[0];
+  const dx = touch.clientX - swipeStartX;
+  const dy = Math.abs(touch.clientY - swipeStartY);
+  swipeStartX = null;
+  if (dx < SWIPE_BACK_THRESHOLD_PX || dy > dx) return; // 대각선·세로 스크롤은 무시
+  swipeGoBack();
+}, { passive: true });
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch((err) => {
