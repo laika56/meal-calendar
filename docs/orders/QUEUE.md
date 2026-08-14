@@ -17,7 +17,7 @@
 
 | | 발주서 | 내용 | 의존 |
 |---|---|---|---|
-| ☐ | `26-serving-estimate-from-category.md` | 1인분 모를 때 같은 카테고리 대표 중량을 참고값으로 (표는 이미 생성됨) | 없음 |
+| (없음) | | | |
 
 > **아래는 예전 기록이다.** 남은 건 전부 Claude·사용자 몫(Firestore 쿼리 배선, 성능/번들링
 > 판단, Firebase 콘솔 정리)이라 Codex에 못 넘긴다 — `../docs/NEXT.md` 참고.
@@ -69,6 +69,7 @@
 | ☑ | `22-ramen-serving-guard.md` | 기준값 새어든 총중량 차단 + 단위 6종. 272/272, 판정불가 71→89 |
 | ☑ | `23-cached-food-roulette-candidates.md` | `buildCachedFoodCandidates` 신규 — 검색 캐시를 룰렛 후보로. Claude 리뷰 통과, 279/279 |
 | ☑ | `25-candidate-pool-size-cap.md` | `capCandidatePoolSize` 신규 — 후보 30개 초과시 목표칼로리 근접순 상한. Claude 리뷰 통과, 287/287 |
+| ☑ | `26-serving-estimate-from-category.md` | `estimateServingFromCategory` 신규 — 카테고리 중앙값 참고값. Claude 리뷰 통과, 297/297 |
 | ☑ | `24-serving-field-exact-100-guard.md` | 조리음식 1회분의 정확히 100 기준값 누수 차단. 타깃 56/56, 전체는 shared-sync만 실패(277/279), 실데이터는 `fetch failed` |
 
 > **발주 20 은 한 번 반려됐다.** 명세가 자기모순이었다 — `'맥도날드'` 행에
