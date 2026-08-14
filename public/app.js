@@ -662,7 +662,8 @@ function showPortionPrompt(show) {
  * 끝나고 못 넣은 조각을 사람에게 그대로 보여준다 (절대규칙 7).
  */
 async function runMultiQuickInput(pieces) {
-  const failed = [];
+  const failed = [];      // 못 알아들은 것 (파싱·검색·이름대조 실패)
+  const incomplete = [];  // 알아들었지만 DB 에 영양값이 없는 것
   let added = 0;
 
   for (const piece of pieces) {
@@ -712,23 +713,31 @@ async function runMultiQuickInput(pieces) {
       };
     }
 
+    // 여기까지 왔으면 식품은 찾았다. 그런데도 false 면 DB 에 탄단지 일부가 없다는 뜻이다.
+    // 「못 알아들었다」와 섞으면 사용자가 뭘 고쳐야 할지 알 수 없다 (절대규칙 7).
     const ok = await addSearchedFood(food, amountG, quickInput, { batch: true });
-    if (ok) added += 1; else failed.push(piece.text);
+    if (ok) added += 1; else incomplete.push(piece.text);
   }
 
   el.searchStatus.hidden = false;
-  if (failed.length === 0) {
+  const leftover = [...failed, ...incomplete];
+  if (leftover.length === 0) {
     el.searchStatus.textContent = `${added}개 추가했습니다.`;
     el.searchInput.value = '';
     el.entrySheet.hidden = true;
     state.pendingSlot = null;
     return;
   }
-  // 실패한 조각을 입력칸에 되돌려준다 — 다시 타이핑하게 만들지 않는다
-  el.searchInput.value = failed.join(', ');
+
+  // 남은 조각을 입력칸에 되돌려준다 — 다시 타이핑하게 만들지 않는다
+  el.searchInput.value = leftover.join(', ');
+
+  const reasons = [];
+  if (failed.length > 0) reasons.push(`${failed.length}개는 못 알아들었습니다`);
+  if (incomplete.length > 0) reasons.push(`${incomplete.length}개는 DB에 탄단지가 없어 직접 입력해야 합니다`);
   el.searchStatus.textContent = added > 0
-    ? `${added}개 추가. 아래 ${failed.length}개는 못 알아들었습니다 — 하나씩 확인해주세요.`
-    : `${failed.length}개 모두 못 알아들었습니다 — 하나씩 확인해주세요.`;
+    ? `${added}개 추가. ${reasons.join(', ')}.`
+    : `${reasons.join(', ')}.`;
 }
 
 el.searchForm.addEventListener('submit', async (event) => {
