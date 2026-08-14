@@ -238,6 +238,15 @@ export async function saveDay(dateStr, { slots, totals, weightKg }) {
 // ── 프리셋 ────────────────────────────────────────────────────────────
 // users/{uid}/presets/{presetId} — 1-Click 고정 식품.
 
+/**
+ * 프리셋 문서에서 항목 배열을 꺼낸다. 스키마 두 형태를 모두 받는다.
+ * 구형(`entry` 하나)과 신형(`entries` 배열)이 섞여 있는 게 정상이다 — 마이그레이션을 안 했다.
+ */
+export function presetEntries(preset) {
+  if (Array.isArray(preset?.entries)) return preset.entries;
+  return preset?.entry ? [preset.entry] : [];
+}
+
 export async function listPresets() {
   const snapshot = await getDocs(collection(db, 'users', requireUid(), 'presets'));
   return snapshot.docs
@@ -245,11 +254,18 @@ export async function listPresets() {
     .sort((a, b) => (a.label < b.label ? -1 : 1));
 }
 
-export async function savePreset(label, entry) {
+/**
+ * 프리셋 저장. `entries` 는 항목 **배열**이다 — 한 끼 조합을 통째로 담는다.
+ *
+ * 예전 스키마는 `entry`(항목 하나)였다. **그 문서들을 고치지 않는다** —
+ * 마이그레이션은 되돌리기 어렵고, 읽는 쪽에서 두 형태를 다 받으면 그만이다
+ * (`presetEntries()` 참조). 새로 저장하는 것만 `entries` 를 쓴다.
+ */
+export async function savePreset(label, entries) {
   const presetId = crypto.randomUUID();
   await setDoc(doc(db, 'users', requireUid(), 'presets', presetId), {
     label,
-    entry,
+    entries,
     createdAt: serverTimestamp(),
   });
   return presetId;

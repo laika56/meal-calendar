@@ -125,6 +125,11 @@ const el = {
   conflictText: document.getElementById('conflictText'),
   conflictAbandon: document.getElementById('conflictAbandon'),
   conflictCancel: document.getElementById('conflictCancel'),
+  askPrompt: document.getElementById('askPrompt'),
+  askTitle: document.getElementById('askTitle'),
+  askInput: document.getElementById('askInput'),
+  askOk: document.getElementById('askOk'),
+  askCancel: document.getElementById('askCancel'),
 };
 
 function targetKcal() {
@@ -260,6 +265,18 @@ function renderDayDetail() {
     const head = document.createElement('div');
     head.className = 'slot-head';
     head.innerHTML = `<h3>${label}</h3>`;
+    // 지금 담긴 한 끼를 통째로 즐겨찾기에 저장한다.
+    // 조합을 별도 화면에서 조립하게 하지 않는다 — 이미 먹은 걸 그대로 남기는 게 자연스럽다.
+    if (entries.length > 0) {
+      const saveMeal = document.createElement('button');
+      saveMeal.type = 'button';
+      saveMeal.className = 'slot-save';
+      saveMeal.textContent = '★ 저장';
+      saveMeal.title = '이 끼니를 즐겨찾기에 저장';
+      saveMeal.addEventListener('click', () => saveMealAsPreset(label, entries));
+      head.appendChild(saveMeal);
+    }
+
     const addButton = document.createElement('button');
     addButton.type = 'button';
     addButton.className = 'slot-add';
@@ -442,6 +459,85 @@ async function removeEntry(slotKey, index) {
   await persistDay(slots);
 }
 
+/**
+ * 앱 내 텍스트 입력 시트. 확인하면 문자열, 취소하면 null 로 resolve 한다.
+ * window.prompt 대체 — 그건 iOS standalone PWA 에서 신뢰할 수 없다.
+ */
+function askText(title, initial = '') {
+  return new Promise((resolve) => {
+    el.askTitle.textContent = title;
+    el.askInput.value = initial;
+    el.askPrompt.hidden = false;
+    el.askInput.focus();
+    el.askInput.select();
+
+    const done = (value) => {
+      el.askPrompt.hidden = true;
+      el.askOk.removeEventListener('click', onOk);
+      el.askCancel.removeEventListener('click', onCancel);
+      el.askInput.removeEventListener('keydown', onKey);
+      resolve(value);
+    };
+    const onOk = () => done(el.askInput.value);
+    const onCancel = () => done(null);
+    const onKey = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+      if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+    };
+    el.askOk.addEventListener('click', onOk);
+    el.askCancel.addEventListener('click', onCancel);
+    el.askInput.addEventListener('keydown', onKey);
+  });
+}
+
+/** 지금 슬롯에 담긴 것을 조합 프리셋으로 저장한다. */
+async function saveMealAsPreset(slotLabel, entries) {
+  await dbReady;
+  const suggested = entries.length === 1
+    ? entries[0].name
+    : `${slotLabel} 세트 (${entries.length}개)`;
+  // prompt() 를 쓰지 않는다 — 브라우저 모달은 iOS standalone PWA 에서 막히거나
+  // 앱 흐름을 얼려버린다. 앱 내 시트로 받는다.
+  const name = await askText('즐겨찾기 이름', suggested);
+  if (name === null) return;   // 취소
+  if (!name.trim()) return;
+
+  // 저장용으로 필요한 필드만 남긴다. at/foodKey 같은 그때만 유효한 값은 빼고,
+  // 불러올 때 buildEntry 가 새로 만든다
+  const payload = entries.map(({ name: n, amountG, kcal, carbG, proteinG, fatG }) => ({
+    name: n, amountG, kcal, carbG, proteinG, fatG,
+  }));
+
+  try {
+    await db.savePreset(name.trim(), payload);
+    setSaveState('pending', `즐겨찾기 「${name.trim()}」 저장됨`);
+    setTimeout(() => setSaveState(null), 2500);
+  } catch (err) {
+    console.error('[meal-calendar] 즐겨찾기 저장 실패', err);
+    setSaveState('failed', '즐겨찾기 저장 실패 — 네트워크를 확인해라.');
+  }
+}
+
+/**
+ * 여러 항목을 **한 번의 쓰기로** 넣는다.
+ * 하나씩 addEntryToSlot 을 반복하면 쓰기가 N 번 나가고, 중간에 실패하면
+ * 일부만 들어간 상태로 남는다. 조합 프리셋은 전부 들어가거나 전부 안 들어가야 한다.
+ */
+async function addEntriesToSlot(slotKey, entries) {
+  if (entries.length === 0) return;
+  const day = currentDay();
+  const slots = { ...emptySlots(), ...(day.slots ?? {}) };
+  slots[slotKey] = [...slots[slotKey], ...entries];
+  await persistDay(slots);
+
+  // 최근 항목은 개별로 쌓는다 — 실패해도 기록 자체는 이미 저장됐다
+  for (const entry of entries) {
+    db.pushRecentEntry(entry).catch((err) => {
+      console.error('[meal-calendar] 최근 항목 갱신 실패', err);
+    });
+  }
+}
+
 async function addEntryToSlot(slotKey, entry) {
   const day = currentDay();
   const slots = { ...emptySlots(), ...(day.slots ?? {}) };
@@ -493,11 +589,18 @@ async function renderQuickPicks() {
     const presets = await db.listPresets();
     el.quickPresets.hidden = presets.length === 0;
     for (const preset of presets) {
+      // 구형(entry 하나)과 신형(entries 배열)이 섞여 있다 — db.presetEntries 가 둘 다 받는다
+      const entries = db.presetEntries(preset);
+      const kcal = Math.round(entries.reduce((sum, e) => sum + (e.kcal ?? 0), 0));
+      const countLabel = entries.length > 1 ? ` · ${entries.length}개` : '';
       renderChip(el.presetChips, {
-        text: `${preset.label} · ${Math.round(preset.entry.kcal)}kcal`,
+        text: `${preset.label}${countLabel} · ${kcal}kcal`,
         onAdd: async () => {
           el.entrySheet.hidden = true;
-          await addEntryToSlot(state.pendingSlot, buildEntry({ ...preset.entry, addedBy: 'preset' }));
+          await addEntriesToSlot(
+            state.pendingSlot,
+            entries.map((e) => buildEntry({ ...e, addedBy: 'preset' })),
+          );
         },
         onDelete: async () => {
           await db.deletePreset(preset.id);
@@ -780,7 +883,7 @@ el.entryForm.addEventListener('submit', async (event) => {
 
   if (saveAsPreset) {
     const { name, amountG, kcal, carbG, proteinG, fatG } = fields;
-    db.savePreset(fields.name, { name, amountG, kcal, carbG, proteinG, fatG }).catch((err) => {
+    db.savePreset(fields.name, [{ name, amountG, kcal, carbG, proteinG, fatG }]).catch((err) => {
       console.error('[meal-calendar] 프리셋 저장 실패 (기록 자체는 저장됐다)', err);
     });
   }

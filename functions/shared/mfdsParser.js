@@ -148,18 +148,25 @@ export function resolveServing(parsed) {
     throw new TypeError(`resolveServing: parsed must be an object, got ${formatValue(parsed)}`);
   }
 
-  if (parsed.foodGroup === 'dish' && parsed.totalAmount != null) {
+  if (
+    parsed.foodGroup === 'dish'
+    && parsed.totalAmount != null
+    && (parsed.totalUnit == null || parsed.totalUnit === parsed.basis)
+  ) {
     return {
       amount: parsed.totalAmount,
-      unit: parsed.totalUnit ?? parsed.basis,
+      unit: parsed.basis,
       source: 'dish-total',
     };
   }
 
-  if (parsed.servingAmount != null) {
+  if (
+    parsed.servingAmount != null
+    && (parsed.servingUnit == null || parsed.servingUnit === parsed.basis)
+  ) {
     return {
       amount: parsed.servingAmount,
-      unit: parsed.servingUnit ?? parsed.basis,
+      unit: parsed.basis,
       source: 'serving-field',
     };
   }

@@ -205,6 +205,34 @@
   .quick-section { margin-bottom: 16px; }
   .quick-section h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
   .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* 즐겨찾기 저장 버튼 — 슬롯 헤더 */
+  .slot-save {
+    -webkit-appearance: none; appearance: none;
+    border: 1px solid var(--line); background: var(--card); color: var(--muted);
+    border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 11px; font-weight: 700;
+    margin-left: auto; margin-right: 8px;
+  }
+
+  /* 앱 내 입력 시트 — window.prompt 대체 (iOS standalone 에서 신뢰 불가) */
+  .ask-sheet { display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.45); }
+  .ask-sheet[hidden] { display: none; }
+  .ask-box {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px; width: min(340px, 88vw);
+  }
+  .ask-box h2 { font-size: 14px; margin: 0 0 12px; }
+  .ask-box input {
+    width: 100%; box-sizing: border-box; -webkit-appearance: none; appearance: none;
+    border: 1px solid var(--line); background: var(--card); color: var(--fg);
+    border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 16px;
+  }
+  .ask-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 14px; }
+  .ask-actions button[type="button"]#askOk {
+    -webkit-appearance: none; appearance: none; border: 0;
+    background: var(--fg); color: var(--bg); border-radius: 10px;
+    padding: 10px 18px; font: inherit; font-weight: 700;
+  }
+
   /* 일별 체중 — 하루 문서에 숫자 하나. ROADMAP: "체중이 유일한 결과 지표다" */
   .weight-row {
     display: flex; align-items: center; gap: 10px;
@@ -655,6 +683,17 @@
 
       <button type="submit">계산하고 저장</button>
     </form>
+  </div>
+</div>
+
+<div id="askPrompt" class="sheet ask-sheet" hidden>
+  <div class="ask-box">
+    <h2 id="askTitle"></h2>
+    <input id="askInput" type="text" autocomplete="off" enterkeyhint="done">
+    <div class="ask-actions">
+      <button id="askCancel" type="button" class="link-button">취소</button>
+      <button id="askOk" type="button">확인</button>
+    </div>
   </div>
 </div>
 

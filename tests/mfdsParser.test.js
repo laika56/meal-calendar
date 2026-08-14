@@ -378,17 +378,56 @@ test('falls back to basis when a dish total has no unit', () => {
   });
 });
 
-test('resolves the serving field for a processed product', () => {
+test('resolves a same-unit serving field for a processed product', () => {
   assert.deepEqual(resolveServing({
+    name: '단백질 쉐이크 흑임자',
+    foodGroup: 'processed',
+    totalAmount: 500,
+    totalUnit: 'g',
+    basis: 'g',
+    servingAmount: 40,
+    servingUnit: 'g',
+  }), {
+    amount: 40,
+    unit: 'g',
+    source: 'serving-field',
+  });
+});
+
+test('returns null for the measured WPI serving whose mL unit differs from its g basis', () => {
+  assert.equal(resolveServing({
+    name: '삼대오백 WPI 웨이프로틴 초코',
     foodGroup: 'processed',
     totalAmount: 1000,
     totalUnit: 'g',
     basis: 'g',
     servingAmount: 150,
     servingUnit: 'mL',
+  }), null);
+});
+
+test('returns null when a g serving unit differs from an mL basis', () => {
+  assert.equal(resolveServing({
+    foodGroup: 'processed',
+    totalAmount: null,
+    totalUnit: null,
+    basis: 'mL',
+    servingAmount: 30,
+    servingUnit: 'g',
+  }), null);
+});
+
+test('falls back to a same-unit serving when a dish total unit differs from its basis', () => {
+  assert.deepEqual(resolveServing({
+    foodGroup: 'dish',
+    totalAmount: 650,
+    totalUnit: 'mL',
+    basis: 'g',
+    servingAmount: 30,
+    servingUnit: 'g',
   }), {
-    amount: 150,
-    unit: 'mL',
+    amount: 30,
+    unit: 'g',
     source: 'serving-field',
   });
 });
