@@ -4,6 +4,7 @@ import { calcDayTotals } from '/src/lib/dayTotals.js';
 import { scaleNutrients } from '/src/lib/units.js';
 import { summarizeWeightTrend } from '/src/lib/weightTrend.js';
 import { buildCandidatePool, buildCachedFoodCandidates, buildRouletteProposal } from '/src/lib/roulette.js';
+import { estimateServingFromCategory } from '/src/lib/servingEstimate.js';
 import { validateSignUpForm } from '/src/lib/authValidation.js';
 import { authErrorMessage, validationMessage } from '/src/lib/authMessages.js';
 import {
@@ -1107,6 +1108,78 @@ function renderPortionPreview() {
   `;
 }
 
+// 카테고리 대표 중량표는 **필요할 때만** 받는다. 조리음식의 83%는 1인분을 알아서
+// 이 경로를 안 탄다 — 처음부터 받으면 대부분의 사용자가 안 쓰는 5.8KB를 매번 문다.
+let servingTablePromise = null;
+function loadServingTable() {
+  servingTablePromise ??= fetch('/src/data/servingByCategory.json')
+    .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+    .catch((err) => {
+      // 실패해도 화면은 죽지 않는다 — 참고값이 없을 뿐 직접 입력은 그대로 된다.
+      // 다음에 다시 시도할 수 있게 캐시를 비운다.
+      console.error('[meal-calendar] 1인분 참고표 로드 실패', err);
+      servingTablePromise = null;
+      return null;
+    });
+  return servingTablePromise;
+}
+
+/**
+ * 1인분을 모를 때 **같은 분류의 대표 중량**을 참고값으로 띄운다.
+ *
+ * 왜: 「실제 무게를 확인해서 입력하세요」는 거짓말은 아니지만, 자기가 먹은 라멘이
+ * 몇 g 인지 모르는 사람에게 아무 답이 아니다. 같은 불만이 세 번 나왔다 (2026-08-14).
+ *
+ * **숫자를 지어내지 않는다** — 전부 식약처 응답에서 뽑은 값이고(`scripts/build-serving-table.mjs`),
+ * 표본 수·범위를 같이 보여줘서 사용자가 얼마나 믿을지 스스로 판단하게 한다.
+ * **자동으로 칸을 채우지 않는다** — 눌러야 들어간다. 조용히 채우면 「그럴듯해 보이는
+ * 틀린 숫자」를 다시 만드는 것이다(절대규칙 7).
+ */
+async function renderCategoryEstimate(food) {
+  const table = await loadServingTable();
+  if (!table) return;
+  // 사용자가 그 사이 다른 음식을 골랐으면 그 화면에 남의 숫자를 그리지 않는다
+  if (selectedFood !== food) return;
+
+  let estimate;
+  try {
+    estimate = estimateServingFromCategory(food, table);
+  } catch (err) {
+    console.error('[meal-calendar] 1인분 추정 실패', err);
+    return;
+  }
+  if (!estimate) return;
+
+  const u = estimate.unit;
+  el.servingNote.textContent =
+    `1인분 정보 없음 — 아래는 같은 분류(${estimate.category}) ${estimate.sampleCount}건의 대표 중량입니다.`
+    + ` 실제와 다를 수 있으니 아는 값이 있으면 직접 넣어주세요. (범위 ${estimate.min}~${estimate.max}${u})`;
+  el.servingNote.hidden = false;
+
+  // 중앙값을 가운데 두고 사분위를 양옆에 — 「보통 이 정도, 적게는/많게는 이 정도」
+  const options = [
+    ['적은 편', estimate.p25],
+    ['보통', estimate.amount],
+    ['많은 편', estimate.p75],
+  ].filter(([, amount], index, all) =>
+    // 표본이 좁으면 p25 = median = p75 가 된다 — 같은 버튼 세 개를 띄우지 않는다
+    typeof amount === 'number' && all.findIndex(([, other]) => other === amount) === index);
+
+  el.servingChips.innerHTML = '';
+  for (const [label, amount] of options) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip';
+    chip.textContent = `${label} · 약 ${amount}${u}`;
+    chip.addEventListener('click', () => {
+      el.portionAmount.value = amount;
+      renderPortionPreview();
+    });
+    el.servingChips.appendChild(chip);
+  }
+  el.servingChips.hidden = options.length === 0;
+}
+
 /**
  * 1인분을 아는 식품이면 「1개」 버튼들을 띄운다.
  *
@@ -1125,12 +1198,17 @@ function renderServingChips(food) {
   } else if (!serving) {
     // 1인분을 모르는 채로 조용히 100g을 채우면 그럴듯해 보이는 틀린 숫자가 된다
     // (라멘이 100g으로 잡히는 것과 같은 부류) — 절대규칙7, 알린다.
-    el.servingNote.textContent = '1인분 정보 없음 — 실제 무게(g)를 확인해서 입력하세요.';
+    // 다만 「직접 재서 넣으세요」로 끝내면 **무게를 모르는 사람에게 아무 답이 아니다.**
+    // 같은 분류의 대표 중량을 참고값으로 덧붙인다 (아래 renderCategoryEstimate).
+    el.servingNote.textContent = '1인분 정보 없음 — 아래 참고값을 누르거나 직접 입력하세요.';
     el.servingNote.hidden = false;
   } else {
     el.servingNote.hidden = true;
   }
-  if (!serving) return;
+  if (!serving) {
+    renderCategoryEstimate(food);
+    return;
+  }
 
   // 단위가 mL 여도 per100g 는 100mL 기준이라(basis) 같은 산술이 성립한다
   const unit = serving.unit ?? 'g';
