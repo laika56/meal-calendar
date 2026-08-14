@@ -1103,8 +1103,17 @@ function renderServingChips(food) {
   const serving = food.serving;
   el.servingChips.innerHTML = '';
   el.servingChips.hidden = !serving;
-  el.servingNote.hidden = !food.servingNote;
-  if (food.servingNote) el.servingNote.textContent = `1회 제공량 표기: ${food.servingNote}`;
+  if (food.servingNote) {
+    el.servingNote.textContent = `1회 제공량 표기: ${food.servingNote}`;
+    el.servingNote.hidden = false;
+  } else if (!serving) {
+    // 1인분을 모르는 채로 조용히 100g을 채우면 그럴듯해 보이는 틀린 숫자가 된다
+    // (라멘이 100g으로 잡히는 것과 같은 부류) — 절대규칙7, 알린다.
+    el.servingNote.textContent = '1인분 정보 없음 — 실제 무게(g)를 확인해서 입력하세요.';
+    el.servingNote.hidden = false;
+  } else {
+    el.servingNote.hidden = true;
+  }
   if (!serving) return;
 
   // 단위가 mL 여도 per100g 는 100mL 기준이라(basis) 같은 산술이 성립한다
@@ -1127,8 +1136,8 @@ function openPortionPrompt(food, amountG) {
   selectedFood = food;
   el.portionTitle.textContent = food.name;
   renderServingChips(food);
-  // 1인분을 알면 그걸 기본값으로. 모르면 예전처럼 100 에서 시작한다
-  el.portionAmount.value = amountG ?? food.serving?.amount ?? 100;
+  // 1인분을 알면 그걸 기본값으로. 모르면 아무것도 추측하지 않고 빈칸으로 둔다 — 절대규칙7.
+  el.portionAmount.value = amountG ?? food.serving?.amount ?? '';
   renderPortionPreview();
   showPortionPrompt(true);
 }
@@ -1143,7 +1152,8 @@ el.cancelPortion.addEventListener('click', () => {
 
 el.confirmPortion.addEventListener('click', async () => {
   const amountG = Number(el.portionAmount.value);
-  if (!Number.isFinite(amountG) || amountG < 0) return;
+  // 빈칸은 Number('')===0 이라 이전엔 0g/0kcal 로 조용히 저장됐다 — 0 초과를 요구한다.
+  if (!Number.isFinite(amountG) || amountG <= 0) return;
 
   const scaled = scaleNutrients(selectedFood.per100g, amountG);
   if (Object.values(scaled).some((v) => v === null)) {
