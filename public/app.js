@@ -963,6 +963,29 @@ el.searchForm.addEventListener('submit', async (event) => {
     return;
   }
 
+  // 대표중량 표에 없는 단위(`김밥 1개`)라도 DB 가 1인분을 알면 개수를 곱한다.
+  // 다중 입력(runMultiQuickInput)에는 이 다리가 이미 있었는데 단일 입력에는 없어서,
+  // **쉼표를 붙이면 되고 안 붙이면 안 되는** 상태였다. 같은 입력은 같게 동작해야 한다.
+  if (parsed.reason === 'unsupported-serving' && hasNameMatch(parsed.query, items)) {
+    const food = selectBestFood(parsed.query, items);
+    const count = parsed.count;
+    if (food.serving && Number.isFinite(count) && count > 0) {
+      const amountG = food.serving.amount * count;
+      const added = await addSearchedFood(food, amountG, {
+        ...parsed,
+        ok: true,
+        amountG,
+        displayAmount: `${count}${parsed.unit ?? '개'}`,
+        estimated: true,
+        servingSource: 'mfds-serving',
+      });
+      if (added) return;
+      // 영양값이 불완전해서 못 넣었다 — 아래 검색 결과로 내려가되 이유를 정확히 말한다
+      el.searchStatus.hidden = false;
+      el.searchStatus.textContent = 'DB에 탄단지가 없어 직접 입력이 필요합니다.';
+    }
+  }
+
   el.searchStatus.hidden = true;
   if (parsed.ok) {
     el.searchStatus.hidden = false;
