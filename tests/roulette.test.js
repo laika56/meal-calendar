@@ -7,6 +7,7 @@ import {
   buildCachedFoodCandidates,
   buildCandidatePool,
   buildRouletteProposal,
+  capCandidatePoolSize,
   computeSlotTargets,
   createSeededRandom,
   pickFromTopK,
@@ -234,6 +235,89 @@ test('scoreCombo rejects a non-number in either macro object', () => {
       TypeError,
     );
   }
+});
+
+test('capCandidatePoolSize returns the original smaller and exact-size pools unchanged', () => {
+  const candidates = exampleCandidates();
+
+  assert.strictEqual(capCandidatePoolSize(candidates, COMBO_TARGET, 4), candidates);
+  assert.strictEqual(capCandidatePoolSize(candidates, COMBO_TARGET, 3), candidates);
+  assert.deepEqual(candidates.map(({ id }) => id), ['A', 'B', 'D']);
+});
+
+test('capCandidatePoolSize keeps only the closest candidates in distance order', () => {
+  const near = candidate(
+    'A',
+    '가까움',
+    { kcal: 240, carbG: 20, proteinG: 20, fatG: 8 },
+  );
+  const mid = candidate(
+    'B',
+    '중간',
+    { kcal: 100, carbG: 10, proteinG: 5, fatG: 2 },
+  );
+  const far = candidate(
+    'C',
+    '멀음',
+    { kcal: 900, carbG: 90, proteinG: 50, fatG: 30 },
+  );
+
+  assert.deepEqual(
+    capCandidatePoolSize([mid, far, near], COMBO_TARGET, 2),
+    [near, mid],
+  );
+});
+
+test('capCandidatePoolSize resolves equal kcal distances by original position', () => {
+  const first = candidate(
+    'first',
+    '먼저',
+    { kcal: 100, carbG: 10, proteinG: 5, fatG: 2 },
+  );
+  const second = candidate(
+    'second',
+    '나중',
+    { kcal: 400, carbG: 10, proteinG: 5, fatG: 2 },
+  );
+  const closest = candidate(
+    'closest',
+    '가장 가까움',
+    { kcal: 240, carbG: 20, proteinG: 20, fatG: 8 },
+  );
+
+  assert.deepEqual(
+    capCandidatePoolSize([first, second, closest], COMBO_TARGET, 2),
+    [closest, first],
+  );
+});
+
+test('capCandidatePoolSize rejects every non-positive or non-integer maximum size', () => {
+  for (const [maxSize, messageValue] of [[0, '0'], [-1, '-1'], [1.5, '1.5'], ['2', '"2"']]) {
+    assert.throws(
+      () => capCandidatePoolSize([], COMBO_TARGET, maxSize),
+      {
+        name: 'TypeError',
+        message: `capCandidatePoolSize: maxSize must be a positive integer, got ${messageValue}`,
+      },
+    );
+  }
+});
+
+test('capCandidatePoolSize returns an empty candidate pool for any valid maximum size', () => {
+  const candidates = [];
+
+  assert.strictEqual(capCandidatePoolSize(candidates, COMBO_TARGET, 1), candidates);
+  assert.strictEqual(capCandidatePoolSize(candidates, COMBO_TARGET, 30), candidates);
+});
+
+test('capCandidatePoolSize passes target validation errors through unchanged', () => {
+  assert.throws(
+    () => capCandidatePoolSize([], { ...COMBO_TARGET, proteinG: undefined }, 1),
+    {
+      name: 'TypeError',
+      message: 'capCandidatePoolSize: target.proteinG must be a number, got undefined',
+    },
+  );
 });
 
 test('rankSlotCombos returns all seven combinations in the specified score order', () => {
@@ -649,6 +733,50 @@ test('buildRouletteProposal accepts an omitted dislikes list and topK above rank
 
   assert.equal(result.ok, true);
   assert.ok([0, 1].includes(result.slots.breakfast.entries.length));
+});
+
+test('buildRouletteProposal returns a valid ranked combination from more than 30 candidates', () => {
+  const result = buildRouletteProposal({
+    remainingMacros: COMBO_TARGET,
+    emptySlots: ['breakfast'],
+    candidatePool: Array.from(
+      { length: 31 },
+      (_, index) => candidate(`candidate-${index}`, `후보 ${index}`, COMBO_TARGET),
+    ),
+    dislikes: [],
+    seed: 25,
+    topK: 1,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.slots.breakfast.macros, COMBO_TARGET);
+  assert.ok(Object.values(result.slots.breakfast.macros).every((value) => value !== null));
+  assert.equal(typeof result.slots.breakfast.score, 'number');
+});
+
+test('buildRouletteProposal caps candidates before ranking slot combinations', () => {
+  const closestByKcal = candidate(
+    'closest-by-kcal',
+    '칼로리 우선 후보',
+    { kcal: 250, carbG: 7, proteinG: 27, fatG: 12 },
+  );
+  const lowerOverallScore = candidate(
+    'lower-overall-score',
+    '종합 점수 우선 후보',
+    { kcal: 240, carbG: 25, proteinG: 13, fatG: 10 },
+  );
+  const result = buildRouletteProposal({
+    remainingMacros: COMBO_TARGET,
+    emptySlots: ['breakfast'],
+    candidatePool: [lowerOverallScore, closestByKcal],
+    dislikes: [],
+    seed: 25,
+    maxItemsPerSlot: 1,
+    topK: 1,
+    maxCandidatePoolSize: 1,
+  });
+
+  assert.deepEqual(result.slots.breakfast.entries, closestByKcal.entries);
 });
 
 test('buildRouletteProposal rejects a non-number seed', () => {

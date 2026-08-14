@@ -116,6 +116,27 @@ function combinationsOfSize(candidates, size) {
   return combinations;
 }
 
+export function capCandidatePoolSize(candidates, target, maxSize) {
+  if (!Number.isInteger(maxSize) || maxSize <= 0) {
+    throw new TypeError(
+      `capCandidatePoolSize: maxSize must be a positive integer, got ${formatValue(maxSize)}`,
+    );
+  }
+  validateMacros(target, 'capCandidatePoolSize', 'target');
+
+  if (candidates.length <= maxSize) return candidates;
+
+  return candidates
+    .map((candidate, index) => ({
+      candidate,
+      index,
+      distance: Math.abs(candidate.macros.kcal - target.kcal),
+    }))
+    .sort((left, right) => left.distance - right.distance || left.index - right.index)
+    .slice(0, maxSize)
+    .map(({ candidate }) => candidate);
+}
+
 export function rankSlotCombos(candidates, target, maxItemsPerSlot) {
   if (!Number.isInteger(maxItemsPerSlot) || maxItemsPerSlot < 0) {
     throw new Error(
@@ -242,6 +263,7 @@ export function buildRouletteProposal({
   seed,
   maxItemsPerSlot = 3,
   topK = 5,
+  maxCandidatePoolSize = 30,
 }) {
   validateMacros(remainingMacros, 'buildRouletteProposal', 'remainingMacros');
   if (remainingMacros.kcal <= 0) {
@@ -262,7 +284,12 @@ export function buildRouletteProposal({
 
   for (const slot of orderedEmptySlots) {
     const slotIndex = SLOT_KEYS.indexOf(slot);
-    const ranked = rankSlotCombos(filteredCandidates, targets[slot], maxItemsPerSlot);
+    const cappedCandidates = capCandidatePoolSize(
+      filteredCandidates,
+      targets[slot],
+      maxCandidatePoolSize,
+    );
+    const ranked = rankSlotCombos(cappedCandidates, targets[slot], maxItemsPerSlot);
     const slotSeed = (seed + slotIndex * 2654435761) >>> 0;
     const picked = pickFromTopK(ranked, topK, createSeededRandom(slotSeed));
 
