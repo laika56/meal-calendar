@@ -2,6 +2,7 @@ import { buildMonthGrid, dayStatus } from '/src/lib/calendarGrid.js';
 import { buildGoalProfile, ImpossibleTargetError } from '/src/lib/metabolism.js';
 import { calcDayTotals } from '/src/lib/dayTotals.js';
 import { scaleNutrients } from '/src/lib/units.js';
+import { summarizeWeightTrend } from '/src/lib/weightTrend.js';
 import { validateSignUpForm } from '/src/lib/authValidation.js';
 import { authErrorMessage, validationMessage } from '/src/lib/authMessages.js';
 import {
@@ -63,6 +64,9 @@ const state = {
 const el = {
   monthLabel: document.getElementById('monthLabel'),
   monthNotice: document.getElementById('monthNotice'),
+  weightTrend: document.getElementById('weightTrend'),
+  dayWeight: document.getElementById('dayWeight'),
+  weightState: document.getElementById('weightState'),
   grid: document.getElementById('grid'),
   detail: document.getElementById('dayDetail'),
   detailDate: document.getElementById('detailDate'),
@@ -219,6 +223,7 @@ async function loadMonthData() {
     state.monthState = 'error';
   }
   renderMonth();
+  renderWeightTrend();
 }
 
 // ── 일간 상세 ─────────────────────────────────────────────────────────
@@ -229,6 +234,11 @@ function currentDay() {
 
 function renderDayDetail() {
   const day = currentDay();
+  // 입력 중이면 덮어쓰지 않는다 — 타이핑하는 값을 서버 값으로 밀어내면 안 된다
+  if (document.activeElement !== el.dayWeight) {
+    el.dayWeight.value = typeof day.weightKg === 'number' ? day.weightKg : '';
+    el.weightState.textContent = '';
+  }
   const slots = { ...emptySlots(), ...(day.slots ?? {}) };
   const totals = calcDayTotals(slots);
   const target = targetKcal();
@@ -338,6 +348,92 @@ async function persistDay(slots) {
     setSaveState('failed', '저장 실패 — 화면에는 반영됐지만 서버에 안 올라갔다. 네트워크 확인 후 다시 시도해라.');
   }
 }
+
+// ── 체중 (Phase 5) ────────────────────────────────────────────────────
+// 하루 문서에 숫자 하나. ROADMAP: "체중이 유일한 결과 지표다" — 매크로 추이는 안 만든다.
+
+let weightSaveTimer = null;
+
+/** 입력이 멎고 800ms 뒤에 저장한다. 타이핑 중에 매 글자마다 쓰지 않는다. */
+function scheduleWeightSave() {
+  clearTimeout(weightSaveTimer);
+  weightSaveTimer = setTimeout(saveDayWeight, 800);
+}
+
+async function saveDayWeight() {
+  await dbReady;
+  const raw = el.dayWeight.value.trim();
+
+  // 빈칸은 「안 잼」이다. 0 으로 저장하면 추세가 무너진다 —
+  // 지우는 동작은 지원하지 않는다(되돌리기 어려운 삭제라 별도 설계가 필요하다).
+  if (raw === '') {
+    el.weightState.textContent = '';
+    return;
+  }
+
+  const weightKg = Number(raw);
+  if (!Number.isFinite(weightKg) || weightKg <= 0) {
+    el.weightState.textContent = '숫자를 확인해라';
+    return;
+  }
+
+  const day = { ...currentDay(), weightKg, date: state.openDate };
+  state.monthData.set(state.openDate, day);
+  el.weightState.textContent = '저장 중…';
+
+  try {
+    await db.saveDay(state.openDate, {
+      slots: day.slots ?? emptySlots(),
+      totals: day.totals ?? calcDayTotals(day.slots ?? emptySlots()),
+      weightKg,
+    });
+    el.weightState.textContent = '저장됨';
+    renderWeightTrend();
+  } catch (err) {
+    console.error('[meal-calendar] 체중 저장 실패', err);
+    // 조용히 넘어가지 않는다 (절대규칙 6)
+    el.weightState.textContent = '저장 실패';
+  }
+}
+
+/**
+ * 로드된 달의 체중 기록으로 추세를 그린다.
+ *
+ * **`direction === 'unknown'` 을 「변화 없음」으로 그리지 않는다.**
+ * 표본이 1개거나 전부 같은 날짜면 기울기를 낼 수 없고, 그때 0 으로 때우면
+ * 화면이 "체중 변화 없음"이라고 거짓말한다 (절대규칙 7).
+ */
+function renderWeightTrend() {
+  const points = [...state.monthData.entries()]
+    .filter(([, day]) => typeof day?.weightKg === 'number' && day.weightKg > 0)
+    .map(([date, day]) => ({ date, weightKg: day.weightKg }));
+
+  if (points.length === 0) {
+    el.weightTrend.hidden = true;
+    return;
+  }
+
+  const trend = summarizeWeightTrend(points);
+  el.weightTrend.hidden = false;
+
+  const latest = `<b>${trend.latestKg}kg</b> <span>(${trend.latestDate})</span>`;
+
+  if (trend.direction === 'unknown') {
+    // 수치를 지어내지 않는다. 무엇이 부족한지만 말한다
+    el.weightTrend.innerHTML = `${latest} · 기록 ${trend.sampleCount}일 — `
+      + '추세를 내려면 다른 날짜에도 기록이 필요하다';
+    return;
+  }
+
+  const arrow = { down: '▼', up: '▲', flat: '—' }[trend.direction];
+  const sign = trend.kgPerWeek > 0 ? '+' : '';
+  el.weightTrend.innerHTML = `${latest} · ${arrow} 주당 <b>${sign}${trend.kgPerWeek}kg</b>`
+    + ` <span>(${trend.spanDays}일 · ${trend.sampleCount}회 기록)</span>`;
+}
+
+el.dayWeight.addEventListener('input', scheduleWeightSave);
+// 포커스를 뗄 때는 기다리지 않고 바로 저장한다 — 시트를 닫고 나가버릴 수 있다
+el.dayWeight.addEventListener('blur', () => { clearTimeout(weightSaveTimer); saveDayWeight(); });
 
 async function removeEntry(slotKey, index) {
   const day = currentDay();

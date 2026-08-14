@@ -205,6 +205,28 @@
   .quick-section { margin-bottom: 16px; }
   .quick-section h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
   .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* 일별 체중 — 하루 문서에 숫자 하나. ROADMAP: "체중이 유일한 결과 지표다" */
+  .weight-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 16px; font-size: 13px;
+  }
+  .weight-row label { color: var(--muted); white-space: nowrap; }
+  .weight-row input {
+    flex: 1; min-width: 0; -webkit-appearance: none; appearance: none;
+    border: 0; background: none; color: var(--fg); font: inherit;
+    font-size: 16px; font-weight: 700; text-align: right; padding: 0;
+  }
+  .weight-state { font-size: 11px; color: var(--muted); min-width: 3.5em; text-align: right; }
+
+  .weight-trend {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; margin: 0 0 8px; font-size: 12px; color: var(--muted);
+    line-height: 1.5;
+  }
+  .weight-trend[hidden] { display: none; }
+  .weight-trend b { color: var(--fg); font-size: 14px; }
+
   /* 1인분 배수 칩 — 「1개」로 받는다. 100g 단위 입력은 실사용과 안 맞는다 */
   .serving-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
   .serving-chips button {
@@ -382,6 +404,7 @@
   <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
 </div>
 
+<div id="weightTrend" class="weight-trend" hidden></div>
 <div id="monthNotice" class="month-notice" hidden></div>
 <div id="grid" class="grid"></div>
 </main>
@@ -397,6 +420,12 @@
       <div class="total-row"><span>칼로리</span><b id="totalKcal">0 / 0 kcal</b></div>
       <div class="bar"><div class="bar-fill" id="kcalBar"></div></div>
       <div class="macro-row" id="macroRow"></div>
+    </div>
+    <div class="weight-row">
+      <label for="dayWeight">오늘 체중 (kg)</label>
+      <input id="dayWeight" type="number" inputmode="decimal" min="20" max="300" step="0.1"
+             placeholder="—" aria-describedby="weightState">
+      <span id="weightState" class="weight-state"></span>
     </div>
     <div class="slots" id="slots"></div>
     <div id="saveState" class="save-state" hidden></div>
