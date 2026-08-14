@@ -9,6 +9,21 @@
 <link rel="manifest" href="/public/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/public/icon-180.png">
 <title>식단 캘린더</title>
+<!-- app.js가 import를 하나씩 만날 때마다 순차로 받아오던 걸 병렬로 바꾼다.
+     파일 수는 그대로지만 왕복이 순차→병렬이라 체감 로딩이 줄어든다.
+     db.js/Firebase SDK는 일부러 안 넣는다 — 동적 import로 늦게 부르는 게
+     의도된 최적화다(app.js 주석 참고), 여기서 미리 당기면 그 의도가 깨진다. -->
+<link rel="modulepreload" href="/public/app.js">
+<link rel="modulepreload" href="/src/lib/calendarGrid.js">
+<link rel="modulepreload" href="/src/lib/metabolism.js">
+<link rel="modulepreload" href="/src/lib/dayTotals.js">
+<link rel="modulepreload" href="/src/lib/units.js">
+<link rel="modulepreload" href="/src/lib/weightTrend.js">
+<link rel="modulepreload" href="/src/lib/roulette.js">
+<link rel="modulepreload" href="/src/lib/mfdsParser.js">
+<link rel="modulepreload" href="/src/lib/authValidation.js">
+<link rel="modulepreload" href="/src/lib/authMessages.js">
+<link rel="modulepreload" href="/src/lib/quickFoodInput.js">
 <style>
   :root {
     --bg: #ffffff; --fg: #16181d; --muted: #6b7280;
