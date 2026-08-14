@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   RECENCY_WEIGHT,
   SLOT_RATIOS,
+  buildCachedFoodCandidates,
   buildCandidatePool,
   buildRouletteProposal,
   computeSlotTargets,
@@ -42,6 +43,54 @@ function exampleCandidates() {
 function roundedScore(value) {
   return Number(value.toFixed(4));
 }
+
+const CACHED_DISH = {
+  foodKey: 'mfds_D101-aaa',
+  name: '김치찌개',
+  per100g: { kcal: 46, carbG: 3, proteinG: 4, fatG: 2 },
+  basis: 'g',
+  foodGroup: 'dish',
+  totalAmount: 230,
+  totalUnit: 'g',
+  servingAmount: null,
+  servingUnit: null,
+};
+
+const UNKNOWN_SERVING_DISH = {
+  foodKey: 'mfds_D101-bbb',
+  name: '라멘_미소라멘',
+  per100g: { kcal: 89, carbG: 11.4, proteinG: 4.6, fatG: 2.8 },
+  basis: 'g',
+  foodGroup: 'dish',
+  totalAmount: 100,
+  totalUnit: 'g',
+  servingAmount: null,
+  servingUnit: null,
+};
+
+const CACHED_PROCESSED_FOOD = {
+  foodKey: 'mfds_P200-ccc',
+  name: '그릭요거트',
+  per100g: { kcal: 60, carbG: 4, proteinG: 10, fatG: 0.4 },
+  basis: 'g',
+  foodGroup: 'processed',
+  totalAmount: 500,
+  totalUnit: 'g',
+  servingAmount: 30,
+  servingUnit: 'g',
+};
+
+const INCOMPLETE_NUTRIENTS_FOOD = {
+  foodKey: 'mfds_P200-ddd',
+  name: '불명확 가공식품',
+  per100g: { kcal: 120, carbG: 20, proteinG: 3, fatG: null },
+  basis: 'g',
+  foodGroup: 'processed',
+  totalAmount: null,
+  totalUnit: null,
+  servingAmount: 50,
+  servingUnit: 'g',
+};
 
 test('createSeededRandom returns values in the half-open unit interval', () => {
   const random = createSeededRandom(123);
@@ -304,6 +353,74 @@ test('buildCandidatePool returns an empty pool for two empty sources', () => {
 test('buildCandidatePool rejects either source when it is not an array', () => {
   assert.throws(() => buildCandidatePool(null, []), TypeError);
   assert.throws(() => buildCandidatePool([], null), TypeError);
+});
+
+test('buildCachedFoodCandidates scales one known dish serving into one candidate', () => {
+  assert.deepEqual(buildCachedFoodCandidates([CACHED_DISH]), [
+    {
+      id: 'cache_mfds_D101-aaa',
+      label: '김치찌개',
+      entries: [{
+        name: '김치찌개',
+        foodKey: 'mfds_D101-aaa',
+        kcal: 105.8,
+        carbG: 6.9,
+        proteinG: 9.2,
+        fatG: 4.6,
+      }],
+      macros: { kcal: 105.8, carbG: 6.9, proteinG: 9.2, fatG: 4.6 },
+      recencyPenalty: 0,
+    },
+  ]);
+});
+
+test('buildCachedFoodCandidates omits food when resolveServing cannot determine a serving', () => {
+  assert.deepEqual(buildCachedFoodCandidates([UNKNOWN_SERVING_DISH]), []);
+});
+
+test('buildCachedFoodCandidates omits a serving when any scaled nutrient is null', () => {
+  assert.deepEqual(buildCachedFoodCandidates([INCOMPLETE_NUTRIENTS_FOOD]), []);
+});
+
+test('buildCachedFoodCandidates returns an empty list for an empty cache', () => {
+  assert.deepEqual(buildCachedFoodCandidates([]), []);
+});
+
+test('buildCachedFoodCandidates rejects a non-array cache with the specified message', () => {
+  assert.throws(
+    () => buildCachedFoodCandidates(null),
+    {
+      name: 'TypeError',
+      message: 'buildCachedFoodCandidates: cachedFoods must be an array, got null',
+    },
+  );
+});
+
+test('buildCachedFoodCandidates keeps only valid mixed items in their input order', () => {
+  assert.deepEqual(
+    buildCachedFoodCandidates([
+      CACHED_DISH,
+      UNKNOWN_SERVING_DISH,
+      CACHED_PROCESSED_FOOD,
+      INCOMPLETE_NUTRIENTS_FOOD,
+    ]),
+    [
+      candidate(
+        'cache_mfds_D101-aaa',
+        '김치찌개',
+        { kcal: 105.8, carbG: 6.9, proteinG: 9.2, fatG: 4.6 },
+        0,
+        'mfds_D101-aaa',
+      ),
+      candidate(
+        'cache_mfds_P200-ccc',
+        '그릭요거트',
+        { kcal: 18, carbG: 1.2, proteinG: 3, fatG: 0.1 },
+        0,
+        'mfds_P200-ccc',
+      ),
+    ],
+  );
 });
 
 test('pickFromTopK is reproducible for newly created random functions with the same seed', () => {

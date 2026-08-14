@@ -1,4 +1,6 @@
 import { sumEntries } from './dayTotals.js';
+import { resolveServing } from './mfdsParser.js';
+import { scaleNutrients } from './units.js';
 
 const NUTRIENT_KEYS = ['kcal', 'carbG', 'proteinG', 'fatG'];
 const SLOT_KEYS = ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -182,6 +184,41 @@ export function buildCandidatePool(presets, recentEntries) {
   }));
 
   return [...presetCandidates, ...recentCandidates];
+}
+
+export function buildCachedFoodCandidates(cachedFoods) {
+  if (!Array.isArray(cachedFoods)) {
+    throw new TypeError(
+      `buildCachedFoodCandidates: cachedFoods must be an array, got ${formatValue(cachedFoods)}`,
+    );
+  }
+
+  const candidates = [];
+
+  for (const food of cachedFoods) {
+    const serving = resolveServing(food);
+    if (serving === null) continue;
+
+    const scaled = scaleNutrients(food.per100g, serving.amount);
+    if (NUTRIENT_KEYS.some((field) => scaled[field] === null)) continue;
+
+    candidates.push({
+      id: `cache_${food.foodKey}`,
+      label: food.name,
+      entries: [{
+        name: food.name,
+        foodKey: food.foodKey,
+        kcal: scaled.kcal,
+        carbG: scaled.carbG,
+        proteinG: scaled.proteinG,
+        fatG: scaled.fatG,
+      }],
+      macros: scaled,
+      recencyPenalty: 0,
+    });
+  }
+
+  return candidates;
 }
 
 export function pickFromTopK(rankedCombos, k, random) {

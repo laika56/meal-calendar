@@ -403,7 +403,7 @@ test('falls through a rejected 100-unit dish total to its separate serving field
   });
 });
 
-test('keeps processed-product totals and 100-unit serving fields on their existing paths', () => {
+test('keeps processed-product totals and non-dish 100-unit serving fields on their existing paths', () => {
   assert.equal(resolveServing({
     foodGroup: 'processed',
     totalAmount: 100,
@@ -413,30 +413,32 @@ test('keeps processed-product totals and 100-unit serving fields on their existi
     servingUnit: null,
   }), null);
 
+  for (const foodGroup of ['processed', 'ingredient']) {
+    assert.deepEqual(resolveServing({
+      foodGroup,
+      totalAmount: null,
+      totalUnit: null,
+      basis: 'g',
+      servingAmount: 100,
+      servingUnit: 'g',
+    }), {
+      amount: 100,
+      unit: 'g',
+      source: 'serving-field',
+    });
+  }
+});
+
+test('prefers a dish total when both total and serving fields are present', () => {
   assert.deepEqual(resolveServing({
-    foodGroup: 'processed',
+    foodGroup: 'dish',
     totalAmount: 500,
     totalUnit: 'g',
     basis: 'g',
     servingAmount: 100,
     servingUnit: 'g',
   }), {
-    amount: 100,
-    unit: 'g',
-    source: 'serving-field',
-  });
-});
-
-test('prefers a dish total when both total and serving fields are present', () => {
-  assert.deepEqual(resolveServing({
-    foodGroup: 'dish',
-    totalAmount: 230,
-    totalUnit: 'g',
-    basis: 'g',
-    servingAmount: 150,
-    servingUnit: 'g',
-  }), {
-    amount: 230,
+    amount: 500,
     unit: 'g',
     source: 'dish-total',
   });
@@ -526,19 +528,34 @@ test('falls back to basis when the serving field has no unit', () => {
   });
 });
 
-test('uses a serving field when a dish has no total amount', () => {
-  assert.deepEqual(resolveServing({
-    foodGroup: 'dish',
-    totalAmount: null,
-    totalUnit: null,
-    basis: 'g',
-    servingAmount: 100,
-    servingUnit: null,
-  }), {
-    amount: 100,
-    unit: 'g',
-    source: 'serving-field',
-  });
+test('rejects a dish serving field that exactly repeats the 100-unit nutrient basis', () => {
+  for (const servingUnit of [null, 'g']) {
+    assert.equal(resolveServing({
+      foodGroup: 'dish',
+      totalAmount: null,
+      totalUnit: null,
+      basis: 'g',
+      servingAmount: 100,
+      servingUnit,
+    }), null);
+  }
+});
+
+test('keeps dish serving fields immediately outside the exact 100 boundary', () => {
+  for (const servingAmount of [99, 101]) {
+    assert.deepEqual(resolveServing({
+      foodGroup: 'dish',
+      totalAmount: null,
+      totalUnit: null,
+      basis: 'g',
+      servingAmount,
+      servingUnit: 'g',
+    }), {
+      amount: servingAmount,
+      unit: 'g',
+      source: 'serving-field',
+    });
+  }
 });
 
 test('returns null for a processed product with only a package total', () => {

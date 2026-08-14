@@ -161,8 +161,11 @@ export function resolveServing(parsed) {
     };
   }
 
+  const servingLooksLikeBasisLeak = parsed.foodGroup === 'dish' && parsed.servingAmount === 100;
+
   if (
     parsed.servingAmount != null
+    && !servingLooksLikeBasisLeak
     && (parsed.servingUnit == null || parsed.servingUnit === parsed.basis)
   ) {
     return {
