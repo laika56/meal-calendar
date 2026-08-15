@@ -48,10 +48,31 @@ test('redesign uses the fixed deep-green dark tokens without a color-scheme bran
 
 test('calendar rendering exposes a per-day ring progress value', () => {
   const app = read('public/app.js');
+  const html = read('public/index.html');
+  const ringRule = html.match(/\.day-ring\s*\{([^}]*)\}/s);
+
   assert.match(app, /class="day-ring"/);
   assert.match(app, /--ring-progress/);
   assert.match(app, /monthDashboardSummary/);
   assert.match(app, /progressPercent/);
+  assert.ok(ringRule, 'day ring CSS rule is missing');
+  assert.doesNotMatch(
+    ringRule[1],
+    /--ring-progress\s*:/,
+    'day ring must inherit the per-day progress instead of overriding it',
+  );
+});
+
+test('day detail entries keep calories in one right-aligned column', () => {
+  const html = read('public/index.html');
+  const lineRule = html.match(/\.entry-line\s*\{([^}]*)\}/s);
+  const kcalRule = html.match(/\.entry-kcal\s*\{([^}]*)\}/s);
+
+  assert.ok(lineRule, 'entry line CSS rule is missing');
+  assert.match(lineRule[1], /display:\s*grid/);
+  assert.match(lineRule[1], /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+24px/);
+  assert.ok(kcalRule, 'entry kcal CSS rule is missing');
+  assert.match(kcalRule[1], /text-align:\s*right/);
 });
 
 test('entry shell keeps the approved quick-add wording and preset groups', () => {

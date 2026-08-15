@@ -111,7 +111,7 @@
     background: var(--card-soft); color: var(--fg); font: inherit; padding: 3px 2px;
   }
   .day-ring {
-    --ring-color: var(--dim); --ring-progress: 0;
+    --ring-color: var(--dim);
     display: grid; place-items: center; width: 28px; height: 28px;
     border-radius: 50%;
     background: conic-gradient(var(--ring-color) calc(var(--ring-progress) * 1%), var(--line) 0);
@@ -233,15 +233,16 @@
   }
   .slot-items { color: var(--muted); font-size: 13px; }
   .entry-line {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto 24px;
+    align-items: baseline; column-gap: 10px;
     padding: 6px 0; border-top: 1px solid var(--line); color: var(--fg);
   }
   .entry-line:first-child { border-top: 0; }
   .entry-name { font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .entry-kcal { font-size: 13px; font-weight: 600; flex: 0 0 auto; }
+  .entry-kcal { font-size: 13px; font-weight: 600; text-align: right; white-space: nowrap; }
   .entry-del {
     -webkit-appearance: none; appearance: none; border: 0; background: none;
-    color: var(--muted); font: inherit; font-size: 16px; padding: 0 2px; flex: 0 0 auto;
+    justify-self: end; color: var(--muted); font: inherit; font-size: 16px; padding: 0 2px;
   }
   .save-state {
     margin-top: 14px; font-size: 12px; color: var(--muted);
