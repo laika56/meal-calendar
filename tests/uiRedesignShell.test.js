@@ -61,6 +61,16 @@ test('calendar rendering exposes a per-day ring progress value', () => {
     /--ring-progress\s*:/,
     'day ring must inherit the per-day progress instead of overriding it',
   );
+  assert.doesNotMatch(
+    app,
+    /button\.style\.setProperty\('--ring-progress'/,
+    'a cached day-ring rule can override progress placed only on its parent button',
+  );
+  assert.match(
+    app,
+    /button\.querySelector\('\.day-ring'\)\.style\.setProperty\(\s*'--ring-progress'/,
+    'progress must be placed directly on the rendered ring to override a cached zero value',
+  );
 });
 
 test('day detail entries keep calories in one right-aligned column', () => {
@@ -73,6 +83,19 @@ test('day detail entries keep calories in one right-aligned column', () => {
   assert.match(lineRule[1], /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+24px/);
   assert.ok(kcalRule, 'entry kcal CSS rule is missing');
   assert.match(kcalRule[1], /text-align:\s*right/);
+});
+
+test('day weight input stays at 16px or larger so iOS does not zoom on focus', () => {
+  const html = read('public/index.html');
+  const inputRule = html.match(/\.weight-control input\s*\{([^}]*)\}/s);
+
+  assert.ok(inputRule, 'day weight input CSS rule is missing');
+  const fontSize = inputRule[1].match(/font-size:\s*([\d.]+)px/);
+  assert.ok(fontSize, 'day weight input must declare a pixel font size');
+  assert.ok(
+    Number(fontSize[1]) >= 16,
+    'day weight input must be at least 16px to prevent iOS focus zoom',
+  );
 });
 
 test('entry shell keeps the approved quick-add wording and preset groups', () => {

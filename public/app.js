@@ -227,7 +227,6 @@ function renderMonth() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `day day-${status}${cell.inCurrentMonth ? '' : ' day-outside'}${cell.date === today ? ' day-today' : ''}`;
-    button.style.setProperty('--ring-progress', known && hasRecord ? progressPercent(kcal, target) : 0);
     button.dataset.date = cell.date;
     button.setAttribute(
       'aria-label',
@@ -238,6 +237,10 @@ function renderMonth() {
       <span class="day-kcal">${known && hasRecord ? Math.round(kcal) : ''}</span>
       <span class="day-badge">${label.symbol} ${label.text}</span>
     `;
+    button.querySelector('.day-ring').style.setProperty(
+      '--ring-progress',
+      known && hasRecord ? progressPercent(kcal, target) : 0,
+    );
     button.addEventListener('click', () => openDayDetail(cell.date));
     el.grid.appendChild(button);
   }
