@@ -10,6 +10,7 @@ import { authErrorMessage, validationMessage } from '/src/lib/authMessages.js';
 import {
   parseQuickFoodInput, splitQuickFoodInput, selectBestFood, hasNameMatch, SERVING_SOURCE_LABELS,
 } from '/src/lib/quickFoodInput.js';
+import { monthDashboardSummary, progressPercent, servingChoiceOptions } from '/src/lib/uiDashboard.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
 // 전부 받아질 때까지 이 모듈 전체의 실행이 밀린다. 캘린더 그리드는 네트워크 없이 그릴 수 있는데
@@ -65,6 +66,10 @@ const state = {
 
 const el = {
   monthLabel: document.getElementById('monthLabel'),
+  monthAverage: document.getElementById('monthAverage'),
+  monthRecorded: document.getElementById('monthRecorded'),
+  monthOnTarget: document.getElementById('monthOnTarget'),
+  monthWeight: document.getElementById('monthWeight'),
   monthNotice: document.getElementById('monthNotice'),
   weightTrend: document.getElementById('weightTrend'),
   dayWeight: document.getElementById('dayWeight'),
@@ -80,7 +85,11 @@ const el = {
   detail: document.getElementById('dayDetail'),
   detailDate: document.getElementById('detailDate'),
   totalKcal: document.getElementById('totalKcal'),
-  kcalBar: document.getElementById('kcalBar'),
+  kcalTarget: document.getElementById('kcalTarget'),
+  calorieGauge: document.getElementById('calorieGauge'),
+  carbMetric: document.getElementById('carbMetric'),
+  proteinMetric: document.getElementById('proteinMetric'),
+  fatMetric: document.getElementById('fatMetric'),
   macroRow: document.getElementById('macroRow'),
   slots: document.getElementById('slots'),
   saveState: document.getElementById('saveState'),
@@ -95,6 +104,8 @@ const el = {
   entryError: document.getElementById('entryError'),
   quickPresets: document.getElementById('quickPresets'),
   presetChips: document.getElementById('presetChips'),
+  quickMeals: document.getElementById('quickMeals'),
+  mealPresetChips: document.getElementById('mealPresetChips'),
   quickRecent: document.getElementById('quickRecent'),
   recentChips: document.getElementById('recentChips'),
   copyYesterday: document.getElementById('copyYesterday'),
@@ -189,6 +200,14 @@ function renderMonth() {
   // 아직 안 읽었거나 읽기에 실패했으면 「미기록」이라고 말하지 않는다.
   // 모르는 것을 없다고 단정하는 표시다 (절대규칙 7).
   const known = state.monthState === 'idle';
+  const summary = monthDashboardSummary(
+    known ? [...state.monthData.entries()].map(([date, day]) => ({ ...day, date })) : [],
+    target,
+  );
+  el.monthAverage.textContent = summary.averageKcal === null ? '—' : `${summary.averageKcal} kcal`;
+  el.monthRecorded.textContent = `${summary.recordedDays}일`;
+  el.monthOnTarget.textContent = `${summary.onTargetDays}일`;
+  el.monthWeight.textContent = summary.latestWeightKg === null ? '—' : `${summary.latestWeightKg}kg`;
   el.monthNotice.hidden = known;
   if (state.monthState === 'loading') {
     el.monthNotice.className = 'month-notice';
@@ -208,13 +227,14 @@ function renderMonth() {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `day day-${status}${cell.inCurrentMonth ? '' : ' day-outside'}${cell.date === today ? ' day-today' : ''}`;
+    button.style.setProperty('--ring-progress', known && hasRecord ? progressPercent(kcal, target) : 0);
     button.dataset.date = cell.date;
     button.setAttribute(
       'aria-label',
       `${cell.date}, ${label.text}${known && hasRecord ? `, ${kcal}kcal` : ''}`,
     );
     button.innerHTML = `
-      <span class="day-num">${cell.dayOfMonth}</span>
+      <span class="day-ring"><span class="day-num">${cell.dayOfMonth}</span></span>
       <span class="day-kcal">${known && hasRecord ? Math.round(kcal) : ''}</span>
       <span class="day-badge">${label.symbol} ${label.text}</span>
     `;
@@ -258,12 +278,18 @@ function renderDayDetail() {
   const target = targetKcal();
 
   el.detailDate.textContent = state.openDate;
-  el.totalKcal.textContent = `${Math.round(totals.kcal)} / ${target} kcal`;
-  el.kcalBar.style.width = `${Math.min(100, Math.round((totals.kcal / target) * 100))}%`;
-
-  el.macroRow.textContent = state.goal
-    ? `탄 ${Math.round(totals.carbG)}/${state.goal.carbG}g · 단 ${Math.round(totals.proteinG)}/${state.goal.proteinG}g · 지 ${Math.round(totals.fatG)}/${state.goal.fatG}g`
-    : `탄 ${Math.round(totals.carbG)}g · 단 ${Math.round(totals.proteinG)}g · 지 ${Math.round(totals.fatG)}g`;
+  el.totalKcal.textContent = `${Math.round(totals.kcal)} kcal`;
+  el.kcalTarget.textContent = `목표 ${target} kcal`;
+  el.calorieGauge.style.setProperty('--gauge-progress', progressPercent(totals.kcal, target));
+  el.carbMetric.textContent = state.goal
+    ? `${Math.round(totals.carbG)}/${state.goal.carbG}g`
+    : `${Math.round(totals.carbG)}g`;
+  el.proteinMetric.textContent = state.goal
+    ? `${Math.round(totals.proteinG)}/${state.goal.proteinG}g`
+    : `${Math.round(totals.proteinG)}g`;
+  el.fatMetric.textContent = state.goal
+    ? `${Math.round(totals.fatG)}/${state.goal.fatG}g`
+    : `${Math.round(totals.fatG)}g`;
 
   el.slots.innerHTML = '';
   for (const [key, label] of SLOT_LABELS) {
@@ -740,9 +766,9 @@ document.getElementById('closeDetail').addEventListener('click', () => {
 
 // ── 항목 추가 ─────────────────────────────────────────────────────────
 
-function renderChip(container, { text, onAdd, onDelete }) {
+function renderChip(container, { text, onAdd, onDelete, variant = '' }) {
   const chip = document.createElement('div');
-  chip.className = 'chip';
+  chip.className = `chip${variant ? ` ${variant}` : ''}`;
 
   const addBtn = document.createElement('button');
   addBtn.type = 'button';
@@ -767,18 +793,26 @@ function renderChip(container, { text, onAdd, onDelete }) {
 async function renderQuickPicks() {
   await dbReady;
   el.presetChips.innerHTML = '';
+  el.mealPresetChips.innerHTML = '';
   el.recentChips.innerHTML = '';
 
   try {
     const presets = await db.listPresets();
-    el.quickPresets.hidden = presets.length === 0;
+    const singlePresets = [];
+    const mealPresets = [];
     for (const preset of presets) {
       // 구형(entry 하나)과 신형(entries 배열)이 섞여 있다 — db.presetEntries 가 둘 다 받는다
       const entries = db.presetEntries(preset);
+      (entries.length > 1 ? mealPresets : singlePresets).push({ preset, entries });
+    }
+    el.quickPresets.hidden = singlePresets.length === 0;
+    el.quickMeals.hidden = mealPresets.length === 0;
+    for (const { preset, entries } of [...singlePresets, ...mealPresets]) {
       const kcal = Math.round(entries.reduce((sum, e) => sum + (e.kcal ?? 0), 0));
       const countLabel = entries.length > 1 ? ` · ${entries.length}개` : '';
-      renderChip(el.presetChips, {
+      renderChip(entries.length > 1 ? el.mealPresetChips : el.presetChips, {
         text: `${preset.label}${countLabel} · ${kcal}kcal`,
+        variant: entries.length > 1 ? 'meal-preset' : '',
         onAdd: async () => {
           el.entrySheet.hidden = true;
           await addEntriesToSlot(
@@ -946,6 +980,7 @@ el.searchForm.addEventListener('submit', async (event) => {
   const q = parsed.query;
 
   el.searchResults.innerHTML = '';
+  el.searchStatus.className = 'search-status';
   el.searchStatus.hidden = false;
   el.searchStatus.textContent = parsed.ok ? '대표 중량으로 계산 중…' : '검색 중…';
 
@@ -962,8 +997,11 @@ el.searchForm.addEventListener('submit', async (event) => {
     // 식약처 DB 는 브랜드 메뉴를 거의 안 담는다 — `서브웨이`·`서가원 김밥` 은 이름·제조사
     // 어느 쪽으로 찾아도 0건이다(2026-08-14 실측). 그건 검색으로 못 푼다.
     // 그래서 「없다」로 끝내지 않고 **한 번 넣으면 다음부터 1탭**이라는 길을 알려준다.
+    el.searchStatus.className = 'search-status search-status-warning';
     el.searchStatus.textContent =
-      '식약처 DB에 없는 음식입니다. 아래에 직접 입력하고 「프리셋으로 저장」을 체크하면 다음부터 1탭으로 추가됩니다.';
+      '식약처 DB에 없는 음식입니다. 프랜차이즈 메뉴는 대부분 등록돼 있지 않습니다. 아래에 한 번만 넣어두면 다음부터 1탭으로 기록됩니다.';
+    el.entryForm.name.value = q;
+    el.entryForm.saveAsPreset.checked = true;
     return;
   }
 
@@ -1017,14 +1055,31 @@ el.searchForm.addEventListener('submit', async (event) => {
     el.searchStatus.textContent = '이 단위는 아직 자동 환산하지 못합니다. 음식을 고른 뒤 g을 입력해주세요.';
   }
 
+  const servingTable = await loadServingTable();
   for (const food of items) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'search-result';
     const kcalText = food.per100g.kcal == null ? '?' : Math.round(food.per100g.kcal);
+    let servingLabel = '';
+    let servingClass = '';
+    if (food.serving) {
+      servingLabel = `1인분 ${food.serving.amount}${food.serving.unit}`;
+      servingClass = 'r-serving-known';
+    } else if (servingTable) {
+      try {
+        const estimate = estimateServingFromCategory(food, servingTable);
+        if (estimate) {
+          servingLabel = `참고값 ${estimate.amount}${estimate.unit}`;
+          servingClass = 'r-serving-reference';
+        }
+      } catch (err) {
+        console.error('[meal-calendar] 검색 결과 참고값 계산 실패', err);
+      }
+    }
     button.innerHTML = `
       <span class="r-name">${food.name}</span>
-      <span class="r-meta">${food.category ?? ''} · 100g당 ${kcalText}kcal</span>
+      <span class="r-meta">${food.category ?? ''} · 100g당 ${kcalText}kcal${servingLabel ? ` · <span class="${servingClass}">${servingLabel}</span>` : ''}</span>
     `;
     // parsed.ok 면 사용자가 이미 입력한 양(g 명시든 개수 추정 환산이든)을 그대로 넘긴다 —
     // 이름을 못 찾았다고 이미 알려준 수량까지 지우고 100g 기본값으로 되돌리지 않는다.
@@ -1132,8 +1187,8 @@ function loadServingTable() {
  *
  * **숫자를 지어내지 않는다** — 전부 식약처 응답에서 뽑은 값이고(`scripts/build-serving-table.mjs`),
  * 표본 수·범위를 같이 보여줘서 사용자가 얼마나 믿을지 스스로 판단하게 한다.
- * **자동으로 칸을 채우지 않는다** — 눌러야 들어간다. 조용히 채우면 「그럴듯해 보이는
- * 틀린 숫자」를 다시 만드는 것이다(절대규칙 7).
+ * 승인된 추가 흐름에서는 「한 그릇」을 명시적으로 선택한 상태로 시작한다. 사용자가
+ * 다른 그릇 수나 정확한 g 값을 고르면 그 선택으로 즉시 다시 계산한다.
  */
 async function renderCategoryEstimate(food) {
   const table = await loadServingTable();
@@ -1150,33 +1205,28 @@ async function renderCategoryEstimate(food) {
   }
   if (!estimate) return;
 
-  const u = estimate.unit;
   el.servingNote.textContent =
-    `1인분 정보 없음 — 아래는 같은 분류(${estimate.category}) ${estimate.sampleCount}건의 대표 중량입니다.`
-    + ` 실제와 다를 수 있으니 아는 값이 있으면 직접 넣어주세요. (범위 ${estimate.min}~${estimate.max}${u})`;
+    `1인분 정보가 없어 같은 분류(${estimate.category})의 대표 중량으로 계산합니다.`;
   el.servingNote.hidden = false;
 
-  // 중앙값을 가운데 두고 사분위를 양옆에 — 「보통 이 정도, 적게는/많게는 이 정도」
-  const options = [
-    ['적은 편', estimate.p25],
-    ['보통', estimate.amount],
-    ['많은 편', estimate.p75],
-  ].filter(([, amount], index, all) =>
-    // 표본이 좁으면 p25 = median = p75 가 된다 — 같은 버튼 세 개를 띄우지 않는다
-    typeof amount === 'number' && all.findIndex(([, other]) => other === amount) === index);
+  const options = servingChoiceOptions(estimate);
 
   el.servingChips.innerHTML = '';
-  for (const [label, amount] of options) {
+  for (const option of options) {
     const chip = document.createElement('button');
     chip.type = 'button';
-    chip.className = 'chip';
-    chip.textContent = `${label} · 약 ${amount}${u}`;
+    chip.className = `portion-choice${option.selected ? ' selected' : ''}`;
+    chip.textContent = option.label;
     chip.addEventListener('click', () => {
-      el.portionAmount.value = amount;
+      for (const sibling of el.servingChips.children) sibling.classList.remove('selected');
+      chip.classList.add('selected');
+      el.portionAmount.value = option.amount;
       renderPortionPreview();
     });
     el.servingChips.appendChild(chip);
   }
+  el.portionAmount.value = estimate.amount;
+  renderPortionPreview();
   el.servingChips.hidden = options.length === 0;
 }
 

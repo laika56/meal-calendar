@@ -25,6 +25,7 @@ const SHELL_FILES = [
   '/src/lib/metabolism.js',
   '/src/lib/mfdsParser.js',
   '/src/lib/quickFoodInput.js',
+  '/src/lib/uiDashboard.js',
   '/src/lib/roulette.js',
   '/src/lib/servingEstimate.js',
   '/src/lib/units.js',

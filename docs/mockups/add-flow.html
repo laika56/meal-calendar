@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>항목 추가 흐름 목업 6개</title>
+  <style>
+    :root {
+      --screen: #0a0b0d;
+      --surface: #131519;
+      --surface-soft: #111318;
+      --border: #23262c;
+      --frame-border: #24272d;
+      --text: #f2f4f7;
+      --muted: #9aa2ad;
+      --dim: #6b7280;
+      --placeholder: #4b5563;
+      --success: #37d67a;
+      --success-text: #8de0b4;
+      --success-bg: #0f1a14;
+      --success-border: #2a4d3a;
+      --warning: #e0b978;
+      --warning-bg: #1c1610;
+      --warning-border: #3d2f1c;
+      --info: #9ab3d0;
+      --info-bg: #101720;
+      --info-border: #1c2836;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+      margin: 0;
+      background: var(--screen);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+      font-variant-numeric: tabular-nums;
+    }
+
+    body {
+      padding: 28px;
+      overflow-x: auto;
+    }
+
+    button,
+    input {
+      font: inherit;
+      font-variant-numeric: tabular-nums;
+    }
+
+    button {
+      cursor: default;
+    }
+
+    .gallery {
+      display: flex;
+      align-items: flex-start;
+      gap: 20px;
+      width: max-content;
+    }
+
+    .mockup {
+      width: 310px;
+    }
+
+    .mockup-heading {
+      min-height: 112px;
+      padding: 0 2px 14px;
+    }
+
+    .mockup-heading h2 {
+      margin: 0 0 8px;
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.35;
+      font-weight: 700;
+    }
+
+    .mockup-heading p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .phone {
+      width: 310px;
+      height: 620px;
+      padding: 18px 16px;
+      overflow: hidden;
+      border: 1px solid var(--frame-border);
+      border-radius: 24px;
+      background: var(--screen);
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      min-height: 24px;
+      margin-bottom: 16px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .topbar strong {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .topbar .back {
+      white-space: nowrap;
+    }
+
+    .search-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 48px;
+      gap: 7px;
+      margin-bottom: 12px;
+    }
+
+    .input,
+    .field {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      color: var(--text);
+      outline: 0;
+    }
+
+    .input {
+      height: 38px;
+      padding: 0 10px;
+      font-size: 11px;
+    }
+
+    .field {
+      min-height: 38px;
+      padding: 10px;
+      font-size: 10.5px;
+      line-height: 1.4;
+    }
+
+    .input::placeholder,
+    .field::placeholder {
+      color: var(--placeholder);
+      opacity: 1;
+    }
+
+    .small-button,
+    .primary-button,
+    .secondary-button {
+      border-radius: 10px;
+      font-weight: 700;
+    }
+
+    .small-button,
+    .primary-button {
+      border: 1px solid var(--text);
+      background: var(--text);
+      color: var(--screen);
+    }
+
+    .small-button {
+      height: 38px;
+      padding: 0;
+      font-size: 11px;
+    }
+
+    .primary-button,
+    .secondary-button {
+      width: 100%;
+      min-height: 42px;
+      padding: 0 12px;
+      font-size: 12px;
+    }
+
+    .secondary-button {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+    }
+
+    .button-stack {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .notice {
+      display: flex;
+      gap: 8px;
+      padding: 11px;
+      border: 1px solid;
+      border-radius: 12px;
+      font-size: 10.5px;
+      line-height: 1.55;
+    }
+
+    .notice p {
+      margin: 0;
+    }
+
+    .notice.warning {
+      border-color: var(--warning-border);
+      background: var(--warning-bg);
+      color: var(--warning);
+    }
+
+    .notice.info {
+      border-color: var(--info-border);
+      background: var(--info-bg);
+      color: var(--info);
+    }
+
+    .notice-mark {
+      flex: 0 0 auto;
+      font-weight: 700;
+    }
+
+    .form {
+      display: grid;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .form label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .toggle-chip,
+    .choice-chip,
+    .preset-chip,
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .toggle-chip {
+      justify-self: start;
+      min-height: 30px;
+      padding: 0 11px;
+      border: 1px solid var(--success-border);
+      background: var(--success-bg);
+      color: var(--success-text);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .section-title {
+      margin: 18px 0 10px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .choice-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 7px;
+    }
+
+    .choice-chip,
+    .preset-chip {
+      min-height: 32px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .choice-chip.selected {
+      border-color: var(--success-border);
+      background: var(--success-bg);
+      color: var(--success-text);
+      font-weight: 700;
+    }
+
+    .calorie-summary {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 11px;
+      margin: 24px 0 18px;
+    }
+
+    .calorie-summary strong {
+      color: var(--text);
+      font-size: 21px;
+      font-weight: 800;
+    }
+
+    .calorie-summary span {
+      color: var(--dim);
+      font-size: 10.5px;
+    }
+
+    .direct-weight {
+      margin-top: 20px;
+    }
+
+    .direct-weight label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .helper {
+      margin: -4px 0 16px;
+      color: var(--dim);
+      font-size: 10px;
+      line-height: 1.45;
+    }
+
+    .parsed-list {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .parsed-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      min-height: 58px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--surface-soft);
+    }
+
+    .parsed-item.confirmed {
+      border-color: var(--success-border);
+      background: var(--success-bg);
+    }
+
+    .parsed-name {
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .parsed-name small {
+      display: block;
+      margin-top: 4px;
+      color: var(--dim);
+      font-size: 9px;
+      font-weight: 500;
+    }
+
+    .parsed-result {
+      color: var(--success-text);
+      font-size: 9px;
+      text-align: right;
+    }
+
+    .parsed-result.estimated {
+      color: var(--warning);
+    }
+
+    .results {
+      display: grid;
+      gap: 6px;
+    }
+
+    .result {
+      min-height: 67px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-soft);
+    }
+
+    .result.selected {
+      border-color: var(--success-border);
+      background: var(--success-bg);
+    }
+
+    .result-name {
+      overflow: hidden;
+      color: var(--text);
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.3;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .result-meta {
+      margin-top: 5px;
+      color: var(--dim);
+      font-size: 8.5px;
+      line-height: 1.45;
+    }
+
+    .serving-db {
+      color: var(--success-text);
+    }
+
+    .serving-reference {
+      color: var(--info);
+    }
+
+    .results-note {
+      margin-top: 10px;
+    }
+
+    .success-card {
+      padding: 16px;
+      border: 1px solid var(--success-border);
+      border-radius: 13px;
+      background: var(--success-bg);
+    }
+
+    .success-card strong {
+      display: block;
+      color: var(--success-text);
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .success-card span {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .meal-card {
+      margin: 18px 0;
+      padding: 13px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface-soft);
+    }
+
+    .meal-heading {
+      margin-bottom: 11px;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .meal-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .badge {
+      min-height: 20px;
+      padding: 0 8px;
+      border: 1px solid var(--info-border);
+      background: var(--info-bg);
+      color: var(--info);
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .meal-detail {
+      margin-top: 7px;
+      color: var(--dim);
+      font-size: 9px;
+      line-height: 1.4;
+    }
+
+    .preset-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .preset-chip {
+      min-height: 30px;
+      padding: 0 10px;
+    }
+
+    .meal-presets {
+      display: grid;
+      gap: 8px;
+    }
+
+    .meal-preset {
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--surface-soft);
+    }
+
+    .meal-preset strong {
+      display: block;
+      color: var(--text);
+      font-size: 11px;
+    }
+
+    .meal-preset span {
+      display: block;
+      margin-top: 5px;
+      color: var(--dim);
+      font-size: 9px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <main class="gallery">
+    <section class="mockup" aria-labelledby="screen-1-title">
+      <header class="mockup-heading">
+        <h2 id="screen-1-title">화면1 — 검색 0건·브랜드 없음</h2>
+        <p>식약처 DB에 없는 브랜드 음식일 때, 한 번만 입력하면 다음부턴 1탭으로 기록됩니다.</p>
+      </header>
+      <div class="phone">
+        <div class="topbar"><span class="back">‹ 뒤로</span><strong>점심 항목 추가</strong><span></span></div>
+        <div class="search-row">
+          <input class="input" value="서브웨이 이탈리안BMT" readonly aria-label="검색어">
+          <button class="small-button" type="button">추가</button>
+        </div>
+        <div class="notice warning">
+          <span class="notice-mark">⚠</span>
+          <p>식약처 DB에 없는 음식입니다. 프랜차이즈 메뉴는 대부분 등록돼 있지 않습니다.<br>아래에 한 번만 넣어두면 다음부터 1탭으로 기록됩니다.</p>
+        </div>
+        <div class="form">
+          <label>이름<input class="field" value="서브웨이 이탈리안BMT" readonly></label>
+          <label>칼로리 (kcal)<input class="field" placeholder="포장지·매장 표기를 보고" readonly></label>
+          <label>탄 · 단 · 지 (g)<input class="field" placeholder="모르면 비워둬도 됩니다" readonly></label>
+          <span class="toggle-chip">✓ 자주 먹는 것에 저장</span>
+          <button class="primary-button" type="button">추가</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="mockup" aria-labelledby="screen-2-title">
+      <header class="mockup-heading">
+        <h2 id="screen-2-title">화면2 — 그릇 단위로 양 고르기</h2>
+        <p>1인분을 모를 때 g 대신 그릇 단위로 고르고, 정확한 무게를 알면 직접 입력할 수 있습니다.</p>
+      </header>
+      <div class="phone">
+        <div class="topbar"><span class="back">‹ 검색 결과</span><strong>라멘_미소라멘</strong><span></span></div>
+        <div class="notice info">
+          <span class="notice-mark">ℹ</span>
+          <p>1인분 정보가 없어 같은 분류(면 및 만두류)의 대표 중량으로 계산합니다.</p>
+        </div>
+        <h3 class="section-title">얼마나 드셨나요</h3>
+        <div class="choice-grid">
+          <span class="choice-chip">반 그릇</span>
+          <span class="choice-chip selected">한 그릇</span>
+          <span class="choice-chip">한 그릇 반</span>
+          <span class="choice-chip">두 그릇</span>
+        </div>
+        <div class="calorie-summary"><strong>623 kcal</strong><span>한 그릇 ≈ 700g</span></div>
+        <button class="primary-button" type="button">이대로 추가</button>
+        <div class="direct-weight">
+          <label for="direct-grams">정확한 무게를 알면</label>
+          <input id="direct-grams" class="field" placeholder="g 직접 입력" readonly>
+        </div>
+      </div>
+    </section>
+
+    <section class="mockup" aria-labelledby="screen-3-title">
+      <header class="mockup-heading">
+        <h2 id="screen-3-title">화면3 — 한 줄에 여러 개</h2>
+        <p>쉼표로 나열하면 여러 개를 한 번에 넣고, 항목별로 확인됨/추정을 구분해 보여줍니다.</p>
+      </header>
+      <div class="phone">
+        <div class="topbar"><span class="back">‹ 뒤로</span><strong>저녁 항목 추가</strong><span></span></div>
+        <div class="search-row">
+          <input class="input" value="현미밥 210g, 닭가슴살 100g, 김치" readonly aria-label="여러 음식 입력">
+          <button class="small-button" type="button">추가</button>
+        </div>
+        <p class="helper">쉼표로 나누면 여러 개를 한 번에 넣습니다.</p>
+        <h3 class="section-title">이렇게 들어갑니다</h3>
+        <div class="parsed-list">
+          <div class="parsed-item confirmed">
+            <div class="parsed-name">현미밥<small>210g</small></div>
+            <div class="parsed-result">300 kcal · 확인됨</div>
+          </div>
+          <div class="parsed-item confirmed">
+            <div class="parsed-name">닭가슴살<small>100g</small></div>
+            <div class="parsed-result">165 kcal · 확인됨</div>
+          </div>
+          <div class="parsed-item">
+            <div class="parsed-name">배추김치<small>양 미지정</small></div>
+            <div class="parsed-result estimated">참고값 50g으로 추정 · 15 kcal</div>
+          </div>
+        </div>
+        <button class="primary-button" type="button">3개 모두 추가</button>
+      </div>
+    </section>
+
+    <section class="mockup" aria-labelledby="screen-4-title">
+      <header class="mockup-heading">
+        <h2 id="screen-4-title">화면4 — 검색 결과 목록</h2>
+        <p>검색 결과마다 1인분(DB 값)인지 참고값(추정)인지 미리 표시해 헛걸음을 줄입니다.</p>
+      </header>
+      <div class="phone">
+        <div class="results">
+          <div class="result">
+            <div class="result-name">라멘_간편조리세트_매운돈코츠라멘</div>
+            <div class="result-meta">면 및 만두류 · 100g당 91kcal · <span class="serving-db">1인분 1669g</span></div>
+          </div>
+          <div class="result">
+            <div class="result-name">라멘_돈코츠라멘</div>
+            <div class="result-meta">면 및 만두류 · 100g당 98kcal · <span class="serving-reference">참고값 700g</span></div>
+          </div>
+          <div class="result selected">
+            <div class="result-name">라멘_미소라멘</div>
+            <div class="result-meta">면 및 만두류 · 100g당 89kcal · <span class="serving-reference">참고값 700g</span></div>
+          </div>
+          <div class="result">
+            <div class="result-name">라멘_소유라멘</div>
+            <div class="result-meta">면 및 만두류 · 100g당 72kcal · <span class="serving-reference">참고값 700g</span></div>
+          </div>
+          <div class="result">
+            <div class="result-name">라멘_시오라멘</div>
+            <div class="result-meta">면 및 만두류 · 100g당 84kcal · <span class="serving-reference">참고값 700g</span></div>
+          </div>
+          <div class="result">
+            <div class="result-name">라멘땅콩</div>
+            <div class="result-meta">과자류 · 100g당 540kcal · <span class="serving-db">1인분 30g</span></div>
+          </div>
+        </div>
+        <div class="notice info results-note">
+          <span class="notice-mark">ℹ</span>
+          <p>1인분은 식약처 DB 값, 참고값은 같은 분류의 대표 중량이다.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="mockup" aria-labelledby="screen-5-title">
+      <header class="mockup-heading">
+        <h2 id="screen-5-title">화면5 — 추가 직후</h2>
+        <p>추가 직후 화면. 참고값으로 넣은 항목엔 추정 표시가 남고 나중에 고칠 수 있습니다.</p>
+      </header>
+      <div class="phone">
+        <div class="topbar"><span class="back">‹ 검색 결과</span><strong>추가 완료</strong><span></span></div>
+        <div class="success-card"><strong>623 kcal 추가됨</strong><span>라멘 미소라멘 · 700g</span></div>
+        <div class="meal-card">
+          <div class="meal-heading">점심 · 623</div>
+          <div class="meal-line"><span>라멘 미소라멘</span><span class="badge">추정</span></div>
+          <div class="meal-detail">700g · 623 kcal · 같은 분류 대표 중량</div>
+        </div>
+        <div class="notice info">
+          <span class="notice-mark">ℹ</span>
+          <p>추정으로 넣은 항목은 「추정」 표시가 남습니다.<br>실제 무게를 알게 되면 눌러서 고칠 수 있습니다.</p>
+        </div>
+        <div class="button-stack">
+          <button class="secondary-button" type="button">양 고치기</button>
+          <button class="primary-button" type="button">완료</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="mockup" aria-labelledby="screen-6-title">
+      <header class="mockup-heading">
+        <h2 id="screen-6-title">화면6 — 빈 상태</h2>
+        <p>검색 전 기본 화면. 자주 먹는 것과 한 끼 통째 프리셋으로 반복 입력을 줄입니다.</p>
+      </header>
+      <div class="phone">
+        <div class="topbar"><span class="back">‹ 뒤로</span><strong>점심 항목 추가</strong><span></span></div>
+        <div class="search-row">
+          <input class="input" placeholder="무엇을 먹었나요?" readonly aria-label="음식 입력">
+          <button class="small-button" type="button">추가</button>
+        </div>
+        <p class="helper">음식과 양을 같이 쓰면 바로 기록합니다. 개·공기는 대표 중량으로 추정합니다.</p>
+        <h3 class="section-title">자주 먹는 것</h3>
+        <div class="preset-wrap">
+          <span class="preset-chip">그릭요거트 100g</span>
+          <span class="preset-chip">현미밥 210g</span>
+          <span class="preset-chip">닭가슴살 100g</span>
+          <span class="preset-chip">아몬드 15g</span>
+          <span class="preset-chip">우유 200mL</span>
+        </div>
+        <h3 class="section-title">한 끼 통째로</h3>
+        <div class="meal-presets">
+          <div class="meal-preset"><strong>★ 아침 세트</strong><span>그릭요거트 + 바나나 · 108 kcal</span></div>
+          <div class="meal-preset"><strong>★ 저녁 기본</strong><span>현미밥 + 닭가슴살 + 김치 · 480 kcal</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
