@@ -25,6 +25,19 @@ test('day detail shell contains the approved gauge and four metric cards', () =>
   assert.match(html, /class="weight-card metric-card"/);
 });
 
+test('full-screen sheets stack above calendar ring dates', () => {
+  const html = read('public/index.html');
+  const sheetLayer = html.match(/\.sheet\s*\{[^}]*z-index:\s*(\d+)/s);
+  const dayNumberLayer = html.match(/\.day-num\s*\{[^}]*z-index:\s*(\d+)/s);
+
+  assert.ok(sheetLayer, 'full-screen sheet must establish an explicit stacking layer');
+  assert.ok(dayNumberLayer, 'calendar day number stacking layer is missing');
+  assert.ok(
+    Number(sheetLayer[1]) > Number(dayNumberLayer[1]),
+    'full-screen sheet must cover calendar day numbers',
+  );
+});
+
 test('redesign uses the fixed deep-green dark tokens without a color-scheme branch', () => {
   const html = read('public/index.html');
   for (const color of ['#0a0b0d', '#131519', '#23262c', '#f2f4f7', '#9aa2ad', '#37d67a']) {
