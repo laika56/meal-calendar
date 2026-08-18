@@ -174,6 +174,7 @@ test('blank manual nutrient fields are not coerced to zero during partial comple
 test('broad catalog searches give the approved refinement instruction', () => {
   const app = read('public/app.js');
 
-  assert.match(app, /consumeSearchCandidates/);
+  assert.match(app, /runSingleSearchConsumer/);
+  assert.match(app, /resolveMultiSearches/);
   assert.match(app, /searchResultStatus\(\{ hasMore, parsed \}\)/);
 });

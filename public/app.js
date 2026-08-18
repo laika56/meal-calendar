@@ -20,7 +20,9 @@ import {
   buildPartialNutritionProvenance, formNumber, showPartialNutritionEntry,
 } from '/public/partialNutritionEntry.js';
 import { searchResultStatus } from '/public/searchStatus.js';
-import { BROAD_SEARCH_MESSAGE, consumeSearchCandidates } from '/public/searchSelectionGate.js';
+import {
+  addMultiSearches, multiSearchStatus, resolveMultiSearches, runSingleSearchConsumer,
+} from '/public/searchSelectionGate.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
 // 전부 받아질 때까지 이 모듈 전체의 실행이 밀린다. 캘린더 그리드는 네트워크 없이 그릴 수 있는데
@@ -1099,78 +1101,64 @@ document.addEventListener('visibilitychange', () => {
  * 여기서는 "조용히 저장하지 않는다"로 확장한 것).
  */
 async function resolveMultiPieces(pieces) {
-  const results = [];
-
-  for (const piece of pieces) {
+  return resolveMultiSearches({
+    pieces,
+    searchFoods: (query) => db.searchFoods(query),
     // 'unsupported-serving' 은 「단위는 알아들었는데 대표 중량 표에 없다」는 뜻이다.
-    // 예전엔 여기서 포기했는데, 이제 DB 가 1인분을 안다(김밥 230g, 빅맥 223g).
-    // 검색해서 resolveServing 값이 있으면 그걸 개수에 곱한다 — 지어내는 게 아니라 DB 값이다.
-    const usable = piece.parsed.ok || piece.parsed.reason === 'unsupported-serving';
-    if (!usable) { results.push({ text: piece.text, ok: false }); continue; }
-
-    let searchResponse;
-    try {
-      searchResponse = consumeSearchCandidates(await db.searchFoods(piece.parsed.query), {
-        onBroad(message) {
-          results.push({ text: piece.text, ok: false, message });
-        },
-      });
-    } catch (err) {
+    // DB 의 1인분을 확인해 개수로 환산할 기회는 남긴다.
+    isUsable: (piece) => piece.parsed.ok || piece.parsed.reason === 'unsupported-serving',
+    resolveCandidates: resolveMultiCandidates,
+    onSearchError(piece, err) {
       console.error('[meal-calendar] 검색 실패', piece.text, err);
-      results.push({ text: piece.text, ok: false });
-      continue;
-    }
-    if (searchResponse.blocked) continue;
-    const { items } = searchResponse;
+    },
+  });
+}
 
-    // 이름이 실제로 맞아떨어질 때만 자동 기록 후보로 삼는다 — 엉뚱한 식품의 숫자가 들어가면 안 된다
-    if (items.length === 0 || !hasNameMatch(piece.parsed.query, items)) {
-      results.push({ text: piece.text, ok: false });
-      continue;
-    }
-
-    const food = selectBestFood(piece.parsed.query, items);
-
-    let amountG = piece.parsed.amountG;
-    let quickInput = piece.parsed;
-    if (!piece.parsed.ok) {
-      // DB 가 1인분을 모르면 여기서도 포기한다. 개수를 g 으로 바꿀 근거가 없다
-      if (!food.serving) { results.push({ text: piece.text, ok: false }); continue; }
-      // count 는 발주 18 이 붙여준다. 없으면 곱할 수가 없으니 포기한다 —
-      // undefined 를 곱해서 NaN 을 기록하는 것보다 "못 알아들었다"가 낫다
-      const count = piece.parsed.count;
-      if (!Number.isFinite(count) || count <= 0) { results.push({ text: piece.text, ok: false }); continue; }
-      amountG = food.serving.amount * count;
-      quickInput = {
-        ...piece.parsed,
-        ok: true,
-        amountG,
-        displayAmount: `${count}개`,
-        estimated: true,
-        servingSource: 'mfds-serving',
-      };
-    }
-
-    // 미리 보여줄 kcal·완전성 판정. addSearchedFood 가 저장 시점에 똑같은 계산을
-    // 다시 하므로(단일 진실 소스), 여기 값은 화면 표시 전용이고 저장 여부를 좌우하지 않는다.
-    const scaled = scaleNutrients(food.per100g, amountG);
-    const incomplete = Object.values(scaled).some((value) => value === null);
-
-    results.push({
-      text: piece.text,
-      ok: true,
-      incomplete,
-      food,
-      amountG,
-      quickInput,
-      kcal: scaled.kcal,
-      name: quickInput.query ?? food.name,
-      displayAmount: quickInput.estimated ? quickInput.displayAmount : `${amountG}g`,
-      estimated: Boolean(quickInput.estimated),
-    });
+function resolveMultiCandidates(piece, items) {
+  // 이름이 실제로 맞아떨어질 때만 자동 기록 후보로 삼는다 — 엉뚱한 식품의 숫자가 들어가면 안 된다
+  if (items.length === 0 || !hasNameMatch(piece.parsed.query, items)) {
+    return { text: piece.text, ok: false };
   }
 
-  return results;
+  const food = selectBestFood(piece.parsed.query, items);
+
+  let amountG = piece.parsed.amountG;
+  let quickInput = piece.parsed;
+  if (!piece.parsed.ok) {
+    // DB 가 1인분을 모르면 여기서도 포기한다. 개수를 g 으로 바꿀 근거가 없다
+    if (!food.serving) return { text: piece.text, ok: false };
+    // count 는 발주 18 이 붙여준다. 없으면 곱할 수가 없으니 포기한다 —
+    // undefined 를 곱해서 NaN 을 기록하는 것보다 "못 알아들었다"가 낫다
+    const count = piece.parsed.count;
+    if (!Number.isFinite(count) || count <= 0) return { text: piece.text, ok: false };
+    amountG = food.serving.amount * count;
+    quickInput = {
+      ...piece.parsed,
+      ok: true,
+      amountG,
+      displayAmount: `${count}개`,
+      estimated: true,
+      servingSource: 'mfds-serving',
+    };
+  }
+
+  // 미리 보여줄 kcal·완전성 판정. addSearchedFood 가 저장 시점에 똑같은 계산을
+  // 다시 하므로(단일 진실 소스), 여기 값은 화면 표시 전용이고 저장 여부를 좌우하지 않는다.
+  const scaled = scaleNutrients(food.per100g, amountG);
+  const incomplete = Object.values(scaled).some((value) => value === null);
+
+  return {
+    text: piece.text,
+    ok: true,
+    incomplete,
+    food,
+    amountG,
+    quickInput,
+    kcal: scaled.kcal,
+    name: quickInput.query ?? food.name,
+    displayAmount: quickInput.estimated ? quickInput.displayAmount : `${amountG}g`,
+    estimated: Boolean(quickInput.estimated),
+  };
 }
 
 let multiConfirmResolved = [];
@@ -1229,29 +1217,18 @@ el.cancelMultiConfirm.addEventListener('click', () => {
 });
 
 el.confirmMultiAdd.addEventListener('click', async () => {
-  const failed = [];      // 못 알아들은 것 (파싱·검색·이름대조 실패)
-  const broad = [];       // 후보가 많아 브랜드·메뉴명을 더 받아야 하는 것
-  const incomplete = [];  // 알아들었지만 DB 에 영양값이 없는 것
-  let added = 0;
-
-  for (const r of multiConfirmResolved) {
-    if (!r.ok) {
-      if (r.message === BROAD_SEARCH_MESSAGE) broad.push(r.text);
-      else failed.push(r.text);
-      continue;
-    }
-    // 여기까지 왔으면 식품은 찾았다. 그런데도 false 면 DB 에 탄단지 일부가 없다는 뜻이다.
-    // 「못 알아들었다」와 섞으면 사용자가 뭘 고쳐야 할지 알 수 없다 (절대규칙 7).
-    const ok = await addSearchedFood(r.food, r.amountG, r.quickInput, { batch: true });
-    if (ok) added += 1; else incomplete.push(r.text);
-  }
+  const summary = await addMultiSearches({
+    resolved: multiConfirmResolved,
+    addEntry: (result) => addSearchedFood(
+      result.food, result.amountG, result.quickInput, { batch: true },
+    ),
+  });
   multiConfirmResolved = [];
 
-  const leftover = [...failed, ...broad, ...incomplete];
-  if (leftover.length === 0) {
+  if (summary.leftover.length === 0) {
     showEntryPanel('chooser');
     el.searchStatus.hidden = false;
-    el.searchStatus.textContent = `${added}개 추가했습니다.`;
+    el.searchStatus.textContent = `${summary.added}개 추가했습니다.`;
     el.searchInput.value = '';
     el.entrySheet.hidden = true;
     state.pendingSlot = null;
@@ -1260,15 +1237,9 @@ el.confirmMultiAdd.addEventListener('click', async () => {
 
   // 남은 조각을 입력칸에 되돌려준다 — 다시 타이핑하게 만들지 않는다
   showEntryPanel('chooser');
-  el.searchInput.value = leftover.join(', ');
+  el.searchInput.value = summary.leftover.join(', ');
   el.searchStatus.hidden = false;
-  const reasons = [];
-  if (failed.length > 0) reasons.push(`${failed.length}개는 못 알아들었습니다`);
-  if (broad.length > 0) reasons.push(BROAD_SEARCH_MESSAGE);
-  if (incomplete.length > 0) reasons.push(`${incomplete.length}개는 DB에 탄단지가 없어 직접 입력해야 합니다`);
-  el.searchStatus.textContent = added > 0
-    ? `${added}개 추가. ${reasons.join(', ')}.`
-    : `${reasons.join(', ')}.`;
+  el.searchStatus.textContent = multiSearchStatus(summary);
 });
 
 el.searchForm.addEventListener('submit', async (event) => {
@@ -1297,23 +1268,21 @@ el.searchForm.addEventListener('submit', async (event) => {
   el.searchStatus.hidden = false;
   el.searchStatus.textContent = parsed.ok ? '대표 중량으로 계산 중…' : '검색 중…';
 
-  let searchResponse;
   try {
-    searchResponse = consumeSearchCandidates(await db.searchFoods(q), {
-      onBroad(message) {
-        el.searchStatus.className = 'search-status';
-        el.searchStatus.hidden = false;
-        el.searchStatus.textContent = message;
+    await runSingleSearchConsumer({
+      response: await db.searchFoods(q),
+      status: el.searchStatus,
+      continueWithCandidates: async ({ items, hasMore }) => {
+        await continueSingleSearch({ items, hasMore, parsed, q });
       },
     });
   } catch (err) {
     console.error('[meal-calendar] 검색 실패', err);
     el.searchStatus.textContent = `검색 실패 — ${err.message}`;
-    return;
   }
-  if (searchResponse.blocked) return;
-  const { items, hasMore } = searchResponse;
+});
 
+async function continueSingleSearch({ items, hasMore, parsed, q }) {
   if (items.length === 0) {
     // 식약처 DB 는 브랜드 메뉴를 거의 안 담는다 — `서브웨이`·`서가원 김밥` 은 이름·제조사
     // 어느 쪽으로 찾아도 0건이다(2026-08-14 실측). 그건 검색으로 못 푼다.
@@ -1396,7 +1365,7 @@ el.searchForm.addEventListener('submit', async (event) => {
       onSelect: () => openPortionPrompt(food, parsed.ok ? parsed.amountG : undefined),
     }));
   }
-});
+}
 
 let selectedFood = null;
 let manualEntryContext = null;

@@ -7,7 +7,10 @@ import {
   buildPartialNutritionProvenance, formNumber, showPartialNutritionEntry,
 } from '../public/partialNutritionEntry.js';
 import { searchResultStatus } from '../public/searchStatus.js';
-import { BROAD_SEARCH_MESSAGE, consumeSearchCandidates } from '../public/searchSelectionGate.js';
+import {
+  BROAD_SEARCH_MESSAGE, addMultiSearches, multiSearchStatus, resolveMultiSearches,
+  runSingleSearchConsumer,
+} from '../public/searchSelectionGate.js';
 
 class TestNode extends EventTarget {
   constructor(document, tagName) {
@@ -158,39 +161,87 @@ test('blank manual values stay invalid and completed partial fields retain per-f
   );
 });
 
-test('single search broad response stops before candidate selection, manual prefill, or save', () => {
+test('the production single-submit consumer blocks broad results before selection, manual entry, or storage', async () => {
+  const status = new TestNode(new TestDocument(), 'p');
   const calls = [];
-  const outcome = consumeSearchCandidates({ items: [bmt], hasMore: true }, {
-    onCandidates() {
-      calls.push('candidate-selection');
-      calls.push('manual-prefill');
-      calls.push('save');
-    },
-    onBroad(message) { calls.push(message); },
+  const broad = await runSingleSearchConsumer({
+    response: { items: [bmt], hasMore: true },
+    status,
+    continueWithCandidates: async () => calls.push('candidate-selection', 'manual-prefill', 'save'),
   });
 
-  assert.deepEqual(outcome, { blocked: true, items: [], hasMore: true });
-  assert.deepEqual(calls, [BROAD_SEARCH_MESSAGE]);
+  assert.deepEqual(broad, { blocked: true, items: [], hasMore: true });
+  assert.equal(status.textContent, BROAD_SEARCH_MESSAGE);
+  assert.deepEqual(calls, []);
+
+  const finite = await runSingleSearchConsumer({
+    response: { items: [bmt], hasMore: false },
+    status,
+    continueWithCandidates: async ({ items, hasMore }) => {
+      calls.push(`candidate-selection:${items[0].name}`, `hasMore:${hasMore}`, 'save');
+    },
+  });
+  assert.deepEqual(finite, { blocked: false, items: [bmt], hasMore: false });
+  assert.deepEqual(calls, ['candidate-selection:이탈리안 비엠티', 'hasMore:false', 'save']);
+
+  const legacy = await runSingleSearchConsumer({
+    response: [bmt],
+    status,
+    continueWithCandidates: async () => calls.push('legacy-selection'),
+  });
+  assert.deepEqual(legacy, { blocked: false, items: [bmt], hasMore: false });
+  assert.deepEqual(calls, ['candidate-selection:이탈리안 비엠티', 'hasMore:false', 'save', 'legacy-selection']);
 });
 
-test('multi search broad response retains its unresolved piece without candidate or add side effects', () => {
-  const unresolved = [];
-  const calls = [];
-  const outcome = consumeSearchCandidates({ items: [bmt], hasMore: true }, {
-    onCandidates() {
-      calls.push('candidate-selection');
-      calls.push('portion-confirmation');
-      calls.push('add');
+test('the production multi resolver and add consumer retain broad pieces and restore exact refinement status', async () => {
+  const selected = [];
+  const broadResults = await resolveMultiSearches({
+    pieces: [{ text: '서브웨이 100g', parsed: { ok: true, query: '서브웨이' } }],
+    searchFoods: async () => ({ items: [bmt], hasMore: true }),
+    isUsable: () => true,
+    resolveCandidates: async () => {
+      selected.push('candidate-selection', 'portion-confirmation', 'manual-prefill');
+      return { ok: true, text: 'should not happen' };
     },
-    onBroad(message) { unresolved.push({ text: '서브웨이 100g', message }); },
   });
+  assert.deepEqual(broadResults, [{ text: '서브웨이 100g', ok: false, message: BROAD_SEARCH_MESSAGE }]);
+  assert.deepEqual(selected, []);
 
-  assert.equal(outcome.blocked, true);
-  assert.deepEqual(calls, []);
-  assert.deepEqual(unresolved, [{ text: '서브웨이 100g', message: BROAD_SEARCH_MESSAGE }]);
-  assert.deepEqual(
-    consumeSearchCandidates([bmt], { onCandidates(items) { calls.push(`candidate-selection:${items[0].name}`); } }),
-    { blocked: false, items: [bmt], hasMore: false },
-  );
-  assert.deepEqual(calls, ['candidate-selection:이탈리안 비엠티']);
+  const stored = [];
+  const blockedSummary = await addMultiSearches({
+    resolved: broadResults,
+    addEntry: async (result) => stored.push(result),
+  });
+  assert.deepEqual(stored, []);
+  assert.deepEqual(blockedSummary.leftover, ['서브웨이 100g']);
+  assert.equal(multiSearchStatus(blockedSummary), BROAD_SEARCH_MESSAGE);
+
+  const normalResults = await resolveMultiSearches({
+    pieces: [{ text: '이탈리안 비엠티 100g', parsed: { ok: true, query: '이탈리안 비엠티' } }],
+    searchFoods: async () => [bmt],
+    isUsable: () => true,
+    resolveCandidates: async (piece, items) => ({ ok: true, text: piece.text, food: items[0], amountG: 100 }),
+  });
+  const normalSummary = await addMultiSearches({
+    resolved: normalResults,
+    addEntry: async (result) => {
+      stored.push(result.food.name);
+      return true;
+    },
+  });
+  assert.deepEqual(stored, ['이탈리안 비엠티']);
+  assert.equal(normalSummary.added, 1);
+  assert.deepEqual(normalSummary.leftover, []);
+
+  const hasMoreFalseResults = await resolveMultiSearches({
+    pieces: [{ text: '이탈리안 비엠티 100g', parsed: { ok: true, query: '이탈리안 비엠티' } }],
+    searchFoods: async () => ({ items: [bmt], hasMore: false }),
+    isUsable: () => true,
+    resolveCandidates: async (piece) => ({ ok: true, text: piece.text }),
+  });
+  assert.deepEqual(hasMoreFalseResults, [{ ok: true, text: '이탈리안 비엠티 100g' }]);
+
+  const partialStatus = multiSearchStatus({ ...blockedSummary, added: 1 });
+  assert.equal(partialStatus, `1개 추가. ${BROAD_SEARCH_MESSAGE}`);
+  assert.doesNotMatch(partialStatus, /\.{2}/);
 });
