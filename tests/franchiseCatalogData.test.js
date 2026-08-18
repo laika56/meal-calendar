@@ -345,6 +345,47 @@ test('MFDS rollback never overwrites a concurrent replacement after second-file 
   });
 });
 
+test('MFDS rollback retains recovery artifacts when either restored destination changes before cleanup', async () => {
+  for (const targetRelativePath of [
+    'data/franchise/brands.json',
+    'data/franchise/public/mfds-franchise.json',
+  ]) {
+    await withCatalogFixture(async (fixtureRoot) => {
+      const brandsPath = path.join(fixtureRoot, 'data/franchise/brands.json');
+      const snapshotPath = path.join(fixtureRoot, 'data/franchise/public/mfds-franchise.json');
+      const [brandsBefore, snapshotBefore] = await Promise.all([readFile(brandsPath, 'utf8'), readFile(snapshotPath, 'utf8')]);
+      const targetPath = path.join(fixtureRoot, targetRelativePath);
+      const foreignContents = `foreign writer owns ${path.basename(targetPath)} after rollback restore\n`;
+      let failSecondCommit = true;
+      await assert.rejects(
+        () => publishCatalogPair(fixtureRoot, {
+          brandsContents: `${JSON.stringify(JSON.parse(brandsBefore), null, 4)}\n`,
+          snapshotContents: snapshotBefore,
+        }, {
+          linkFile: async (from, destination) => {
+            if (destination === snapshotPath && failSecondCommit) {
+              failSecondCommit = false;
+              throw new Error('simulated second commit failure');
+            }
+            return link(from, destination);
+          },
+          onCheckpoint: async ({ phase, destination }) => {
+            if (phase === 'after-rollback-restore-link' && destination === targetPath) {
+              await writeFile(destination, foreignContents, 'utf8');
+            }
+          },
+        }),
+        /simulated second commit failure.*recovery artifacts retained/i,
+      );
+      assert.equal(await readFile(targetPath, 'utf8'), foreignContents);
+      assert.equal(
+        await readFile(targetPath === brandsPath ? snapshotPath : brandsPath, 'utf8'),
+        targetPath === brandsPath ? snapshotBefore : brandsBefore,
+      );
+    });
+  }
+});
+
 test('MFDS fetch progress is bounded to safe page-count checkpoints', () => {
   assert.equal(shouldReportMfdsProgress(1, 639), true);
   assert.equal(shouldReportMfdsProgress(24, 639), false);

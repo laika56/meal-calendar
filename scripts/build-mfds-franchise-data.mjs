@@ -410,10 +410,14 @@ function fingerprintsMatch(left, right) {
     && left.contents.equals(right.contents);
 }
 
-async function writeExclusiveTemporary(destination, contents) {
+function fingerprintsHaveSameContents(left, right) {
+  return left.size === right.size && left.contents.equals(right.contents);
+}
+
+async function writeExclusiveTemporary(destination, contents, label = 'new') {
   const temporary = path.join(
     path.dirname(destination),
-    `.${path.basename(destination)}.${process.pid}.${Date.now()}.${createHash('sha256').update(contents, 'utf8').digest('hex').slice(0, 12)}.tmp`,
+    `.${path.basename(destination)}.${process.pid}.${Date.now()}.${label}.${createHash('sha256').update(contents, 'utf8').digest('hex').slice(0, 12)}.tmp`,
   );
   let handle;
   try {
@@ -498,6 +502,8 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
     entries[index].before = before[index];
     entries[index].temporary = null;
     entries[index].backup = null;
+    entries[index].restoreTemporary = null;
+    entries[index].restoreFingerprint = null;
     entries[index].quarantine = null;
     entries[index].rollbackQuarantine = null;
     entries[index].newFingerprint = null;
@@ -530,10 +536,36 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
 
   async function restoreEntry(entry) {
     if (!entry.oldMoved) return true;
+    async function linkIndependentBackup() {
+      const backup = await destinationFingerprint(entry.backup);
+      if (!fingerprintsHaveSameContents(backup, entry.before)) return false;
+      const restoreContents = backup.contents.toString('utf8');
+      entry.restoreTemporary = await writeExclusiveTemporary(entry.destination, restoreContents, 'restore');
+      entry.restoreFingerprint = await destinationFingerprint(entry.restoreTemporary);
+      return restoreWithoutClobber(entry.restoreTemporary, entry.destination, linkFile);
+    }
+    async function verifyRestoredPath() {
+      await checkpoint(onCheckpoint, 'after-rollback-restore-link', entry.destination);
+      try {
+        const [destination, backup, restoration] = await Promise.all([
+          destinationFingerprint(entry.destination),
+          destinationFingerprint(entry.backup),
+          destinationFingerprint(entry.restoreTemporary),
+        ]);
+        return fingerprintsMatch(destination, restoration)
+          && fingerprintsHaveSameContents(destination, backup)
+          && fingerprintsHaveSameContents(backup, entry.before);
+      } catch {
+        return false;
+      }
+    }
     if (!entry.published) {
-      const restored = await restoreWithoutClobber(entry.backup, entry.destination, linkFile);
-      if (!restored) recoveryRequired = true;
-      return restored;
+      const restored = await linkIndependentBackup();
+      if (!restored || !(await verifyRestoredPath())) {
+        recoveryRequired = true;
+        return false;
+      }
+      return true;
     }
 
     await checkpoint(onCheckpoint, 'before-rollback-quarantine', entry.destination);
@@ -546,26 +578,22 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
       recoveryRequired = true;
       return false;
     }
-    const restored = await restoreWithoutClobber(entry.backup, entry.destination, linkFile);
-    if (!restored) recoveryRequired = true;
-    return restored;
+    const restored = await linkIndependentBackup();
+    if (!restored || !(await verifyRestoredPath())) {
+      recoveryRequired = true;
+      return false;
+    }
+    return true;
   }
 
   try {
     for (const entry of entries) {
-      entry.temporary = await writeExclusiveTemporary(entry.destination, entry.contents);
+      entry.temporary = await writeExclusiveTemporary(entry.destination, entry.contents, 'new');
       entry.newFingerprint = await destinationFingerprint(entry.temporary);
+      entry.backup = await writeExclusiveTemporary(entry.destination, entry.before.contents.toString('utf8'), 'old');
     }
     const beforePublication = await Promise.all(entries.map(({ destination }) => destinationFingerprint(destination)));
     if (!before.every((fingerprint, index) => fingerprintsMatch(fingerprint, beforePublication[index]))) {
-      throw new Error('refusing to overwrite concurrently changed catalog destination');
-    }
-    for (const entry of entries) {
-      entry.backup = temporarySibling(entry.destination, 'backup');
-      await linkFile(entry.destination, entry.backup);
-    }
-    const afterBackups = await Promise.all(entries.map(({ destination }) => destinationFingerprint(destination)));
-    if (!before.every((fingerprint, index) => fingerprintsMatch(fingerprint, afterBackups[index]))) {
       throw new Error('refusing to overwrite concurrently changed catalog destination');
     }
     for (const entry of entries) {
@@ -613,6 +641,7 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
       await Promise.all(entries.flatMap((entry) => [
         entry.temporary,
         entry.backup,
+        entry.restoreTemporary,
         entry.quarantine,
         entry.rollbackQuarantine,
       ].filter(Boolean).map((artifact) => unlink(artifact).catch(() => {}))));
