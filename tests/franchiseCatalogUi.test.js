@@ -9,7 +9,7 @@ import {
 import { searchResultStatus } from '../public/searchStatus.js';
 import {
   BROAD_SEARCH_MESSAGE, addMultiSearches, multiSearchStatus, resolveMultiSearches,
-  runSingleSearchConsumer,
+  restoreMultiSearchLeftovers, runSingleSearchConsumer,
 } from '../public/searchSelectionGate.js';
 
 class TestNode extends EventTarget {
@@ -240,8 +240,67 @@ test('the production multi resolver and add consumer retain broad pieces and res
     resolveCandidates: async (piece) => ({ ok: true, text: piece.text }),
   });
   assert.deepEqual(hasMoreFalseResults, [{ ok: true, text: '이탈리안 비엠티 100g' }]);
+});
 
-  const partialStatus = multiSearchStatus({ ...blockedSummary, added: 1 });
-  assert.equal(partialStatus, `1개 추가. ${BROAD_SEARCH_MESSAGE}`);
-  assert.doesNotMatch(partialStatus, /\.{2}/);
+test('mixed production multi consumers add only the finite row and restore the exact broad input', async () => {
+  const normalInput = '이탈리안 비엠티 100g';
+  const broadInput = '서브웨이 100g';
+  const downstream = [];
+  const resolved = await resolveMultiSearches({
+    pieces: [
+      { text: normalInput, parsed: { ok: true, query: '이탈리안 비엠티' } },
+      { text: broadInput, parsed: { ok: true, query: '서브웨이' } },
+    ],
+    searchFoods: async (query) => (query === '서브웨이'
+      ? { items: [bmt], hasMore: true }
+      : { items: [bmt], hasMore: false }),
+    isUsable: () => true,
+    resolveCandidates: async (piece, items) => {
+      if (piece.text === broadInput) {
+        downstream.push('broad-selection', 'broad-manual-prefill', 'broad-save');
+      }
+      downstream.push(`select:${piece.text}`);
+      return {
+        ok: true,
+        text: piece.text,
+        food: items[0],
+        amountG: 100,
+        quickInput: piece.parsed,
+      };
+    },
+  });
+
+  assert.deepEqual(downstream, [`select:${normalInput}`]);
+  assert.deepEqual(resolved[1], {
+    text: broadInput,
+    ok: false,
+    message: BROAD_SEARCH_MESSAGE,
+  });
+
+  const stored = [];
+  const summary = await addMultiSearches({
+    resolved,
+    addEntry: async (result) => {
+      stored.push(result);
+      return true;
+    },
+  });
+
+  assert.equal(summary.added, 1);
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0], resolved[0]);
+  assert.equal(stored[0].food, bmt);
+  assert.deepEqual(summary.leftover, [broadInput]);
+
+  const document = new TestDocument();
+  const input = new TestNode(document, 'input');
+  const status = new TestNode(document, 'p');
+  restoreMultiSearchLeftovers({ summary, input, status });
+
+  assert.equal(input.value, broadInput);
+  assert.equal(status.hidden, false);
+  assert.equal(
+    status.textContent,
+    '1개 추가. 검색 결과가 많습니다. 브랜드와 메뉴명을 함께 입력해 주세요.',
+  );
 });

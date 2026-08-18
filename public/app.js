@@ -21,7 +21,8 @@ import {
 } from '/public/partialNutritionEntry.js';
 import { searchResultStatus } from '/public/searchStatus.js';
 import {
-  addMultiSearches, multiSearchStatus, resolveMultiSearches, runSingleSearchConsumer,
+  addMultiSearches, resolveMultiSearches, restoreMultiSearchLeftovers,
+  runSingleSearchConsumer,
 } from '/public/searchSelectionGate.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
@@ -1237,9 +1238,11 @@ el.confirmMultiAdd.addEventListener('click', async () => {
 
   // 남은 조각을 입력칸에 되돌려준다 — 다시 타이핑하게 만들지 않는다
   showEntryPanel('chooser');
-  el.searchInput.value = summary.leftover.join(', ');
-  el.searchStatus.hidden = false;
-  el.searchStatus.textContent = multiSearchStatus(summary);
+  restoreMultiSearchLeftovers({
+    summary,
+    input: el.searchInput,
+    status: el.searchStatus,
+  });
 });
 
 el.searchForm.addEventListener('submit', async (event) => {

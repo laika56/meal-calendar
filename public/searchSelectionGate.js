@@ -89,3 +89,10 @@ export function multiSearchStatus({ added, failed, broad, incomplete }) {
   const detail = reasons.join(' ');
   return added > 0 ? `${added}개 추가. ${detail}` : detail;
 }
+
+/** Restore unresolved pieces and their real add summary after a partial batch. */
+export function restoreMultiSearchLeftovers({ summary, input, status }) {
+  input.value = summary.leftover.join(', ');
+  status.hidden = false;
+  status.textContent = multiSearchStatus(summary);
+}
