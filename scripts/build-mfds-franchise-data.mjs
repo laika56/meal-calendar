@@ -502,6 +502,7 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
     entries[index].before = before[index];
     entries[index].temporary = null;
     entries[index].backup = null;
+    entries[index].newRecovery = null;
     entries[index].restoreTemporary = null;
     entries[index].restoreFingerprint = null;
     entries[index].quarantine = null;
@@ -511,11 +512,9 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
     entries[index].published = false;
   }
   let completed = false;
-  let recoveryRequired = false;
 
   async function restoreForeignMove(entry, quarantine) {
     if (!(await restoreWithoutClobber(quarantine, entry.destination, linkFile))) {
-      recoveryRequired = true;
       throw new Error(`refusing to restore foreign concurrent data at ${path.basename(entry.destination)}`);
     }
   }
@@ -528,7 +527,6 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
     const moved = await destinationFingerprint(quarantine);
     if (!fingerprintsMatch(moved, entry.before)) {
       await restoreForeignMove(entry, quarantine);
-      recoveryRequired = true;
       throw new Error(`refusing to publish over foreign concurrent data at ${path.basename(entry.destination)}`);
     }
     entry.oldMoved = true;
@@ -559,13 +557,14 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
         return false;
       }
     }
-    if (!entry.published) {
+    async function restoreVerifiedBackup() {
       const restored = await linkIndependentBackup();
-      if (!restored || !(await verifyRestoredPath())) {
-        recoveryRequired = true;
-        return false;
-      }
+      if (!restored || !(await verifyRestoredPath())) return false;
+      await checkpoint(onCheckpoint, 'after-rollback-restore-verification', entry.destination);
       return true;
+    }
+    if (!entry.published) {
+      return restoreVerifiedBackup();
     }
 
     await checkpoint(onCheckpoint, 'before-rollback-quarantine', entry.destination);
@@ -575,22 +574,39 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
     const moved = await destinationFingerprint(rollbackQuarantine);
     if (!fingerprintsMatch(moved, entry.newFingerprint)) {
       await restoreForeignMove(entry, rollbackQuarantine);
-      recoveryRequired = true;
       return false;
     }
-    const restored = await linkIndependentBackup();
-    if (!restored || !(await verifyRestoredPath())) {
-      recoveryRequired = true;
-      return false;
-    }
-    return true;
+    return restoreVerifiedBackup();
+  }
+
+  function retainedRecoveryError(error, rollbackFailures) {
+    const recoveryArtifacts = entries.map((entry) => ({
+      destination: entry.destination,
+      old: entry.backup,
+      new: entry.newRecovery,
+    })).filter(({ old, new: replacement }) => old && replacement);
+    const rollbackReport = rollbackFailures.length > 0
+      ? `; ${rollbackFailures.join('; ')}`
+      : '';
+    const artifactReport = recoveryArtifacts
+      .map(({ destination, old, new: replacement }) => `${path.basename(destination)} old=${old} new=${replacement}`)
+      .join('; ');
+    const retained = new Error(
+      `${error instanceof Error ? error.message : String(error)}${rollbackReport}; recovery artifacts retained: ${artifactReport}`,
+      { cause: error },
+    );
+    retained.recoveryArtifacts = recoveryArtifacts;
+    return retained;
   }
 
   try {
     for (const entry of entries) {
-      entry.temporary = await writeExclusiveTemporary(entry.destination, entry.contents, 'new');
-      entry.newFingerprint = await destinationFingerprint(entry.temporary);
       entry.backup = await writeExclusiveTemporary(entry.destination, entry.before.contents.toString('utf8'), 'old');
+      entry.newRecovery = await writeExclusiveTemporary(entry.destination, entry.contents, 'new');
+    }
+    for (const entry of entries) {
+      entry.temporary = await writeExclusiveTemporary(entry.destination, entry.contents, 'publish');
+      entry.newFingerprint = await destinationFingerprint(entry.temporary);
     }
     const beforePublication = await Promise.all(entries.map(({ destination }) => destinationFingerprint(destination)));
     if (!before.every((fingerprint, index) => fingerprintsMatch(fingerprint, beforePublication[index]))) {
@@ -600,12 +616,10 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
       await moveVerifiedOld(entry);
       await checkpoint(onCheckpoint, 'before-commit', entry.destination);
       if (!(await restoreWithoutClobber(entry.temporary, entry.destination, linkFile))) {
-        recoveryRequired = true;
         throw new Error(`refusing to publish because ${path.basename(entry.destination)} was concurrently recreated`);
       }
       const published = await destinationFingerprint(entry.destination);
       if (!fingerprintsMatch(published, entry.newFingerprint)) {
-        recoveryRequired = true;
         throw new Error(`catalog destination changed during publication: ${path.basename(entry.destination)}`);
       }
       entry.published = true;
@@ -628,19 +642,13 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
         rollbackFailures.push(`rollback failed for ${path.basename(entry.destination)}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
       }
     }
-    if (rollbackFailures.length > 0) {
-      recoveryRequired = true;
-      throw new Error(`${error instanceof Error ? error.message : String(error)}; ${rollbackFailures.join('; ')}; recovery artifacts retained`);
-    }
-    if (recoveryRequired) {
-      throw new Error(`${error instanceof Error ? error.message : String(error)}; recovery artifacts retained`);
-    }
-    throw error;
+    throw retainedRecoveryError(error, rollbackFailures);
   } finally {
-    if (completed || !recoveryRequired) {
+    if (completed) {
       await Promise.all(entries.flatMap((entry) => [
         entry.temporary,
         entry.backup,
+        entry.newRecovery,
         entry.restoreTemporary,
         entry.quarantine,
         entry.rollbackQuarantine,

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, link, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, link, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import test from 'node:test';
@@ -59,6 +59,13 @@ async function withCatalogFixture(change) {
 
 async function writeFixtureJson(root, relativePath, value) {
   await writeFile(path.join(root, relativePath), `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function catalogArtifactNames(destination) {
+  const prefix = `.${path.basename(destination)}.`;
+  return (await readdir(path.dirname(destination)))
+    .filter((name) => name.startsWith(prefix))
+    .toSorted();
 }
 
 function mfdsPage({ pageNo, totalCount, items, numOfRows = 500 }) {
@@ -254,6 +261,26 @@ test('MFDS publication validates before writes and restores both files after the
   });
 });
 
+test('MFDS successful pair publication leaves exact destinations and no owned sibling debris', async () => {
+  await withCatalogFixture(async (fixtureRoot) => {
+    const brandsPath = path.join(fixtureRoot, 'data/franchise/brands.json');
+    const snapshotPath = path.join(fixtureRoot, 'data/franchise/public/mfds-franchise.json');
+    const [brandsBefore, snapshotBefore] = await Promise.all([readFile(brandsPath, 'utf8'), readFile(snapshotPath, 'utf8')]);
+    const brandsAfter = `${brandsBefore} \n`;
+    const snapshotAfter = `${snapshotBefore} \n`;
+
+    await publishCatalogPair(fixtureRoot, {
+      brandsContents: brandsAfter,
+      snapshotContents: snapshotAfter,
+    });
+
+    assert.equal(await readFile(brandsPath, 'utf8'), brandsAfter);
+    assert.equal(await readFile(snapshotPath, 'utf8'), snapshotAfter);
+    assert.deepEqual(await catalogArtifactNames(brandsPath), []);
+    assert.deepEqual(await catalogArtifactNames(snapshotPath), []);
+  });
+});
+
 test('MFDS publication preserves concurrent replacements at both destination checkpoints', async () => {
   for (const phaseToInject of ['before-quarantine', 'before-commit']) {
     for (const targetRelativePath of [
@@ -318,12 +345,15 @@ test('MFDS rollback never overwrites a concurrent replacement after second-file 
     const brandsPath = path.join(fixtureRoot, 'data/franchise/brands.json');
     const snapshotPath = path.join(fixtureRoot, 'data/franchise/public/mfds-franchise.json');
     const [brandsBefore, snapshotBefore] = await Promise.all([readFile(brandsPath, 'utf8'), readFile(snapshotPath, 'utf8')]);
+    const brandsAfter = `${brandsBefore} \n`;
+    const snapshotAfter = `${snapshotBefore} \n`;
     const foreignBrands = 'foreign writer owns brands during rollback\n';
     let failSecondCommit = true;
+    let failure;
     await assert.rejects(
       () => publishCatalogPair(fixtureRoot, {
-        brandsContents: `${JSON.stringify(JSON.parse(brandsBefore), null, 4)}\n`,
-        snapshotContents: snapshotBefore,
+        brandsContents: brandsAfter,
+        snapshotContents: snapshotAfter,
       }, {
         linkFile: async (from, destination) => {
           if (destination === snapshotPath && failSecondCommit) {
@@ -338,14 +368,20 @@ test('MFDS rollback never overwrites a concurrent replacement after second-file 
           }
         },
       }),
-      /simulated second commit failure.*refused rollback/i,
+      (error) => {
+        failure = error;
+        return /simulated second commit failure.*refused rollback/i.test(error.message);
+      },
     );
     assert.equal(await readFile(brandsPath, 'utf8'), foreignBrands);
     assert.equal(await readFile(snapshotPath, 'utf8'), snapshotBefore);
+    const brandsRecovery = failure.recoveryArtifacts.find(({ destination }) => destination === brandsPath);
+    assert.equal(await readFile(brandsRecovery.old, 'utf8'), brandsBefore);
+    assert.equal(await readFile(brandsRecovery.new, 'utf8'), brandsAfter);
   });
 });
 
-test('MFDS rollback retains recovery artifacts when either restored destination changes before cleanup', async () => {
+test('MFDS rollback retains exact old/new recovery copies when either destination changes after restore verification', async () => {
   for (const targetRelativePath of [
     'data/franchise/brands.json',
     'data/franchise/public/mfds-franchise.json',
@@ -354,13 +390,16 @@ test('MFDS rollback retains recovery artifacts when either restored destination 
       const brandsPath = path.join(fixtureRoot, 'data/franchise/brands.json');
       const snapshotPath = path.join(fixtureRoot, 'data/franchise/public/mfds-franchise.json');
       const [brandsBefore, snapshotBefore] = await Promise.all([readFile(brandsPath, 'utf8'), readFile(snapshotPath, 'utf8')]);
+      const brandsAfter = `${brandsBefore} \n`;
+      const snapshotAfter = `${snapshotBefore} \n`;
       const targetPath = path.join(fixtureRoot, targetRelativePath);
-      const foreignContents = `foreign writer owns ${path.basename(targetPath)} after rollback restore\n`;
+      const foreignContents = `foreign writer owns ${path.basename(targetPath)} after rollback verification\n`;
       let failSecondCommit = true;
+      let failure;
       await assert.rejects(
         () => publishCatalogPair(fixtureRoot, {
-          brandsContents: `${JSON.stringify(JSON.parse(brandsBefore), null, 4)}\n`,
-          snapshotContents: snapshotBefore,
+          brandsContents: brandsAfter,
+          snapshotContents: snapshotAfter,
         }, {
           linkFile: async (from, destination) => {
             if (destination === snapshotPath && failSecondCommit) {
@@ -370,18 +409,33 @@ test('MFDS rollback retains recovery artifacts when either restored destination 
             return link(from, destination);
           },
           onCheckpoint: async ({ phase, destination }) => {
-            if (phase === 'after-rollback-restore-link' && destination === targetPath) {
+            if (phase === 'after-rollback-restore-verification' && destination === targetPath) {
               await writeFile(destination, foreignContents, 'utf8');
             }
           },
         }),
-        /simulated second commit failure.*recovery artifacts retained/i,
+        (error) => {
+          failure = error;
+          return /simulated second commit failure.*recovery artifacts retained/i.test(error.message);
+        },
       );
       assert.equal(await readFile(targetPath, 'utf8'), foreignContents);
       assert.equal(
         await readFile(targetPath === brandsPath ? snapshotPath : brandsPath, 'utf8'),
         targetPath === brandsPath ? snapshotBefore : brandsBefore,
       );
+      assert.deepEqual(
+        failure.recoveryArtifacts.map(({ destination }) => destination),
+        [brandsPath, snapshotPath],
+      );
+      for (const { destination, old: oldPath, new: newPath } of failure.recoveryArtifacts) {
+        const expectedOld = destination === brandsPath ? brandsBefore : snapshotBefore;
+        const expectedNew = destination === brandsPath ? brandsAfter : snapshotAfter;
+        assert.equal(await readFile(oldPath, 'utf8'), expectedOld);
+        assert.equal(await readFile(newPath, 'utf8'), expectedNew);
+        assert.ok(failure.message.includes(oldPath));
+        assert.ok(failure.message.includes(newPath));
+      }
     });
   }
 });
