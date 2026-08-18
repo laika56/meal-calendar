@@ -123,8 +123,11 @@ The search object must retain existing compatibility fields and add provenance:
   category: record.category,
   maker: record.brandName,
   isFranchise: true,
-  per100g: { kcal, carbG, proteinG, fatG },
-  basis: record.basis.unit === 'mL' ? 'mL' : 'g',
+  per100g: record.basis.unit === 'g' || record.basis.unit === 'mL'
+    ? { kcal, carbG, proteinG, fatG }
+    : { kcal: null, carbG: null, proteinG: null, fatG: null },
+  basis: record.basis.unit,
+  servingNutrients: record.nutrients,
   serving: { amount: record.basis.amount, unit: record.basis.unit, source: 'official-serving' },
   completeness: allFourCoreNutrients ? 'complete' : 'partial',
   source: {
@@ -137,6 +140,8 @@ The search object must retain existing compatibility fields and add provenance:
 ```
 
 Use an explicit identity key of normalized brand, normalized menu, basis amount, and basis unit. Never merge distinct sizes.
+For `개`, `잔`, `조각`, `15cm`, and `30cm`, preserve the official values only in
+`servingNutrients`; never expose them through the gram/mL scaling compatibility field.
 
 - [ ] **Step 7: Verify GREEN**
 

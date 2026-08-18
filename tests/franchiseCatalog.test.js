@@ -83,17 +83,25 @@ test('refuses non-canonical aliases, duplicate search tokens, malformed dates, U
   }
 });
 
-test('adapts the same canonical BMT search result for both Subway spellings', () => {
+test('ranks the canonical BMT ahead of a competing catalog item for both Subway spellings', () => {
   const searchFood = catalog.catalogRecordToSearchFood(subwayBmtFixture);
+  const competingFood = catalog.catalogRecordToSearchFood({
+    ...subwayBmtFixture,
+    id: 'official_aaa_other_sandwich',
+    brandId: 'other-brand',
+    brandName: '다른브랜드',
+    name: '다른 샌드위치',
+    aliases: ['other sandwich', '다른 샌드위치'],
+    normalizedName: '다른 샌드위치',
+    searchTokens: ['other', '다른', '다른브랜드', '샌드위치'],
+    sourceId: 'other-sandwich',
+  });
 
-  assert.deepEqual(
-    catalog.mergeCatalogAndMfdsResults([searchFood], [], '써브웨이'),
-    [searchFood],
-  );
-  assert.deepEqual(
-    catalog.mergeCatalogAndMfdsResults([searchFood], [], '서브웨이'),
-    [searchFood],
-  );
+  for (const query of ['써브웨이', '서브웨이']) {
+    const result = catalog.mergeCatalogAndMfdsResults([competingFood, searchFood], [], query);
+    assert.equal(result[0], searchFood);
+    assert.equal(result.length, 2);
+  }
 });
 
 test('converts mass-basis nutrients exactly to compatibility per100g while retaining nulls', () => {
@@ -116,7 +124,7 @@ test('converts mass-basis nutrients exactly to compatibility per100g while retai
   });
 });
 
-test('keeps a non-mass official serving in its original values rather than converting it to grams', () => {
+test('keeps non-mass official nutrients out of gram compatibility fields', () => {
   const record = {
     ...subwayBmtFixture,
     id: 'official_subway_cookie',
@@ -129,9 +137,14 @@ test('keeps a non-mass official serving in its original values rather than conve
 
   const searchFood = catalog.catalogRecordToSearchFood(record);
 
-  assert.equal(searchFood.per100g.kcal, 388);
-  assert.equal(searchFood.per100g.proteinG, 21);
-  assert.equal(searchFood.basis, 'g');
+  assert.deepEqual(searchFood.per100g, {
+    kcal: null,
+    carbG: null,
+    proteinG: null,
+    fatG: null,
+  });
+  assert.equal(searchFood.basis, '개');
+  assert.deepEqual(searchFood.servingNutrients, record.nutrients);
   assert.deepEqual(searchFood.serving, { amount: 1, unit: '개', source: 'official-serving' });
 });
 

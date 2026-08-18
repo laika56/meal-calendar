@@ -24,6 +24,7 @@ const REQUIRED_RECORD_KEYS = new Set([
   'updatedAt',
 ]);
 const REQUIRED_BASIS_KEYS = new Set(['amount', 'unit', 'label']);
+const CATALOG_SEARCH_TOKENS = new WeakMap();
 
 function assertPlainObject(value, label) {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -178,9 +179,9 @@ function sourceLabel(sourceType) {
 }
 
 function toCompatibilityNutrient(value, basis) {
+  if (basis.unit !== 'g' && basis.unit !== 'mL') return null;
   if (value === null) return null;
-  if (basis.unit === 'g' || basis.unit === 'mL') return (value * 100) / basis.amount;
-  return value;
+  return (value * 100) / basis.amount;
 }
 
 export function catalogRecordToSearchFood(record) {
@@ -193,16 +194,18 @@ export function catalogRecordToSearchFood(record) {
     fatG: toCompatibilityNutrient(nutrients.fatG, basis),
   };
 
-  return {
+  const searchFood = {
     foodKey: `catalog_${validated.id}`,
     name: validated.name,
     category: validated.category,
     maker: validated.brandName,
     isFranchise: true,
     per100g: coreNutrients,
-    basis: basis.unit === 'mL' ? 'mL' : 'g',
+    basis: basis.unit,
+    servingNutrients: nutrients,
     serving: { amount: basis.amount, unit: basis.unit, source: 'official-serving' },
-    completeness: Object.values(coreNutrients).every((value) => value !== null) ? 'complete' : 'partial',
+    completeness: [nutrients.kcal, nutrients.carbG, nutrients.proteinG, nutrients.fatG]
+      .every((value) => value !== null) ? 'complete' : 'partial',
     source: {
       type: validated.sourceType,
       label: sourceLabel(validated.sourceType),
@@ -210,6 +213,8 @@ export function catalogRecordToSearchFood(record) {
       verifiedAt: validated.verifiedAt,
     },
   };
+  CATALOG_SEARCH_TOKENS.set(searchFood, validated.searchTokens);
+  return searchFood;
 }
 
 function assertSearchItems(value, label) {
@@ -275,6 +280,7 @@ function relevanceScore(item, query) {
   for (const token of normalizedQuery.split(' ')) {
     if (normalizedName.includes(token)) score += 10;
     if (normalizedMaker.includes(token)) score += 15;
+    if (CATALOG_SEARCH_TOKENS.get(item)?.includes(token)) score += 15;
   }
   return score;
 }
