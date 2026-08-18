@@ -8,6 +8,12 @@ const projectRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const sharedDir = join(projectRoot, 'functions', 'shared');
 const sourceDir = join(projectRoot, 'src', 'lib');
 const fixCommand = 'node scripts/check-shared-sync.mjs --fix';
+const requiredSharedFiles = [
+  'franchiseCatalog.js',
+  'mfdsParser.js',
+  'searchPlan.js',
+  'searchResults.js',
+];
 
 test('functions/shared copies match their src/lib originals', async (t) => {
   if (!existsSync(sharedDir)) return;
@@ -16,6 +22,8 @@ test('functions/shared copies match their src/lib originals', async (t) => {
     .filter((entry) => entry.isFile())
     .map((entry) => entry.name)
     .sort();
+
+  assert.deepEqual(sharedFiles, requiredSharedFiles);
 
   for (const filename of sharedFiles) {
     await t.test(filename, () => {

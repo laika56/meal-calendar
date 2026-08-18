@@ -10,6 +10,11 @@ import {
   catalogManifest,
   loadReviewedCatalogFiles,
 } from '../scripts/validate-franchise-data.mjs';
+import {
+  applyCatalogImport,
+  buildCatalogImportPlan,
+  runCatalogImportCli,
+} from '../functions/import-franchise-catalog.mjs';
 import { normalizeCatalogText } from '../src/lib/franchiseCatalog.js';
 import {
   buildMfdsPages,
@@ -66,6 +71,100 @@ async function catalogArtifactNames(destination) {
   return (await readdir(path.dirname(destination)))
     .filter((name) => name.startsWith(prefix))
     .toSorted();
+}
+
+function importFixtureCatalog() {
+  return {
+    sources: [{
+      id: 'source-a', type: 'public_data', name: '출처 A', url: 'https://example.test/source',
+      licenseNote: null, checkedAt: reviewedAt, active: true,
+    }],
+    brands: [{
+      id: 'brand-a', name: '브랜드 A', normalizedName: '브랜드 a', aliases: [], category: '테스트',
+      officialUrl: null, active: true, createdAt: reviewedAt, updatedAt: reviewedAt,
+    }],
+    records: [{
+      id: 'food-a', brandId: 'brand-a', brandName: '브랜드 A', name: '음식 A', aliases: [],
+      normalizedName: '음식 a', searchTokens: ['브랜드 a', '음식 a'], category: '테스트',
+      basis: { amount: 100, unit: 'g', label: '100g' },
+      nutrients: { kcal: 100, carbG: null, proteinG: null, fatG: null, sugarG: null, sodiumMg: null },
+      sourceId: 'source-a', sourceType: 'public_data', sourceUrl: 'https://example.test/source',
+      sourceUpdatedAt: null, verifiedAt: reviewedAt, confidence: 'public', active: true,
+      createdAt: reviewedAt, updatedAt: reviewedAt,
+    }],
+  };
+}
+
+function clone(value) {
+  return structuredClone(value);
+}
+
+function importPointer(plan) {
+  return {
+    runId: plan.runId,
+    counts: plan.counts,
+    catalogSha256: plan.catalogSha256,
+    payloadSha256: plan.payloadSha256,
+  };
+}
+
+function createFakeFirestore({ initial = {}, failBatch = null, tamperOnVerification = null } = {}) {
+  const documents = new Map(Object.entries(initial).map(([key, value]) => [key, clone(value)]));
+  let batchCommits = 0;
+  let didTamper = false;
+  const ref = (path) => ({
+    path,
+    async get() {
+      const data = documents.get(path);
+      return { exists: data !== undefined, data: () => clone(data) };
+    },
+    async set(data) {
+      documents.set(path, clone(data));
+    },
+  });
+  const db = {
+    doc: ref,
+    collection(path) {
+      return {
+        async get() {
+          if (!didTamper && tamperOnVerification) {
+            didTamper = true;
+            tamperOnVerification(documents);
+          }
+          const prefix = `${path}/`;
+          const docs = [...documents.entries()]
+            .filter(([key]) => key.startsWith(prefix) && !key.slice(prefix.length).includes('/'))
+            .sort(([left], [right]) => left.localeCompare(right, 'en'))
+            .map(([key, value]) => ({ id: key.slice(prefix.length), data: () => clone(value) }));
+          return { docs, size: docs.length };
+        },
+      };
+    },
+    batch() {
+      const pending = [];
+      return {
+        set(target, data) { pending.push([target.path, clone(data)]); },
+        async commit() {
+          batchCommits += 1;
+          if (batchCommits === failBatch) throw new Error(`simulated batch ${failBatch} failure`);
+          for (const [path, data] of pending) documents.set(path, data);
+        },
+      };
+    },
+    async runTransaction(callback) {
+      const pending = [];
+      const transaction = {
+        get: (target) => target.get(),
+        set: (target, data) => pending.push([target.path, clone(data)]),
+      };
+      await callback(transaction);
+      for (const [path, data] of pending) documents.set(path, data);
+    },
+  };
+  return {
+    db,
+    documents,
+  };
 }
 
 function mfdsPage({ pageNo, totalCount, items, numOfRows = 500 }) {
@@ -724,4 +823,142 @@ test('refuses an official source domain that is not the referenced brand officia
       /official record subway-menu-1528 source domain must match brand subway officialUrl domain/,
     );
   });
+});
+
+test('catalog import plan creates a deterministic first-run staging snapshot without mutating reviewed input', () => {
+  const catalog = importFixtureCatalog();
+  const before = clone(catalog);
+  const plan = buildCatalogImportPlan(null, catalog);
+
+  assert.equal(plan.runId, `franchise-catalog-${plan.catalogSha256}`);
+  assert.equal(plan.unchanged, false);
+  assert.deepEqual(plan.counts, { sources: 1, brands: 1, foods: 1 });
+  assert.equal(plan.catalogSha256, catalogManifest(catalog).sha256);
+  assert.equal(plan.documents[0].path, `franchiseCatalogRuns/${plan.runId}/sources/source-a`);
+  assert.equal(plan.documents.at(-1).path, `franchiseCatalogRuns/${plan.runId}/foods/food-a`);
+  assert.equal(plan.run.data.status, 'staging');
+  assert.deepEqual(catalog, before);
+});
+
+test('catalog import plan is a no-op only when the entire reviewed manifest matches current', () => {
+  const catalog = importFixtureCatalog();
+  const firstPlan = buildCatalogImportPlan(null, catalog);
+  const unchangedPlan = buildCatalogImportPlan({ ...importPointer(firstPlan), publishedAt: reviewedAt }, catalog);
+  const changedCatalog = clone(catalog);
+  changedCatalog.sources[0].name = '바뀐 출처';
+  const changedPlan = buildCatalogImportPlan(importPointer(firstPlan), changedCatalog);
+
+  assert.equal(unchangedPlan.unchanged, true);
+  assert.deepEqual(unchangedPlan.batches, []);
+  assert.equal(changedPlan.unchanged, false);
+  assert.notEqual(changedPlan.runId, firstPlan.runId);
+});
+
+test('catalog import plan keeps run IDs and staging batches stable and within 400 writes', async () => {
+  const catalog = await loadReviewedCatalogFiles(projectRoot);
+  const first = buildCatalogImportPlan(null, catalog);
+  const second = buildCatalogImportPlan(null, clone(catalog));
+
+  assert.equal(first.runId, second.runId);
+  assert.deepEqual(first.batches, second.batches);
+  assert.ok(first.batches.every((batch) => batch.length > 0 && batch.length <= 400));
+  assert.deepEqual(first.documents.slice(0, 2).map(({ path: documentPath }) => documentPath), [
+    `franchiseCatalogRuns/${first.runId}/sources/mfds-franchise`,
+    `franchiseCatalogRuns/${first.runId}/sources/subway-menu-1528`,
+  ]);
+});
+
+test('catalog import plan refuses duplicate staging IDs before any Firestore write can be planned', () => {
+  const catalog = importFixtureCatalog();
+  catalog.records.push(clone(catalog.records[0]));
+
+  assert.throws(() => buildCatalogImportPlan(null, catalog), /duplicate food id food-a/);
+});
+
+test('catalog import promotes only a reread and canonically verified staged snapshot', async () => {
+  const plan = buildCatalogImportPlan(null, importFixtureCatalog());
+  const { db, documents } = createFakeFirestore();
+
+  await applyCatalogImport(db, plan, { now: () => reviewedAt });
+
+  assert.equal(documents.get(`franchiseCatalogRuns/${plan.runId}`).status, 'ready');
+  assert.deepEqual(documents.get('franchiseCatalogState/current'), {
+    ...importPointer(plan), publishedAt: reviewedAt,
+  });
+});
+
+test('catalog import leaves only an unreferenced staging run when a middle batch fails', async () => {
+  const catalog = importFixtureCatalog();
+  for (let index = 0; index < 500; index += 1) {
+    catalog.records.push({ ...clone(catalog.records[0]), id: `food-${index}`, name: `음식 ${index}`, normalizedName: `음식 ${index}`, searchTokens: [`음식 ${index}`] });
+  }
+  const plan = buildCatalogImportPlan(null, catalog);
+  const { db, documents } = createFakeFirestore({ failBatch: 2 });
+
+  await assert.rejects(() => applyCatalogImport(db, plan), /simulated batch 2 failure/);
+
+  assert.equal(documents.get(`franchiseCatalogRuns/${plan.runId}`).status, 'staging');
+  assert.equal(documents.has('franchiseCatalogState/current'), false);
+});
+
+test('catalog import leaves a verified staging run unreferenced when the preflight pointer drifts', async () => {
+  const initialPlan = buildCatalogImportPlan(null, importFixtureCatalog());
+  const changedCatalog = importFixtureCatalog();
+  changedCatalog.sources[0].name = '새 출처';
+  const plan = buildCatalogImportPlan(importPointer(initialPlan), changedCatalog);
+  const { db, documents } = createFakeFirestore({
+    initial: {
+      'franchiseCatalogState/current': { runId: 'concurrent-run', counts: { sources: 0, brands: 0, foods: 0 }, catalogSha256: 'a'.repeat(64), payloadSha256: 'b'.repeat(64) },
+    },
+  });
+
+  await assert.rejects(() => applyCatalogImport(db, plan), /pointer changed since preflight/);
+
+  assert.equal(documents.get(`franchiseCatalogRuns/${plan.runId}`).status, 'staging');
+  assert.equal(documents.get('franchiseCatalogState/current').runId, 'concurrent-run');
+});
+
+test('catalog import rejects a reread staging hash mismatch before changing the pointer', async () => {
+  const plan = buildCatalogImportPlan(null, importFixtureCatalog());
+  const { db, documents } = createFakeFirestore({
+    tamperOnVerification(store) {
+      const path = `franchiseCatalogRuns/${plan.runId}/foods/food-a`;
+      store.set(path, { ...store.get(path), name: '오염된 음식' });
+    },
+  });
+
+  await assert.rejects(() => applyCatalogImport(db, plan), /staged payload hash mismatch/);
+
+  assert.equal(documents.get(`franchiseCatalogRuns/${plan.runId}`).status, 'staging');
+  assert.equal(documents.has('franchiseCatalogState/current'), false);
+});
+
+test('catalog import rejects a reread staging count mismatch before changing the pointer', async () => {
+  const plan = buildCatalogImportPlan(null, importFixtureCatalog());
+  const { db, documents } = createFakeFirestore({
+    tamperOnVerification(store) {
+      store.delete(`franchiseCatalogRuns/${plan.runId}/foods/food-a`);
+    },
+  });
+
+  await assert.rejects(() => applyCatalogImport(db, plan), /staged document count mismatch/);
+
+  assert.equal(documents.get(`franchiseCatalogRuns/${plan.runId}`).status, 'staging');
+  assert.equal(documents.has('franchiseCatalogState/current'), false);
+});
+
+test('catalog importer defaults to a read-only dry run', async () => {
+  const { db, documents } = createFakeFirestore();
+  const output = [];
+
+  const result = await runCatalogImportCli({
+    firestore: db,
+    args: [],
+    write: (line) => output.push(line),
+  });
+
+  assert.equal(result.status, 'dry-run');
+  assert.equal(documents.size, 0);
+  assert.match(output.join(''), /mode dry-run/);
+  assert.match(output.join(''), /sources 2\nbrands 126\nfoods 16342/);
 });

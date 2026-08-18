@@ -9,6 +9,14 @@ const sharedDir = new URL('../functions/shared/', import.meta.url);
 const sourceDir = new URL('../src/lib/', import.meta.url);
 const fixCommand = 'node scripts/check-shared-sync.mjs --fix';
 const shouldFix = process.argv.slice(2).includes('--fix');
+const requiredSharedFiles = [
+  'franchiseCatalog.js',
+  'mfdsParser.js',
+  'searchPlan.js',
+  'searchResults.js',
+];
+let hasFailure = false;
+let hasContentMismatch = false;
 
 if (!existsSync(sharedDir)) {
   console.log('✅ 검사할 복사본이 없다');
@@ -25,8 +33,24 @@ if (sharedFiles.length === 0) {
   process.exit(0);
 }
 
-let hasFailure = false;
-let hasContentMismatch = false;
+for (const filename of requiredSharedFiles) {
+  if (!sharedFiles.includes(filename)) {
+    if (shouldFix) {
+      const sourcePath = new URL(encodeURIComponent(filename), sourceDir);
+      if (!existsSync(sourcePath)) {
+        console.error(`❌ ${filename} — src/lib 원본이 없다`);
+        process.exit(1);
+      }
+      copyFileSync(sourcePath, new URL(encodeURIComponent(filename), sharedDir));
+      sharedFiles.push(filename);
+      sharedFiles.sort();
+      console.log(`✅ ${filename}`);
+      continue;
+    }
+    console.error(`❌ ${filename} — functions/shared 복사본이 없다`);
+    hasFailure = true;
+  }
+}
 
 for (const filename of sharedFiles) {
   const sharedPath = new URL(encodeURIComponent(filename), sharedDir);

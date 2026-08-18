@@ -11,5 +11,9 @@
     "test": "node --test",
     "test:watch": "node --test --watch",
     "icons": "python3 scripts/make_icons.py"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.1",
+    "firebase": "12.17.1"
   }
 }
