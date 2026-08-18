@@ -8,7 +8,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-test('authenticated clients cannot read or write catalog state or versioned run documents', async (t) => {
+test('authenticated clients cannot read or write catalog state, run roots, or run descendants', async (t) => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
     t.skip('requires firebase emulators:exec --only firestore');
     return;
@@ -24,6 +24,9 @@ test('authenticated clients cannot read or write catalog state or versioned run 
 
   for (const documentPath of [
     'franchiseCatalogState/current',
+    'franchiseCatalogRuns/test-run',
+    'franchiseCatalogRuns/test-run/sources/test-source',
+    'franchiseCatalogRuns/test-run/brands/test-brand',
     'franchiseCatalogRuns/test-run/foods/test-food',
   ]) {
     const reference = doc(firestore, documentPath);
