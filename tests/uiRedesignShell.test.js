@@ -106,3 +106,44 @@ test('entry shell keeps the approved quick-add wording and preset groups', () =>
   assert.ok(html.includes('무엇을 먹었나요?'));
   assert.match(html, /name="saveAsPreset" type="checkbox" checked/);
 });
+
+test('entry shell includes the static barcode scanner controls and exact fallback copy', () => {
+  const html = read('public/index.html');
+
+  for (const id of [
+    'barcodeOpen', 'barcodeScanner', 'barcodeVideo', 'barcodeCanvas', 'barcodeStatus', 'barcodeCancel',
+  ]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+
+  for (const copy of [
+    '바코드 스캔',
+    '바코드를 비춰주세요',
+    '취소',
+    '제품 정보를 확인하고 있습니다.',
+    'Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.',
+    '제품은 찾았지만 영양정보가 없습니다. 직접 입력해 주세요.',
+    '카메라를 사용할 수 없습니다. 직접 입력해 주세요.',
+  ]) {
+    assert.ok(html.includes(copy), `missing barcode copy: ${copy}`);
+  }
+});
+
+test('barcode flow lazy-loads the pinned reader and closes camera tracks at lifecycle boundaries', () => {
+  const html = read('public/index.html');
+  const app = read('public/app.js');
+
+  assert.doesNotMatch(html, /zxing-wasm@/i, 'the decoder must not load before a scanner tap');
+  assert.match(
+    app,
+    /https:\/\/cdn\.jsdelivr\.net\/npm\/zxing-wasm@3\.1\.3\/dist\/iife\/reader\/index\.js/,
+  );
+  assert.match(app, /facingMode:\s*\{\s*ideal:\s*'environment'\s*\}/);
+  assert.match(app, /formats:\s*BARCODE_FORMATS/);
+  assert.match(app, /maxNumberOfSymbols:\s*1/);
+  assert.match(app, /for \(const track of barcodeStream\?\.getTracks\?\.\(\) \?\? \[\]\) track\.stop\(\)/);
+  assert.match(app, /visibilitychange/);
+  assert.match(app, /document\.getElementById\('closeEntry'\)[\s\S]*?stopBarcodeScanner\(\)/);
+  assert.match(app, /source:\s*food\.source/);
+  assert.match(app, /barcode:\s*food\.barcode/);
+});

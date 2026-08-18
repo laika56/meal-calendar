@@ -17,6 +17,7 @@
 
 | | 발주서 | 내용 | 의존 |
 |---|---|---|---|
+| ☑ | `28-off-parser.md` | Phase 8(바코드) — Open Food Facts 응답 파서. 실측 70건 분포표 포함. **완료·바코드 흐름 연결(16/16)** | 없음 |
 | ☑ | `27-mockup-add-flow.md` | 목업 6화면 완료, Claude 리뷰 통과(오타 1건 수정). **이후 실앱 반영은 이 발주서 범위 밖 — 별도 발주 없이 진행됨(아래 참고)** | 없음 |
 
 > **발주27 이후, 실제 앱(`public/app.js`·`index.html`·`sw.js`, `src/lib/uiDashboard.js`)에

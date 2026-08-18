@@ -263,7 +263,10 @@ localStorage 저장(`meal-calendar:profile-v1`) → 캘린더 목표칼로리가
 Phase 4부터 하자고 함. **Phase 4 끝났으니 Phase 7(식약처 검색) 진행할지 다시 물어야 한다.**
 Blaze는 카드 등록 필요(개인 사용량은 사실상 무료) — 과금 관련이라 사용자 확인 필수.
 
-**나중 (Phase 8):** 카메라 권한 재요청 UX 반영 (위 참조)
+**Phase 8 구현 완료 (2026-08-18):** `바코드 스캔` 탭 뒤에만 zxing-wasm reader를 로드하고,
+EAN/UPC 판독 → Open Food Facts 조회 → 기존 양 입력 화면으로 연결했다. 제품/영양정보가 없거나
+카메라를 못 쓰면 이름을 가능한 만큼 유지한 채 수동 입력으로 돌아간다. 남은 것은 아이폰
+standalone에서 실제 포장 바코드 판독 속도·초점·권한 재요청을 확인하는 물리 기기 실측이다.
 
 ## 작업 분담 현황
 
@@ -271,6 +274,7 @@ Blaze는 카드 등록 필요(개인 사용량은 사실상 무료) — 과금 �
 
 | 대상 | 잡은 쪽 | 상태 |
 |---|---|---|
+| `src/lib/offParser.js`, `tests/offParser.test.js` | **Codex** | **완료·Claude 검수통과(2026-08-18)** — 명세 11개 케이스 전부 매칭, 직접 재실행 확인. 사용자 컨펌 대기 → `orders/28` |
 | `src/lib/metabolism.js`, `src/lib/units.js` + 테스트 | **Codex** | **완료·커밋** (`meal-calendar` `0a1cf7c`) → `orders/01`, `orders/03` |
 | `src/lib/mfdsParser.js`, `tests/mfdsParser.test.js` | **Codex** | **완료·커밋** (`07cff69`) → `orders/04` |
 | `src/lib/mfdsParser.js`, `tests/mfdsParser.test.js` 배열형 `items` 대응 | **Codex** | **완료·커밋** (`c288781`) — 82/82 → `orders/07` |
@@ -329,7 +333,7 @@ Blaze는 카드 등록 필요(개인 사용량은 사실상 무료) — 과금 �
   반영해야 한다 (예: 스캔 버튼 누를 때마다 프롬프트가 뜰 수 있다고 안내하는 문구 필요할 수 있음
   — **디자인 판단, Phase 8에서 사용자와 정한다**)
 - ~~식약처 API의 실제 응답 스키마~~ → **확인됨 (2026-08-13)**, `docs/orders/04-mfds-parser.md` 참조. 레이트리밋(개발계정 트래픽 10,000/일)은 실사용 전 재확인 필요
-- Open Food Facts의 국내 제품 커버리지 → **바코드 10개쯤 찍어보고 판단**
-- zxing-wasm이 iOS Safari에서 실용적 속도가 나오는지 → **실측**
+- Open Food Facts의 국내 제품 커버리지 → 실 API 변환은 확인, **국내 바코드 10개 실기기 판독으로 판단**
+- zxing-wasm@3.1.3이 iOS Safari에서 실용적 속도가 나오는지 → **배포 후 물리 기기 실측**
 
 전부 확인 전에는 이 위에 코드를 얹지 않는다.

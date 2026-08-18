@@ -26,6 +26,8 @@
 <link rel="modulepreload" href="/src/lib/authMessages.js">
 <link rel="modulepreload" href="/src/lib/quickFoodInput.js">
 <link rel="modulepreload" href="/src/lib/uiDashboard.js">
+<link rel="modulepreload" href="/src/lib/offParser.js">
+<link rel="modulepreload" href="/src/lib/barcodeProduct.js">
 <style>
   :root {
     --bg: #0a0b0d; --fg: #f2f4f7; --muted: #9aa2ad;
@@ -437,6 +439,20 @@
     color: var(--warning); background: var(--warning-bg); border: 1px solid var(--warning-line);
     border-radius: 10px; padding: 10px 12px;
   }
+  .barcode-open {
+    -webkit-appearance: none; appearance: none; width: 100%; min-height: 44px;
+    margin: 0 0 14px; border: 1px solid var(--info-line); border-radius: 10px;
+    background: var(--info-bg); color: var(--info); font: inherit; font-weight: 650;
+  }
+  .barcode-scanner video {
+    display: block; width: 100%; max-height: 54vh; object-fit: cover;
+    border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  }
+  .barcode-scanner canvas { display: none; }
+  .barcode-status {
+    min-height: 1.5em; margin: 12px 0; color: var(--muted); font-size: 13px; line-height: 1.55;
+  }
+  .barcode-copy-bank { display: none; }
   .quick-hint {
     color: var(--muted); font-size: 12px; line-height: 1.55;
     margin: -2px 0 10px;
@@ -715,6 +731,8 @@
       <div id="searchResults" class="search-results"></div>
     </div>
 
+    <button id="barcodeOpen" class="barcode-open" type="button">바코드 스캔</button>
+
     <div id="quickPresets" class="quick-section" hidden>
       <h3>자주 먹는 것</h3>
       <div id="presetChips" class="chip-row"></div>
@@ -759,6 +777,22 @@
       <div id="entryError" class="form-error" hidden></div>
       <button type="submit">추가</button>
     </form>
+    </div>
+
+    <div id="barcodeScanner" class="barcode-scanner" hidden>
+      <div class="sheet-header">
+        <button id="barcodeCancel" type="button">취소</button>
+        <h2>바코드를 비춰주세요</h2>
+      </div>
+      <video id="barcodeVideo" playsinline muted autoplay></video>
+      <canvas id="barcodeCanvas"></canvas>
+      <div id="barcodeStatus" class="barcode-status"></div>
+      <div class="barcode-copy-bank" aria-hidden="true">
+        <span>제품 정보를 확인하고 있습니다.</span>
+        <span>Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.</span>
+        <span>제품은 찾았지만 영양정보가 없습니다. 직접 입력해 주세요.</span>
+        <span>카메라를 사용할 수 없습니다. 직접 입력해 주세요.</span>
+      </div>
     </div>
 
     <div id="portionPrompt" class="portion-prompt" hidden>

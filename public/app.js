@@ -11,6 +11,10 @@ import {
   parseQuickFoodInput, splitQuickFoodInput, selectBestFood, hasNameMatch, SERVING_SOURCE_LABELS,
 } from '/src/lib/quickFoodInput.js';
 import { monthDashboardSummary, progressPercent, servingChoiceOptions } from '/src/lib/uiDashboard.js';
+import { parseOffProduct } from '/src/lib/offParser.js';
+import {
+  buildOpenFoodFactsUrl, normalizeRetailBarcode, toBarcodeFood,
+} from '/src/lib/barcodeProduct.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
 // 전부 받아질 때까지 이 모듈 전체의 실행이 밀린다. 캘린더 그리드는 네트워크 없이 그릴 수 있는데
@@ -131,6 +135,12 @@ const el = {
   successNote: document.getElementById('successNote'),
   fixAmountBtn: document.getElementById('fixAmountBtn'),
   doneAddBtn: document.getElementById('doneAddBtn'),
+  barcodeOpen: document.getElementById('barcodeOpen'),
+  barcodeScanner: document.getElementById('barcodeScanner'),
+  barcodeVideo: document.getElementById('barcodeVideo'),
+  barcodeCanvas: document.getElementById('barcodeCanvas'),
+  barcodeStatus: document.getElementById('barcodeStatus'),
+  barcodeCancel: document.getElementById('barcodeCancel'),
   authGate: document.getElementById('authGate'),
   guestStart: document.getElementById('guestStart'),
   gateSignUpForm: document.getElementById('gateSignUpForm'),
@@ -171,6 +181,7 @@ function emptySlots() {
 
 function buildEntry({
   foodKey, name, amountG, kcal, carbG, proteinG, fatG, addedBy, estimate, matchedFoodName,
+  source, barcode,
 }) {
   return {
     foodKey: foodKey ?? `manual_${crypto.randomUUID()}`,
@@ -181,6 +192,8 @@ function buildEntry({
     // 빠른 기록으로 검색 결과가 실제 매칭된 식품명 — g 명시 경로에서도 항상 남긴다 (I5).
     // 사용자가 뜻한 이름(entry.name)과 다를 수 있으므로 어떤 식품의 숫자가 들어갔는지 추적한다.
     ...(matchedFoodName ? { matchedFoodName } : {}),
+    ...(source ? { source } : {}),
+    ...(barcode ? { barcode } : {}),
   };
 }
 
@@ -860,6 +873,7 @@ async function renderQuickPicks() {
 }
 
 function openEntryForm(slotKey, slotLabel) {
+  stopBarcodeScanner();
   state.pendingSlot = slotKey;
   el.entryTitle.textContent = `${slotLabel} 항목 추가`;
   el.entryForm.reset();
@@ -875,16 +889,19 @@ function openEntryForm(slotKey, slotLabel) {
 }
 
 document.getElementById('closeEntry').addEventListener('click', () => {
+  stopBarcodeScanner();
   el.entrySheet.hidden = true;
   state.pendingSlot = null;
 });
 
 // ── 빠른 기록 + 식약처 검색 ──────────────────────────────────────────
 
-// entryForm 시트 안의 네 패널(검색/빠른기록, 양 선택, 다중입력 확인, 추가 직후 완료)은
+// entryForm 시트 안의 패널은 항상 하나만 보인다. 바코드는 카메라를 쓰므로 패널을
+// 벗어나는 순간 스트림도 반드시 닫는다.
 // 항상 하나만 보인다 — 하나를 열 때 나머지 세 개를 확실히 닫아서 겹쳐 보이는 걸 막는다.
 function showEntryPanel(panel) {
   el.entryChooser.hidden = panel !== 'chooser';
+  el.barcodeScanner.hidden = panel !== 'barcode';
   el.portionPrompt.hidden = panel !== 'portion';
   el.multiConfirm.hidden = panel !== 'multiConfirm';
   el.addSuccess.hidden = panel !== 'addSuccess';
@@ -893,6 +910,177 @@ function showEntryPanel(panel) {
 function showPortionPrompt(show) {
   showEntryPanel(show ? 'portion' : 'chooser');
 }
+
+const ZXING_READER_URL = 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.3/dist/iife/reader/index.js';
+const BARCODE_FORMATS = ['EAN13', 'EAN8', 'UPCA', 'UPCE'];
+let zxingReaderPromise = null;
+let barcodeStream = null;
+let barcodeFrame = null;
+let barcodeSession = 0;
+
+function loadZxingReader() {
+  if (globalThis.ZXingWASM?.readBarcodes) return Promise.resolve(globalThis.ZXingWASM);
+  if (zxingReaderPromise) return zxingReaderPromise;
+
+  zxingReaderPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = ZXING_READER_URL;
+    script.async = true;
+    script.onload = () => {
+      if (globalThis.ZXingWASM?.readBarcodes) resolve(globalThis.ZXingWASM);
+      else reject(new Error('ZXingWASM.readBarcodes was not registered'));
+    };
+    script.onerror = () => reject(new Error('zxing-wasm reader failed to load'));
+    document.head.appendChild(script);
+  }).catch((error) => {
+    zxingReaderPromise = null;
+    throw error;
+  });
+  return zxingReaderPromise;
+}
+
+function stopBarcodeScanner() {
+  barcodeSession += 1;
+  if (barcodeFrame !== null) cancelAnimationFrame(barcodeFrame);
+  barcodeFrame = null;
+  for (const track of barcodeStream?.getTracks?.() ?? []) track.stop();
+  barcodeStream = null;
+  el.barcodeVideo.pause();
+  el.barcodeVideo.srcObject = null;
+}
+
+function showBarcodeManual(message, name = '') {
+  stopBarcodeScanner();
+  el.entryForm.reset();
+  el.entryForm.name.value = name;
+  showEntryPanel('chooser');
+  el.searchStatus.className = 'search-status search-status-warning';
+  el.searchStatus.textContent = message;
+  el.searchStatus.hidden = false;
+}
+
+async function resolveBarcodeProduct(barcode, session) {
+  el.barcodeStatus.textContent = '제품 정보를 확인하고 있습니다.';
+  let response;
+  try {
+    response = await fetch(buildOpenFoodFactsUrl(barcode));
+    if (!response.ok) throw new Error(`Open Food Facts HTTP ${response.status}`);
+  } catch (error) {
+    console.error('[meal-calendar] Open Food Facts 조회 실패', error);
+    if (session === barcodeSession) {
+      showBarcodeManual('Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.');
+    }
+    return;
+  }
+
+  if (session !== barcodeSession) return;
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    console.error('[meal-calendar] Open Food Facts 응답 해석 실패', error);
+    showBarcodeManual('Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.');
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = parseOffProduct(payload);
+  } catch (error) {
+    console.error('[meal-calendar] Open Food Facts 영양정보 해석 실패', error);
+    showBarcodeManual(
+      '제품은 찾았지만 영양정보가 없습니다. 직접 입력해 주세요.',
+      payload.product?.product_name ?? '',
+    );
+    return;
+  }
+  if (!parsed) {
+    showBarcodeManual('Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.');
+    return;
+  }
+
+  const food = toBarcodeFood(parsed);
+  if (!food) {
+    showBarcodeManual('제품은 찾았지만 영양정보가 없습니다. 직접 입력해 주세요.', parsed.name ?? '');
+    return;
+  }
+
+  stopBarcodeScanner();
+  openPortionPrompt(food);
+}
+
+async function scanBarcodeFrame(zxing, session) {
+  if (session !== barcodeSession || !barcodeStream) return;
+  const { videoWidth, videoHeight } = el.barcodeVideo;
+  if (videoWidth > 0 && videoHeight > 0) {
+    const width = Math.min(videoWidth, 960);
+    const height = Math.round(videoHeight * width / videoWidth);
+    el.barcodeCanvas.width = width;
+    el.barcodeCanvas.height = height;
+    const context = el.barcodeCanvas.getContext('2d', { willReadFrequently: true });
+    context.drawImage(el.barcodeVideo, 0, 0, width, height);
+    const image = context.getImageData(0, 0, width, height);
+    const results = await zxing.readBarcodes(image, {
+      formats: BARCODE_FORMATS,
+      maxNumberOfSymbols: 1,
+      tryHarder: true,
+    });
+    if (session !== barcodeSession || !barcodeStream) return;
+    const barcode = normalizeRetailBarcode(results);
+    if (barcode) {
+      for (const track of barcodeStream.getTracks()) track.stop();
+      barcodeStream = null;
+      await resolveBarcodeProduct(barcode, session);
+      return;
+    }
+  }
+  if (session === barcodeSession && barcodeStream) {
+    barcodeFrame = requestAnimationFrame(() => {
+      scanBarcodeFrame(zxing, session).catch((error) => {
+        console.error('[meal-calendar] 바코드 판독 실패', error);
+        showBarcodeManual('카메라를 사용할 수 없습니다. 직접 입력해 주세요.');
+      });
+    });
+  }
+}
+
+async function startBarcodeScanner() {
+  stopBarcodeScanner();
+  const session = barcodeSession;
+  showEntryPanel('barcode');
+  el.barcodeStatus.textContent = '';
+
+  try {
+    const zxing = await loadZxingReader();
+    if (session !== barcodeSession) return;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false,
+    });
+    if (session !== barcodeSession) {
+      for (const track of stream.getTracks()) track.stop();
+      return;
+    }
+    barcodeStream = stream;
+    el.barcodeVideo.srcObject = stream;
+    await el.barcodeVideo.play();
+    await scanBarcodeFrame(zxing, session);
+  } catch (error) {
+    console.error('[meal-calendar] 바코드 카메라 시작 실패', error);
+    if (session === barcodeSession) {
+      showBarcodeManual('카메라를 사용할 수 없습니다. 직접 입력해 주세요.');
+    }
+  }
+}
+
+el.barcodeOpen.addEventListener('click', startBarcodeScanner);
+el.barcodeCancel.addEventListener('click', () => {
+  stopBarcodeScanner();
+  showEntryPanel('chooser');
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopBarcodeScanner();
+});
 
 /**
  * 한 줄에 여러 음식(`반숙란 2개, 우유 200g`)을 넣었을 때, 조각마다 검색·매칭만
@@ -1239,6 +1427,8 @@ async function addSearchedFood(food, amountG, quickInput = null, { batch = false
     // 빠른 기록에서만 남긴다 — 직접 검색(quickInput=null)은 entry.name 이 이미 food.name 이라
     // 중복이다. g 명시든 개수 추정이든 상관없이 항상 남긴다 (I5, 예전엔 추정 경로에만 있었다).
     matchedFoodName: quickInput ? food.name : null,
+    source: food.source,
+    barcode: food.barcode,
   }));
 
   if (!batch) {
