@@ -79,9 +79,27 @@
 동일 브랜드·메뉴·제공량의 중복 후보에서는 최신 공식 자료가 표시 우선권을 갖는다. 공공데이터
 레코드는 삭제하지 않고 근거 이력으로 유지한다.
 
-## Firestore 모델
+## Firestore 모델과 원자적 버전 전환
 
-### `franchiseBrands/{brandId}`
+카탈로그를 활성 컬렉션에 직접 여러 batch로 덮어쓰지 않는다. Firestore batch 한도보다
+레코드가 많을 때 중간 실패가 발생하면 사용자가 반쪽짜리 카탈로그를 보게 되기 때문이다.
+모든 데이터는 새로운 run 아래에 먼저 적재하고 검증한 뒤, 현재 run 포인터 문서 하나만
+transaction으로 전환한다. 검색은 포인터가 가리키는 완료 run만 읽는다.
+
+```text
+franchiseCatalogState/current
+franchiseCatalogRuns/{runId}
+franchiseCatalogRuns/{runId}/brands/{brandId}
+franchiseCatalogRuns/{runId}/foods/{foodId}
+franchiseCatalogRuns/{runId}/sources/{sourceId}
+```
+
+`franchiseCatalogState/current`는 `runId`, 전체 레코드 수, 입력 manifest hash, 게시 시각을
+갖는다. `franchiseCatalogRuns/{runId}`는 `status: staging | ready`, 동일한 수와 hash를 갖는다.
+여러 batch 적재 중 실패한 staging run은 현재 포인터에 연결되지 않으므로 검색에 노출되지
+않는다. 이전 ready run은 변경 이력과 rollback 근거로 보존한다.
+
+### `franchiseCatalogRuns/{runId}/brands/{brandId}`
 
 ```js
 {
@@ -98,7 +116,7 @@
 
 `brandId`는 정규화된 브랜드명으로부터 생성한 안정적인 slug다. 별칭은 중복 없이 정렬한다.
 
-### `franchiseFoods/{foodId}`
+### `franchiseCatalogRuns/{runId}/foods/{foodId}`
 
 ```js
 {
@@ -135,7 +153,7 @@
 `foodId`는 `sourceType + sourceRecordId`에서 결정적으로 만든다. 이름이 바뀌어도 같은 원자료
 레코드는 같은 ID를 유지한다.
 
-### `nutritionSources/{sourceId}`
+### `franchiseCatalogRuns/{runId}/sources/{sourceId}`
 
 ```js
 {
@@ -148,11 +166,9 @@
 }
 ```
 
-### `franchiseFoodHistory/{revisionId}`
-
-메뉴값이 바뀔 때 이전 레코드의 원문 해시, 영양값, 출처, 변경 시각을 append-only로 보존한다.
-사용자의 과거 식단 기록은 원래 저장된 숫자를 유지하며 최신 카탈로그 값으로 다시 계산하지
-않는다.
+각 ready run 자체가 당시의 전체 브랜드·메뉴·출처 스냅샷이다. 메뉴값이 바뀌어도 이전 ready
+run을 수정하거나 삭제하지 않는다. 사용자의 과거 식단 기록도 원래 저장된 숫자를 유지하며
+최신 카탈로그 값으로 다시 계산하지 않는다.
 
 ## 검수 파일과 적재기
 
@@ -192,8 +208,9 @@ data/franchise/
 ## 검색 흐름
 
 1. 사용자의 검색어를 기존 `buildSearchPlan`으로 정규화한다.
-2. 정규화 결과에서 가장 구체적인 브랜드 또는 메뉴 토큰 하나를 골라
-   `searchTokens array-contains`로 `franchiseFoods`를 조회한다. 단일 조회 상한은 100건이며,
+2. `franchiseCatalogState/current`의 run ID를 읽고, 정규화 결과에서 가장 구체적인 브랜드 또는
+   메뉴 토큰 하나를 골라 그 run의 `foods` subcollection을
+   `searchTokens array-contains`로 조회한다. 단일 조회 상한은 100건이며,
    모든 토큰 일치 여부와 최종 순위는 Function의 기존 순수 정렬 로직에서 판정한다.
 3. 기존 식약처 실시간 검색을 실행한다.
 4. 두 결과를 `sourceType`, 브랜드 일치, 메뉴명 일치, 제공량 기준으로 중복 제거하고 정렬한다.
@@ -265,10 +282,10 @@ data/franchise/
 ## 보안과 권한
 
 - 외부 API 키는 계속 Cloud Functions secrets에만 둔다.
-- 클라이언트는 Firestore 카탈로그를 직접 쓰지 않는다.
+- 클라이언트는 Firestore 카탈로그를 직접 읽거나 쓰지 않는다.
 - 검색은 기존 인증된 `/api/foods/search`를 통해서만 제공한다.
 - 적재 권한은 Admin SDK 실행 환경에만 있다.
-- Firestore 보안 규칙은 프랜차이즈 카탈로그에 대한 사용자 쓰기를 거부한다.
+- Firestore 보안 규칙은 카탈로그 state와 모든 run에 대한 사용자 읽기·쓰기를 거부한다.
 - 데이터 라이선스와 제3자 권리는 실제 초기 적재 전에 출처별로 확인한다.
 
 ## 오류 처리
