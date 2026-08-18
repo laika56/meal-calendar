@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -23,6 +24,23 @@ function shellFiles(source) {
   return [...block[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
 }
 
+function shellRevision(source) {
+  const match = source.match(/const SHELL_REVISION = '([a-f0-9]{64})';/);
+  assert.ok(match, 'sw.js 에서 SHA-256 SHELL_REVISION 을 찾지 못했다');
+  return match[1];
+}
+
+function currentShellRevision(paths) {
+  const hash = createHash('sha256');
+  for (const path of paths) {
+    const filePath = path === '/' ? 'public/index.html' : path.slice(1);
+    const bytes = readFileSync(join(root, filePath));
+    hash.update(`${path}\0${bytes.length}\0`);
+    hash.update(bytes);
+  }
+  return hash.digest('hex');
+}
+
 test('서비스워커 셸 목록이 app.js 의 모든 import 를 담고 있다', () => {
   const listed = new Set(shellFiles(read('public/sw.js')));
   const missing = importedPaths(read('public/app.js')).filter((p) => !listed.has(p));
@@ -44,4 +62,20 @@ test('셸 목록에 적힌 파일이 실제로 저장소에 있다', () => {
     .filter((p) => { try { read(p.slice(1)); return false; } catch { return true; } });
 
   assert.deepEqual(missing, [], `sw.js 에 적혔지만 파일이 없다: ${missing.join(', ')}`);
+});
+
+test('서비스워커 캐시 identity가 현재 앱 셸 bytes 전체에 결속된다', () => {
+  const source = read('public/sw.js');
+  const listed = shellFiles(source);
+
+  assert.match(
+    source,
+    /const CACHE_NAME = `meal-calendar-shell-\$\{SHELL_REVISION\}`;/,
+    'CACHE_NAME 은 SHELL_REVISION 을 실제 cache identity로 사용해야 한다',
+  );
+  assert.equal(
+    shellRevision(source),
+    currentShellRevision(listed),
+    '앱 셸이 바뀌었는데 SHELL_REVISION 이 갱신되지 않아 이전 캐시가 계속 제공된다',
+  );
 });
