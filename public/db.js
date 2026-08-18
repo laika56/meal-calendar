@@ -18,6 +18,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js';
 
 import { firebaseConfig } from '/src/firebaseConfig.js';
+import { normalizeSearchFoodsResponse } from '/src/lib/searchFoodsResponse.js';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -398,6 +399,5 @@ export async function searchFoods(q) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error ?? `검색 실패 (${res.status})`);
   }
-  const { items } = await res.json();
-  return items;
+  return normalizeSearchFoodsResponse(await res.json());
 }

@@ -12,9 +12,15 @@ import {
 } from '/src/lib/quickFoodInput.js';
 import { monthDashboardSummary, progressPercent, servingChoiceOptions } from '/src/lib/uiDashboard.js';
 import { parseOffProduct } from '/src/lib/offParser.js';
+import { normalizeSearchFoodsResponse } from '/src/lib/searchFoodsResponse.js';
 import {
   buildOpenFoodFactsUrl, normalizeRetailBarcode, toBarcodeFood,
 } from '/src/lib/barcodeProduct.js';
+import { createSearchResult } from '/public/searchResult.js';
+import {
+  buildPartialNutritionProvenance, formNumber, showPartialNutritionEntry,
+} from '/public/partialNutritionEntry.js';
+import { searchResultStatus } from '/public/searchStatus.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
 // 전부 받아질 때까지 이 모듈 전체의 실행이 밀린다. 캘린더 그리드는 네트워크 없이 그릴 수 있는데
@@ -1102,14 +1108,15 @@ async function resolveMultiPieces(pieces) {
     const usable = piece.parsed.ok || piece.parsed.reason === 'unsupported-serving';
     if (!usable) { results.push({ text: piece.text, ok: false }); continue; }
 
-    let items;
+    let searchResponse;
     try {
-      items = await db.searchFoods(piece.parsed.query);
+      searchResponse = normalizeSearchFoodsResponse(await db.searchFoods(piece.parsed.query));
     } catch (err) {
       console.error('[meal-calendar] 검색 실패', piece.text, err);
       results.push({ text: piece.text, ok: false });
       continue;
     }
+    const { items } = searchResponse;
 
     // 이름이 실제로 맞아떨어질 때만 자동 기록 후보로 삼는다 — 엉뚱한 식품의 숫자가 들어가면 안 된다
     if (items.length === 0 || !hasNameMatch(piece.parsed.query, items)) {
@@ -1281,8 +1288,7 @@ el.searchForm.addEventListener('submit', async (event) => {
     el.searchStatus.textContent = `검색 실패 — ${err.message}`;
     return;
   }
-  const items = Array.isArray(searchResponse) ? searchResponse : (searchResponse.items ?? []);
-  const hasMore = searchResponse?.hasMore === true || items.length >= 100;
+  const { items, hasMore } = normalizeSearchFoodsResponse(searchResponse);
 
   if (items.length === 0) {
     // 식약처 DB 는 브랜드 메뉴를 거의 안 담는다 — `서브웨이`·`서가원 김밥` 은 이름·제조사
@@ -1337,35 +1343,16 @@ el.searchForm.addEventListener('submit', async (event) => {
     }
   }
 
-  el.searchStatus.hidden = !hasMore;
-  if (hasMore) {
+  const resultStatus = searchResultStatus({ hasMore, parsed });
+  el.searchStatus.hidden = resultStatus === null;
+  if (resultStatus !== null) {
     el.searchStatus.className = 'search-status';
-    el.searchStatus.textContent = '검색 결과가 많습니다. 브랜드와 메뉴명을 함께 입력해 주세요.';
-  }
-  if (parsed.ok && !hasMore) {
-    el.searchStatus.hidden = false;
-    el.searchStatus.textContent = '정확히 일치하는 이름이 없습니다. 아래에서 골라주세요.';
-  } else if (parsed.reason === 'unsupported-serving' && !hasMore) {
-    el.searchStatus.hidden = false;
-    el.searchStatus.textContent = '이 단위는 아직 자동 환산하지 못합니다. 음식을 고른 뒤 g을 입력해주세요.';
+    el.searchStatus.textContent = resultStatus;
   }
 
   const servingTable = await loadServingTable();
   for (const food of items) {
-    const result = document.createElement('div');
-    result.className = 'search-result';
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'search-result-main';
-    const name = document.createElement('span');
-    name.className = 'r-name';
-    name.textContent = food.name;
-    const meta = document.createElement('span');
-    meta.className = 'r-meta';
-    const kcalText = Number.isFinite(food.per100g?.kcal) ? Math.round(food.per100g.kcal) : '?';
     let servingLabel = '';
-    const officialServing = food.serving?.source === 'official-serving'
-      && Number.isFinite(food.servingNutrients?.kcal);
     if (food.serving) {
       servingLabel = `1인분 ${food.serving.amount}${food.serving.unit}`;
     } else if (servingTable) {
@@ -1378,78 +1365,31 @@ el.searchForm.addEventListener('submit', async (event) => {
         console.error('[meal-calendar] 검색 결과 참고값 계산 실패', err);
       }
     }
-    const nutritionLabel = officialServing
-      ? `1인분 ${food.serving.amount}${food.serving.unit} · ${Math.round(food.servingNutrients.kcal)}kcal`
-      : `100g당 ${kcalText}kcal`;
-    const sourceDetails = [food.maker, food.source?.label].filter(Boolean);
-    meta.textContent = sourceDetails.length > 0
-      ? [...sourceDetails, nutritionLabel, ...(officialServing || !servingLabel ? [] : [servingLabel])].join(' · ')
-      : [food.category, nutritionLabel, servingLabel].filter(Boolean).join(' · ');
-    button.append(name, meta);
     // parsed.ok 면 사용자가 이미 입력한 양(g 명시든 개수 추정 환산이든)을 그대로 넘긴다 —
     // 이름을 못 찾았다고 이미 알려준 수량까지 지우고 100g 기본값으로 되돌리지 않는다.
-    button.addEventListener('click', () => openPortionPrompt(food, parsed.ok ? parsed.amountG : undefined));
-    result.appendChild(button);
-    if (isSafeExternalUrl(food.source?.url)) {
-      const sourceLink = document.createElement('a');
-      sourceLink.className = 'r-source-link';
-      sourceLink.href = food.source.url;
-      sourceLink.target = '_blank';
-      sourceLink.rel = 'noopener noreferrer';
-      sourceLink.textContent = '출처 보기';
-      result.appendChild(sourceLink);
-    }
-    el.searchResults.appendChild(result);
+    el.searchResults.appendChild(createSearchResult(document, food, {
+      servingLabel,
+      onSelect: () => openPortionPrompt(food, parsed.ok ? parsed.amountG : undefined),
+    }));
   }
 });
 
 let selectedFood = null;
 let manualEntryContext = null;
 
-const NUTRIENT_FIELD_LABELS = {
-  kcal: '칼로리',
-  carbG: '탄수화물',
-  proteinG: '단백질',
-  fatG: '지방',
-};
-
-function isSafeExternalUrl(value) {
-  if (typeof value !== 'string') return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' || url.protocol === 'http:';
-  } catch {
-    return false;
-  }
-}
-
-function formNumber(data, field) {
-  const value = data.get(field);
-  return typeof value === 'string' && value.trim() === '' ? Number.NaN : Number(value);
-}
-
 function fillManualEntry(food, amountG, scaled) {
-  el.entryForm.reset();
-  el.entryForm.name.value = food.name;
-  el.entryForm.amountG.value = amountG;
-  if (Number.isFinite(scaled.kcal)) el.entryForm.kcal.value = scaled.kcal;
-  if (Number.isFinite(scaled.carbG)) el.entryForm.carbG.value = scaled.carbG;
-  if (Number.isFinite(scaled.proteinG)) el.entryForm.proteinG.value = scaled.proteinG;
-  if (Number.isFinite(scaled.fatG)) el.entryForm.fatG.value = scaled.fatG;
-  const missingFields = Object.entries(NUTRIENT_FIELD_LABELS)
-    .filter(([field]) => !Number.isFinite(scaled[field]))
-    .map(([, label]) => label);
-  el.partialNutritionNote.hidden = missingFields.length === 0;
-  if (missingFields.length > 0) {
-    el.partialNutritionNote.textContent = `공식 자료에 없는 ${missingFields.join('·')}은 직접 입력해야 합니다.`;
-  }
+  const { numericFields } = showPartialNutritionEntry({
+    form: el.entryForm,
+    notice: el.partialNutritionNote,
+    food,
+    amountG,
+    scaled,
+    showManualForm: () => showPortionPrompt(false),
+  });
   manualEntryContext = {
     source: food.source,
-    numericFields: Object.fromEntries(
-      Object.entries(scaled).filter(([, value]) => Number.isFinite(value)),
-    ),
+    numericFields,
   };
-  showPortionPrompt(false);
 }
 
 /**
@@ -1735,19 +1675,13 @@ el.entryForm.addEventListener('submit', async (event) => {
 
   const saveAsPreset = data.get('saveAsPreset') === 'on';
   const slotKey = state.pendingSlot;
-  const nutritionProvenance = manualEntryContext ? {
-    kcal: 'manual',
-    carbG: 'manual',
-    proteinG: 'manual',
-    fatG: 'manual',
-    ...Object.fromEntries(
-      Object.entries(manualEntryContext.numericFields)
-        .filter(([field, value]) => fields[field] === value)
-        .map(([field]) => [field, manualEntryContext.source?.type ?? 'manual']),
-    ),
-    sourceUrl: manualEntryContext.source?.url ?? null,
-    verifiedAt: manualEntryContext.source?.verifiedAt ?? null,
-  } : null;
+  const nutritionProvenance = manualEntryContext
+    ? buildPartialNutritionProvenance({
+      numericFields: manualEntryContext.numericFields,
+      source: manualEntryContext.source,
+      fields,
+    })
+    : null;
   el.entrySheet.hidden = true;
   state.pendingSlot = null;
 

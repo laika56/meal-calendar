@@ -1,6 +1,6 @@
 // 앱 셸만 캐싱한다. 영양 데이터는 Firestore가 오프라인 퍼시스턴스로 알아서 한다.
 // ARCHITECTURE.md 「오프라인」 참조.
-const CACHE_NAME = 'meal-calendar-shell-v8';
+const CACHE_NAME = 'meal-calendar-shell-v9';
 
 // app.js / db.js 가 실제로 import 하는 것을 전부 적는다.
 // 하나라도 빠지면 오프라인에서 앱이 아예 안 뜬다 (절대규칙 6).
@@ -14,6 +14,9 @@ const SHELL_FILES = [
   '/public/index.html',
   '/public/app.js',
   '/public/db.js',
+  '/public/partialNutritionEntry.js',
+  '/public/searchResult.js',
+  '/public/searchStatus.js',
   '/public/manifest.webmanifest',
   '/public/icon-192.png',
   '/public/icon-512.png',
@@ -27,6 +30,7 @@ const SHELL_FILES = [
   '/src/lib/offParser.js',
   '/src/lib/barcodeProduct.js',
   '/src/lib/quickFoodInput.js',
+  '/src/lib/searchFoodsResponse.js',
   '/src/lib/uiDashboard.js',
   '/src/lib/roulette.js',
   '/src/lib/servingEstimate.js',
