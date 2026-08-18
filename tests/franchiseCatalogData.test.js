@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import test from 'node:test';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -27,6 +28,20 @@ function isIsoUtcDate(value) {
 
 async function readJson(relativePath) {
   return JSON.parse(await readFile(path.join(projectRoot, relativePath), 'utf8'));
+}
+
+async function withCatalogFixture(change) {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'meal-calendar-catalog-'));
+  await cp(path.join(projectRoot, 'data'), path.join(fixtureRoot, 'data'), { recursive: true });
+  try {
+    await change(fixtureRoot);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+async function writeFixtureJson(root, relativePath, value) {
+  await writeFile(path.join(root, relativePath), `${JSON.stringify(value, null, 2)}\n`);
 }
 
 test('Subway BMT is bound to the reviewed Korean official page', async () => {
@@ -133,4 +148,72 @@ test('catalog manifest is deterministic and the validator reports the reviewed b
     new RegExp(`^sources 2\\nbrands 1\\nfoods 1\\npublicRecords 0\\ncatalogSha256 ${manifest.sha256}\\nNo issues\\.$`),
   );
   assert.equal(after, before);
+});
+
+test('refuses a public snapshot whose declared source is absent from the source registry', async () => {
+  await withCatalogFixture(async (fixtureRoot) => {
+    const snapshot = await readFile(path.join(fixtureRoot, 'data/franchise/public/mfds-franchise.json'), 'utf8');
+    await writeFixtureJson(fixtureRoot, 'data/franchise/public/mfds-franchise.json', {
+      ...JSON.parse(snapshot),
+      sourceId: 'unknown-public-source',
+    });
+
+    await assert.rejects(
+      () => loadReviewedCatalogFiles(fixtureRoot),
+      /public snapshot references unknown source unknown-public-source/,
+    );
+  });
+});
+
+test('refuses public records that do not use the public snapshot source', async () => {
+  await withCatalogFixture(async (fixtureRoot) => {
+    const [sources, officialRecords, snapshot] = await Promise.all([
+      JSON.parse(await readFile(path.join(fixtureRoot, 'data/franchise/sources.json'), 'utf8')),
+      JSON.parse(await readFile(path.join(fixtureRoot, 'data/franchise/official/subway.json'), 'utf8')),
+      JSON.parse(await readFile(path.join(fixtureRoot, 'data/franchise/public/mfds-franchise.json'), 'utf8')),
+    ]);
+    const secondPublicSource = {
+      ...sources[0],
+      id: 'another-public-source',
+      name: '다른 공공데이터 출처',
+    };
+    const mismatchedPublicRecord = {
+      ...officialRecords[0],
+      id: 'mfds-mismatched-source',
+      sourceId: secondPublicSource.id,
+      sourceType: 'public_data',
+      sourceUrl: secondPublicSource.url,
+      confidence: 'public',
+    };
+    await writeFixtureJson(fixtureRoot, 'data/franchise/sources.json', [secondPublicSource, ...sources]);
+    await writeFixtureJson(fixtureRoot, 'data/franchise/public/mfds-franchise.json', {
+      ...snapshot,
+      records: [mismatchedPublicRecord],
+    });
+
+    await assert.rejects(
+      () => loadReviewedCatalogFiles(fixtureRoot),
+      /public record mfds-mismatched-source sourceId must match public snapshot sourceId mfds-franchise/,
+    );
+  });
+});
+
+test('refuses an official source domain that is not the referenced brand official domain', async () => {
+  await withCatalogFixture(async (fixtureRoot) => {
+    const [sources, officialRecords] = await Promise.all([
+      JSON.parse(await readFile(path.join(fixtureRoot, 'data/franchise/sources.json'), 'utf8')),
+      JSON.parse(await readFile(path.join(fixtureRoot, 'data/franchise/official/subway.json'), 'utf8')),
+    ]);
+    const foreignUrl = 'https://example.test/menu/1528';
+    const sourceIndex = sources.findIndex(({ id }) => id === 'subway-menu-1528');
+    sources[sourceIndex] = { ...sources[sourceIndex], url: foreignUrl };
+    officialRecords[0] = { ...officialRecords[0], sourceUrl: foreignUrl };
+    await writeFixtureJson(fixtureRoot, 'data/franchise/sources.json', sources);
+    await writeFixtureJson(fixtureRoot, 'data/franchise/official/subway.json', officialRecords);
+
+    await assert.rejects(
+      () => loadReviewedCatalogFiles(fixtureRoot),
+      /official record subway-menu-1528 source domain must match brand subway officialUrl domain/,
+    );
+  });
 });

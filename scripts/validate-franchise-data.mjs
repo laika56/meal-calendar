@@ -184,6 +184,15 @@ function validateRecords(records, sources, brands) {
     if (new URL(value.sourceUrl).hostname !== new URL(source.url).hostname) {
       refuse(`record ${value.id} sourceUrl domain does not match ${value.sourceId}`);
     }
+    if (value.sourceType === 'official_brand') {
+      const officialHostname = new URL(brand.officialUrl).hostname;
+      if (
+        new URL(source.url).hostname !== officialHostname
+        || new URL(value.sourceUrl).hostname !== officialHostname
+      ) {
+        refuse(`official record ${value.id} source domain must match brand ${value.brandId} officialUrl domain`);
+      }
+    }
     validated.push(value);
   }
   return validated.toSorted((left, right) => left.id.localeCompare(right.id, 'en'));
@@ -203,6 +212,10 @@ export async function loadReviewedCatalogFiles(root) {
   validateSources(sources);
   validateBrands(brands);
   validateSnapshot(publicSnapshot);
+  const publicSnapshotSource = sources.find(({ id }) => id === publicSnapshot.sourceId);
+  if (!publicSnapshotSource) {
+    refuse(`public snapshot references unknown source ${publicSnapshot.sourceId}`);
+  }
   const jsonNames = officialFiles
     .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
     .map((entry) => entry.name)
@@ -212,12 +225,19 @@ export async function loadReviewedCatalogFiles(root) {
     if (!Array.isArray(value)) refuse(`official/${name} must be an array`);
     return value;
   }));
+  const publicRecords = validateRecords(publicSnapshot.records, sources, brands);
+  for (const record of publicRecords) {
+    if (record.sourceId !== publicSnapshotSource.id) {
+      refuse(
+        `public record ${record.id} sourceId must match public snapshot sourceId ${publicSnapshotSource.id}`,
+      );
+    }
+  }
   const records = validateRecords(
-    [...officialRecords.flat(), ...publicSnapshot.records],
+    [...officialRecords.flat(), ...publicRecords],
     sources,
     brands,
   );
-  const publicRecords = validateRecords(publicSnapshot.records, sources, brands);
 
   return {
     sources: structuredClone(sources).toSorted((left, right) => left.id.localeCompare(right.id, 'en')),
