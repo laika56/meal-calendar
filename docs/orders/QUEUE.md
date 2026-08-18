@@ -57,6 +57,12 @@
 
 > **`../AGENTS.md` 「할당량」 규칙은 미발주 2건 이상을 요구한다.**
 
+## 미발주 (Claude 가 죽어도 Codex 가 돌 수 있게)
+
+| | 발주서 | 상태 |
+|---|---|---|
+| ☐ | `30-barcode-wiring.md` | **바로 발주 가능.** 발주29 의 `barcode.js` 를 `barcodeProduct.js` 에 배선 |
+
 ## 완료
 
 | | 발주서 | 결과 |
@@ -79,6 +85,8 @@
 | ☑ | `25-candidate-pool-size-cap.md` | `capCandidatePoolSize` 신규 — 후보 30개 초과시 목표칼로리 근접순 상한. Claude 리뷰 통과, 287/287 |
 | ☑ | `26-serving-estimate-from-category.md` | `estimateServingFromCategory` 신규 — 카테고리 중앙값 참고값. Claude 리뷰 통과, 297/297 |
 | ☑ | `24-serving-field-exact-100-guard.md` | 조리음식 1회분의 정확히 100 기준값 누수 차단. 타깃 56/56, 전체는 shared-sync만 실패(277/279), 실데이터는 `fetch failed` |
+| ☑ | `28-off-parser.md` | Open Food Facts 응답 파서. 명세 11케이스 전부 매칭, 15/15 |
+| ☑ | `29-barcode-checkdigit.md` | 체크디지트·EAN-13 정규화 4함수. 30/30, **Claude 가 따로 계산한 25건 독립 검산 전부 일치.** 사용자 컨펌 대기 |
 
 > **발주 20 은 한 번 반려됐다.** 명세가 자기모순이었다 — `'맥도날드'` 행에
 > "첫 번째를 고른다"고 써놓고 동시에 "짧을수록 가산"을 넣었다(빅맥 9.2 > 더블빅맥 9.0).
