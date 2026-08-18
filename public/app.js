@@ -12,7 +12,6 @@ import {
 } from '/src/lib/quickFoodInput.js';
 import { monthDashboardSummary, progressPercent, servingChoiceOptions } from '/src/lib/uiDashboard.js';
 import { parseOffProduct } from '/src/lib/offParser.js';
-import { normalizeSearchFoodsResponse } from '/src/lib/searchFoodsResponse.js';
 import {
   buildOpenFoodFactsUrl, normalizeRetailBarcode, toBarcodeFood,
 } from '/src/lib/barcodeProduct.js';
@@ -21,6 +20,7 @@ import {
   buildPartialNutritionProvenance, formNumber, showPartialNutritionEntry,
 } from '/public/partialNutritionEntry.js';
 import { searchResultStatus } from '/public/searchStatus.js';
+import { BROAD_SEARCH_MESSAGE, consumeSearchCandidates } from '/public/searchSelectionGate.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
 // 전부 받아질 때까지 이 모듈 전체의 실행이 밀린다. 캘린더 그리드는 네트워크 없이 그릴 수 있는데
@@ -1110,12 +1110,17 @@ async function resolveMultiPieces(pieces) {
 
     let searchResponse;
     try {
-      searchResponse = normalizeSearchFoodsResponse(await db.searchFoods(piece.parsed.query));
+      searchResponse = consumeSearchCandidates(await db.searchFoods(piece.parsed.query), {
+        onBroad(message) {
+          results.push({ text: piece.text, ok: false, message });
+        },
+      });
     } catch (err) {
       console.error('[meal-calendar] 검색 실패', piece.text, err);
       results.push({ text: piece.text, ok: false });
       continue;
     }
+    if (searchResponse.blocked) continue;
     const { items } = searchResponse;
 
     // 이름이 실제로 맞아떨어질 때만 자동 기록 후보로 삼는다 — 엉뚱한 식품의 숫자가 들어가면 안 된다
@@ -1187,7 +1192,13 @@ function renderMultiConfirm() {
     const item = document.createElement('div');
     if (!r.ok) {
       item.className = 'confirm-item failed';
-      item.innerHTML = `<div class="confirm-name">${r.text}</div><div class="confirm-result">못 알아들었습니다</div>`;
+      const name = document.createElement('div');
+      name.className = 'confirm-name';
+      name.textContent = r.text;
+      const result = document.createElement('div');
+      result.className = 'confirm-result';
+      result.textContent = r.message ?? '못 알아들었습니다';
+      item.append(name, result);
     } else if (r.incomplete) {
       item.className = 'confirm-item failed';
       item.innerHTML = `
@@ -1219,11 +1230,16 @@ el.cancelMultiConfirm.addEventListener('click', () => {
 
 el.confirmMultiAdd.addEventListener('click', async () => {
   const failed = [];      // 못 알아들은 것 (파싱·검색·이름대조 실패)
+  const broad = [];       // 후보가 많아 브랜드·메뉴명을 더 받아야 하는 것
   const incomplete = [];  // 알아들었지만 DB 에 영양값이 없는 것
   let added = 0;
 
   for (const r of multiConfirmResolved) {
-    if (!r.ok) { failed.push(r.text); continue; }
+    if (!r.ok) {
+      if (r.message === BROAD_SEARCH_MESSAGE) broad.push(r.text);
+      else failed.push(r.text);
+      continue;
+    }
     // 여기까지 왔으면 식품은 찾았다. 그런데도 false 면 DB 에 탄단지 일부가 없다는 뜻이다.
     // 「못 알아들었다」와 섞으면 사용자가 뭘 고쳐야 할지 알 수 없다 (절대규칙 7).
     const ok = await addSearchedFood(r.food, r.amountG, r.quickInput, { batch: true });
@@ -1231,7 +1247,7 @@ el.confirmMultiAdd.addEventListener('click', async () => {
   }
   multiConfirmResolved = [];
 
-  const leftover = [...failed, ...incomplete];
+  const leftover = [...failed, ...broad, ...incomplete];
   if (leftover.length === 0) {
     showEntryPanel('chooser');
     el.searchStatus.hidden = false;
@@ -1248,6 +1264,7 @@ el.confirmMultiAdd.addEventListener('click', async () => {
   el.searchStatus.hidden = false;
   const reasons = [];
   if (failed.length > 0) reasons.push(`${failed.length}개는 못 알아들었습니다`);
+  if (broad.length > 0) reasons.push(BROAD_SEARCH_MESSAGE);
   if (incomplete.length > 0) reasons.push(`${incomplete.length}개는 DB에 탄단지가 없어 직접 입력해야 합니다`);
   el.searchStatus.textContent = added > 0
     ? `${added}개 추가. ${reasons.join(', ')}.`
@@ -1282,13 +1299,20 @@ el.searchForm.addEventListener('submit', async (event) => {
 
   let searchResponse;
   try {
-    searchResponse = await db.searchFoods(q);
+    searchResponse = consumeSearchCandidates(await db.searchFoods(q), {
+      onBroad(message) {
+        el.searchStatus.className = 'search-status';
+        el.searchStatus.hidden = false;
+        el.searchStatus.textContent = message;
+      },
+    });
   } catch (err) {
     console.error('[meal-calendar] 검색 실패', err);
     el.searchStatus.textContent = `검색 실패 — ${err.message}`;
     return;
   }
-  const { items, hasMore } = normalizeSearchFoodsResponse(searchResponse);
+  if (searchResponse.blocked) return;
+  const { items, hasMore } = searchResponse;
 
   if (items.length === 0) {
     // 식약처 DB 는 브랜드 메뉴를 거의 안 담는다 — `서브웨이`·`서가원 김밥` 은 이름·제조사

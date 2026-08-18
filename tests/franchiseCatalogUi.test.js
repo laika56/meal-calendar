@@ -7,6 +7,7 @@ import {
   buildPartialNutritionProvenance, formNumber, showPartialNutritionEntry,
 } from '../public/partialNutritionEntry.js';
 import { searchResultStatus } from '../public/searchStatus.js';
+import { BROAD_SEARCH_MESSAGE, consumeSearchCandidates } from '../public/searchSelectionGate.js';
 
 class TestNode extends EventTarget {
   constructor(document, tagName) {
@@ -155,4 +156,41 @@ test('blank manual values stay invalid and completed partial fields retain per-f
       verifiedAt: bmt.source.verifiedAt,
     },
   );
+});
+
+test('single search broad response stops before candidate selection, manual prefill, or save', () => {
+  const calls = [];
+  const outcome = consumeSearchCandidates({ items: [bmt], hasMore: true }, {
+    onCandidates() {
+      calls.push('candidate-selection');
+      calls.push('manual-prefill');
+      calls.push('save');
+    },
+    onBroad(message) { calls.push(message); },
+  });
+
+  assert.deepEqual(outcome, { blocked: true, items: [], hasMore: true });
+  assert.deepEqual(calls, [BROAD_SEARCH_MESSAGE]);
+});
+
+test('multi search broad response retains its unresolved piece without candidate or add side effects', () => {
+  const unresolved = [];
+  const calls = [];
+  const outcome = consumeSearchCandidates({ items: [bmt], hasMore: true }, {
+    onCandidates() {
+      calls.push('candidate-selection');
+      calls.push('portion-confirmation');
+      calls.push('add');
+    },
+    onBroad(message) { unresolved.push({ text: '서브웨이 100g', message }); },
+  });
+
+  assert.equal(outcome.blocked, true);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(unresolved, [{ text: '서브웨이 100g', message: BROAD_SEARCH_MESSAGE }]);
+  assert.deepEqual(
+    consumeSearchCandidates([bmt], { onCandidates(items) { calls.push(`candidate-selection:${items[0].name}`); } }),
+    { blocked: false, items: [bmt], hasMore: false },
+  );
+  assert.deepEqual(calls, ['candidate-selection:이탈리안 비엠티']);
 });
