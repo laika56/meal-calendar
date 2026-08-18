@@ -233,26 +233,39 @@ export async function runSearchFoods(q, {
   return response;
 }
 
-export const searchFoods = onRequest(
-  { secrets: ['MFDS_API_KEY'], region: 'asia-northeast3', cors: false },
-  async (req, res) => {
-    try {
-      await requireAuth(req);
-    } catch (err) {
-      res.status(err.status ?? 401).json({ error: err.message ?? '인증 실패' });
-      return;
-    }
+export function createSearchFoods({
+  authenticate = requireAuth,
+  queryCatalogFoods = (query) => queryCatalogFoodsFromFirestore(getFirestore(), query),
+  searchMfdsFoods: findMfdsFoods = searchMfdsFoods,
+  cacheFoodItems: cache = cacheFoodItems,
+} = {}) {
+  return onRequest(
+    { secrets: ['MFDS_API_KEY'], region: 'asia-northeast3', cors: false },
+    async (req, res) => {
+      try {
+        await authenticate(req);
+      } catch (err) {
+        res.status(err.status ?? 401).json({ error: err.message ?? '인증 실패' });
+        return;
+      }
 
-    const q = String(req.query.q ?? '').trim();
-    if (!q) {
-      res.status(400).json({ error: 'q 쿼리 파라미터가 필요하다' });
-      return;
-    }
+      const q = String(req.query.q ?? '').trim();
+      if (!q) {
+        res.status(400).json({ error: 'q 쿼리 파라미터가 필요하다' });
+        return;
+      }
 
-    try {
-      res.status(200).json(await runSearchFoods(q));
-    } catch (err) {
-      res.status(err.status ?? 502).json({ error: err.message ?? '검색 결과를 가져오지 못했다' });
-    }
-  },
-);
+      try {
+        res.status(200).json(await runSearchFoods(q, {
+          queryCatalogFoods,
+          searchMfdsFoods: findMfdsFoods,
+          cacheFoodItems: cache,
+        }));
+      } catch (err) {
+        res.status(err.status ?? 502).json({ error: err.message ?? '검색 결과를 가져오지 못했다' });
+      }
+    },
+  );
+}
+
+export const searchFoods = createSearchFoods();

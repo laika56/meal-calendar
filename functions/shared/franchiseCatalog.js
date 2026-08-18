@@ -25,6 +25,11 @@ const REQUIRED_RECORD_KEYS = new Set([
 ]);
 const REQUIRED_BASIS_KEYS = new Set(['amount', 'unit', 'label']);
 const CATALOG_SEARCH_TOKENS = new WeakMap();
+const REVIEWED_BRAND_IDENTITIES = new Map([
+  ['써브웨이', 'subway'],
+  ['서브웨이', 'subway'],
+  ['subway', 'subway'],
+]);
 
 function assertPlainObject(value, label) {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -346,11 +351,16 @@ function itemServing(item) {
   return { amount: 100, unit: item.basis ?? 'g' };
 }
 
+function canonicalBrandIdentity(value) {
+  const normalized = normalizeCatalogText(value);
+  return REVIEWED_BRAND_IDENTITIES.get(normalized) ?? normalized;
+}
+
 function itemIdentity(item) {
   const serving = itemServing(item);
   const brand = typeof item.maker === 'string' ? item.maker : '';
   return [
-    normalizeCatalogText(brand),
+    canonicalBrandIdentity(brand),
     normalizeCatalogText(item.name),
     String(serving.amount),
     serving.unit,

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { runSearchFoods } from '../functions/index.js';
+import { createSearchFoods, runSearchFoods, searchFoods } from '../functions/index.js';
 import { catalogRecordToSearchFood } from '../functions/shared/franchiseCatalog.js';
 
 const catalogRecord = {
@@ -51,6 +51,36 @@ function deferred() {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });
   return { promise, resolve };
+}
+
+function request(query = {}, authorization = 'Bearer test-token') {
+  return {
+    query,
+    get(name) {
+      return name === 'Authorization' ? authorization : undefined;
+    },
+  };
+}
+
+function response() {
+  const finishListeners = [];
+  return {
+    statusCode: null,
+    body: null,
+    status(statusCode) {
+      this.statusCode = statusCode;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+      for (const listener of finishListeners) listener();
+      return this;
+    },
+    on(event, listener) {
+      if (event === 'finish') finishListeners.push(listener);
+      return this;
+    },
+  };
 }
 
 test('starts catalog and MFDS together, then keeps the reviewed official BMT over a duplicate public result', async () => {
@@ -138,4 +168,121 @@ test('returns validated source results when the MFDS cache write fails', async (
 
   assert.deepEqual(response.items, [officialBmt]);
   assert.equal(response.hasMore, false);
+});
+
+test('the deployed HTTP handler rejects an unauthenticated request before any lookup', async () => {
+  const res = response();
+
+  await searchFoods(request({ q: '김밥' }, ''), res);
+
+  assert.equal(res.statusCode, 401);
+  assert.deepEqual(res.body, { error: '로그인이 필요하다 (Authorization 헤더 없음)' });
+});
+
+test('the HTTP handler waits for authentication before beginning catalog and MFDS lookups', async () => {
+  const auth = deferred();
+  let catalogStarted = false;
+  let mfdsStarted = false;
+  const handler = createSearchFoods({
+    authenticate: async () => auth.promise,
+    queryCatalogFoods: async () => {
+      catalogStarted = true;
+      return { items: [officialBmt], hasMore: false };
+    },
+    searchMfdsFoods: async () => {
+      mfdsStarted = true;
+      return mfdsResult([]);
+    },
+    cacheFoodItems: async () => {},
+  });
+  const res = response();
+  const completed = handler(request({ q: '이탈리안 비엠티' }), res);
+
+  await Promise.resolve();
+  assert.equal(catalogStarted, false);
+  assert.equal(mfdsStarted, false);
+  auth.resolve({ uid: 'user-1' });
+  await completed;
+
+  assert.equal(catalogStarted, true);
+  assert.equal(mfdsStarted, true);
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.body.items, [officialBmt]);
+});
+
+test('the HTTP handler returns 400 for an empty query without querying either source', async () => {
+  let lookupCalled = false;
+  const handler = createSearchFoods({
+    authenticate: async () => ({ uid: 'user-1' }),
+    queryCatalogFoods: async () => { lookupCalled = true; return { items: [], hasMore: false }; },
+    searchMfdsFoods: async () => { lookupCalled = true; return mfdsResult([]); },
+    cacheFoodItems: async () => {},
+  });
+  const res = response();
+
+  await handler(request({ q: '   ' }), res);
+
+  assert.equal(res.statusCode, 400);
+  assert.deepEqual(res.body, { error: 'q 쿼리 파라미터가 필요하다' });
+  assert.equal(lookupCalled, false);
+});
+
+test('the HTTP handler wires both default source seams and keeps each one-source failure at 200', async () => {
+  const cases = [
+    {
+      name: 'catalog failure',
+      queryCatalogFoods: async () => { throw new Error('catalog failed'); },
+      searchMfdsFoods: async () => mfdsResult(),
+      expectedFlag: 'catalogUnavailable',
+      expectedItems: [publicBmt],
+    },
+    {
+      name: 'MFDS failure',
+      queryCatalogFoods: async () => ({ items: [officialBmt], hasMore: false }),
+      searchMfdsFoods: async () => { throw new Error('mfds failed'); },
+      expectedFlag: 'mfdsUnavailable',
+      expectedItems: [officialBmt],
+    },
+  ];
+
+  for (const scenario of cases) {
+    const handler = createSearchFoods({
+      authenticate: async () => ({ uid: 'user-1' }),
+      queryCatalogFoods: scenario.queryCatalogFoods,
+      searchMfdsFoods: scenario.searchMfdsFoods,
+      cacheFoodItems: async () => {},
+    });
+    const res = response();
+
+    await handler(request({ q: '김밥' }), res);
+
+    assert.equal(res.statusCode, 200, scenario.name);
+    assert.deepEqual(res.body.items, scenario.expectedItems, scenario.name);
+    assert.equal(res.body[scenario.expectedFlag], true, scenario.name);
+  }
+});
+
+test('the HTTP handler maps a double source failure to 502 and keeps cache failure non-fatal', async () => {
+  const bothFailing = createSearchFoods({
+    authenticate: async () => ({ uid: 'user-1' }),
+    queryCatalogFoods: async () => { throw new Error('catalog failed'); },
+    searchMfdsFoods: async () => { throw new Error('mfds failed'); },
+    cacheFoodItems: async () => {},
+  });
+  const cacheFailing = createSearchFoods({
+    authenticate: async () => ({ uid: 'user-1' }),
+    queryCatalogFoods: async () => ({ items: [officialBmt], hasMore: false }),
+    searchMfdsFoods: async () => mfdsResult(),
+    cacheFoodItems: async () => { throw new Error('cache failed'); },
+  });
+  const failedResponse = response();
+  const cachedResponse = response();
+
+  await bothFailing(request({ q: '김밥' }), failedResponse);
+  await cacheFailing(request({ q: '김밥' }), cachedResponse);
+
+  assert.equal(failedResponse.statusCode, 502);
+  assert.deepEqual(failedResponse.body, { error: '식약처 API와 프랜차이즈 카탈로그 호출에 실패했다' });
+  assert.equal(cachedResponse.statusCode, 200);
+  assert.deepEqual(cachedResponse.body.items, [officialBmt]);
 });

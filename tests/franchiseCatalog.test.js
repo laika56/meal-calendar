@@ -300,6 +300,29 @@ test('deduplicates matching official and public servings, keeps distinct sizes, 
   assert.deepEqual(mfdsItems, mfdsBefore);
 });
 
+test('deduplicates the reviewed official BMT over public results using known Subway aliases', () => {
+  const official = catalog.catalogRecordToSearchFood(subwayBmtFixture);
+
+  for (const maker of ['서브웨이', 'subway']) {
+    const publicAlternateSpelling = {
+      foodKey: `mfds_${maker}`,
+      name: '이탈리안 비엠티',
+      category: '샌드위치',
+      maker,
+      isFranchise: true,
+      per100g: { kcal: 170, carbG: null, proteinG: 9, fatG: null },
+      basis: 'g',
+      serving: { amount: 228, unit: 'g', source: 'serving-field' },
+      source: { type: 'public_data', label: '공공데이터', url: 'https://example.test/mfds', verifiedAt: '2026-08-18T00:00:00.000Z' },
+    };
+
+    assert.deepEqual(
+      catalog.mergeCatalogAndMfdsResults([official], [publicAlternateSpelling], '서브웨이 이탈리안BMT'),
+      [official],
+    );
+  }
+});
+
 test('orders equal-relevance merged results deterministically by source priority and food key', () => {
   const official = catalog.catalogRecordToSearchFood(subwayBmtFixture);
   const firstPublic = {
