@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { cp, link, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import test from 'node:test';
@@ -167,6 +167,23 @@ test('MFDS fetch propagates timeout and HTTP errors without exposing the key', a
   );
 });
 
+test('MFDS fetch observes an injected short AbortSignal timeout', async () => {
+  let observedAbort = false;
+  await assert.rejects(
+    () => fetchMfdsPage('key', 1, {
+      timeoutMs: 5,
+      fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => {
+          observedAbort = true;
+          reject(signal.reason);
+        }, { once: true });
+      }),
+    }),
+    (error) => error?.name === 'TimeoutError',
+  );
+  assert.equal(observedAbort, true);
+});
+
 test('MFDS collection bounds concurrency and merges completed pages in requested order', async () => {
   const requested = [];
   let active = 0;
@@ -202,21 +219,22 @@ test('MFDS publication validates before writes and restores both files after the
     const brandsPath = path.join(fixtureRoot, 'data/franchise/brands.json');
     const snapshotPath = path.join(fixtureRoot, 'data/franchise/public/mfds-franchise.json');
     const [brandsBefore, snapshotBefore] = await Promise.all([readFile(brandsPath, 'utf8'), readFile(snapshotPath, 'utf8')]);
-    let replacementCount = 0;
+    let failSecondCommit = true;
     await assert.rejects(
       () => publishCatalogPair(fixtureRoot, {
         brandsContents: `${JSON.stringify(JSON.parse(brandsBefore), null, 4)}\n`,
         snapshotContents: snapshotBefore,
       }, {
-        renameFile: async (from, destination) => {
-          replacementCount += 1;
-          if (destination === snapshotPath) throw new Error('simulated second replacement failure');
-          return rename(from, destination);
+        linkFile: async (from, destination) => {
+          if (destination === snapshotPath && failSecondCommit) {
+            failSecondCommit = false;
+            throw new Error('simulated second replacement failure');
+          }
+          return link(from, destination);
         },
       }),
       /simulated second replacement failure/,
     );
-    assert.equal(replacementCount, 3);
     assert.equal(await readFile(brandsPath, 'utf8'), brandsBefore);
     assert.equal(await readFile(snapshotPath, 'utf8'), snapshotBefore);
 
@@ -233,6 +251,97 @@ test('MFDS publication validates before writes and restores both files after the
       }),
     );
     assert.equal(validationRenameCalls, 0);
+  });
+});
+
+test('MFDS publication preserves concurrent replacements at both destination checkpoints', async () => {
+  for (const phaseToInject of ['before-quarantine', 'before-commit']) {
+    for (const targetRelativePath of [
+      'data/franchise/brands.json',
+      'data/franchise/public/mfds-franchise.json',
+    ]) {
+      await withCatalogFixture(async (fixtureRoot) => {
+        const brandsPath = path.join(fixtureRoot, 'data/franchise/brands.json');
+        const snapshotPath = path.join(fixtureRoot, 'data/franchise/public/mfds-franchise.json');
+        const [brandsBefore, snapshotBefore] = await Promise.all([readFile(brandsPath, 'utf8'), readFile(snapshotPath, 'utf8')]);
+        const targetPath = path.join(fixtureRoot, targetRelativePath);
+        const foreignContents = `foreign writer owns ${path.basename(targetPath)}\n`;
+        await assert.rejects(
+          () => publishCatalogPair(fixtureRoot, {
+            brandsContents: `${JSON.stringify(JSON.parse(brandsBefore), null, 4)}\n`,
+            snapshotContents: snapshotBefore,
+          }, {
+            onCheckpoint: async ({ phase, destination }) => {
+              if (phase === phaseToInject && destination === targetPath) {
+                await writeFile(destination, foreignContents, 'utf8');
+              }
+            },
+          }),
+          /concurrently changed|foreign/i,
+        );
+        assert.equal(await readFile(targetPath, 'utf8'), foreignContents);
+        assert.equal(await readFile(targetPath === brandsPath ? snapshotPath : brandsPath, 'utf8'), targetPath === brandsPath ? snapshotBefore : brandsBefore);
+      });
+    }
+  }
+});
+
+test('MFDS quarantine move restores a foreign write injected inside renameFile', async () => {
+  await withCatalogFixture(async (fixtureRoot) => {
+    const brandsPath = path.join(fixtureRoot, 'data/franchise/brands.json');
+    const snapshotPath = path.join(fixtureRoot, 'data/franchise/public/mfds-franchise.json');
+    const [brandsBefore, snapshotBefore] = await Promise.all([readFile(brandsPath, 'utf8'), readFile(snapshotPath, 'utf8')]);
+    const foreignBrands = 'foreign writer owns brands inside renameFile\n';
+    let injected = false;
+    await assert.rejects(
+      () => publishCatalogPair(fixtureRoot, {
+        brandsContents: `${JSON.stringify(JSON.parse(brandsBefore), null, 4)}\n`,
+        snapshotContents: snapshotBefore,
+      }, {
+        renameFile: async (from, destination) => {
+          if (!injected && from === brandsPath) {
+            injected = true;
+            await writeFile(brandsPath, foreignBrands, 'utf8');
+          }
+          return rename(from, destination);
+        },
+      }),
+      /foreign concurrent data/i,
+    );
+    assert.equal(await readFile(brandsPath, 'utf8'), foreignBrands);
+    assert.equal(await readFile(snapshotPath, 'utf8'), snapshotBefore);
+  });
+});
+
+test('MFDS rollback never overwrites a concurrent replacement after second-file commit failure', async () => {
+  await withCatalogFixture(async (fixtureRoot) => {
+    const brandsPath = path.join(fixtureRoot, 'data/franchise/brands.json');
+    const snapshotPath = path.join(fixtureRoot, 'data/franchise/public/mfds-franchise.json');
+    const [brandsBefore, snapshotBefore] = await Promise.all([readFile(brandsPath, 'utf8'), readFile(snapshotPath, 'utf8')]);
+    const foreignBrands = 'foreign writer owns brands during rollback\n';
+    let failSecondCommit = true;
+    await assert.rejects(
+      () => publishCatalogPair(fixtureRoot, {
+        brandsContents: `${JSON.stringify(JSON.parse(brandsBefore), null, 4)}\n`,
+        snapshotContents: snapshotBefore,
+      }, {
+        linkFile: async (from, destination) => {
+          if (destination === snapshotPath && failSecondCommit) {
+            failSecondCommit = false;
+            throw new Error('simulated second commit failure');
+          }
+          return link(from, destination);
+        },
+        onCheckpoint: async ({ phase, destination }) => {
+          if (phase === 'before-rollback-quarantine' && destination === brandsPath) {
+            await writeFile(destination, foreignBrands, 'utf8');
+          }
+        },
+      }),
+      /simulated second commit failure.*refused rollback/i,
+    );
+    assert.equal(await readFile(brandsPath, 'utf8'), foreignBrands);
+    assert.equal(await readFile(snapshotPath, 'utf8'), snapshotBefore);
   });
 });
 

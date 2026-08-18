@@ -436,11 +436,25 @@ function temporarySibling(destination, label) {
   );
 }
 
+async function checkpoint(onCheckpoint, phase, destination) {
+  if (onCheckpoint) await onCheckpoint({ phase, destination });
+}
+
 async function destinationMatchesContents(destination, contents) {
   try {
     return (await readFile(destination, 'utf8')) === contents;
   } catch {
     return false;
+  }
+}
+
+async function restoreWithoutClobber(source, destination, linkFile) {
+  try {
+    await linkFile(source, destination);
+    return true;
+  } catch (error) {
+    if (error?.code === 'EEXIST') return false;
+    throw error;
   }
 }
 
@@ -465,11 +479,14 @@ export async function validateCatalogPair(projectRoot, { brandsContents, snapsho
 
 /**
  * Replaces the reviewed brands and public snapshot as one recoverable pair.
- * Every replacement is preceded by a concurrent-change check; rollback only
- * touches a destination while it still contains this invocation's exact bytes.
+ * A verified old path is first moved to quarantine, then the new sibling is
+ * hard-linked into the now-empty destination with O_EXCL-equivalent EEXIST
+ * refusal. Rollback follows the same identity-bound, no-clobber sequence.
  */
 export async function publishCatalogPair(projectRoot, { brandsContents, snapshotContents }, {
   renameFile = rename,
+  linkFile = link,
+  onCheckpoint = null,
 } = {}) {
   await validateCatalogPair(projectRoot, { brandsContents, snapshotContents });
   const entries = [
@@ -477,70 +494,129 @@ export async function publishCatalogPair(projectRoot, { brandsContents, snapshot
     { destination: path.join(projectRoot, SNAPSHOT_RELATIVE_PATH), contents: snapshotContents },
   ];
   const before = await Promise.all(entries.map(({ destination }) => destinationFingerprint(destination)));
-  const temporaries = [];
-  const backups = [];
-  const published = [];
-  let failure;
+  for (let index = 0; index < entries.length; index += 1) {
+    entries[index].before = before[index];
+    entries[index].temporary = null;
+    entries[index].backup = null;
+    entries[index].quarantine = null;
+    entries[index].rollbackQuarantine = null;
+    entries[index].newFingerprint = null;
+    entries[index].oldMoved = false;
+    entries[index].published = false;
+  }
+  let completed = false;
+  let recoveryRequired = false;
+
+  async function restoreForeignMove(entry, quarantine) {
+    if (!(await restoreWithoutClobber(quarantine, entry.destination, linkFile))) {
+      recoveryRequired = true;
+      throw new Error(`refusing to restore foreign concurrent data at ${path.basename(entry.destination)}`);
+    }
+  }
+
+  async function moveVerifiedOld(entry) {
+    await checkpoint(onCheckpoint, 'before-quarantine', entry.destination);
+    const quarantine = temporarySibling(entry.destination, 'quarantine');
+    await renameFile(entry.destination, quarantine);
+    entry.quarantine = quarantine;
+    const moved = await destinationFingerprint(quarantine);
+    if (!fingerprintsMatch(moved, entry.before)) {
+      await restoreForeignMove(entry, quarantine);
+      recoveryRequired = true;
+      throw new Error(`refusing to publish over foreign concurrent data at ${path.basename(entry.destination)}`);
+    }
+    entry.oldMoved = true;
+  }
+
+  async function restoreEntry(entry) {
+    if (!entry.oldMoved) return true;
+    if (!entry.published) {
+      const restored = await restoreWithoutClobber(entry.backup, entry.destination, linkFile);
+      if (!restored) recoveryRequired = true;
+      return restored;
+    }
+
+    await checkpoint(onCheckpoint, 'before-rollback-quarantine', entry.destination);
+    const rollbackQuarantine = temporarySibling(entry.destination, 'rollback-quarantine');
+    await renameFile(entry.destination, rollbackQuarantine);
+    entry.rollbackQuarantine = rollbackQuarantine;
+    const moved = await destinationFingerprint(rollbackQuarantine);
+    if (!fingerprintsMatch(moved, entry.newFingerprint)) {
+      await restoreForeignMove(entry, rollbackQuarantine);
+      recoveryRequired = true;
+      return false;
+    }
+    const restored = await restoreWithoutClobber(entry.backup, entry.destination, linkFile);
+    if (!restored) recoveryRequired = true;
+    return restored;
+  }
+
   try {
-    for (const entry of entries) temporaries.push(await writeExclusiveTemporary(entry.destination, entry.contents));
+    for (const entry of entries) {
+      entry.temporary = await writeExclusiveTemporary(entry.destination, entry.contents);
+      entry.newFingerprint = await destinationFingerprint(entry.temporary);
+    }
     const beforePublication = await Promise.all(entries.map(({ destination }) => destinationFingerprint(destination)));
     if (!before.every((fingerprint, index) => fingerprintsMatch(fingerprint, beforePublication[index]))) {
       throw new Error('refusing to overwrite concurrently changed catalog destination');
     }
-    for (const { destination } of entries) {
-      const backup = temporarySibling(destination, 'backup');
-      await link(destination, backup);
-      backups.push(backup);
+    for (const entry of entries) {
+      entry.backup = temporarySibling(entry.destination, 'backup');
+      await linkFile(entry.destination, entry.backup);
     }
     const afterBackups = await Promise.all(entries.map(({ destination }) => destinationFingerprint(destination)));
     if (!before.every((fingerprint, index) => fingerprintsMatch(fingerprint, afterBackups[index]))) {
       throw new Error('refusing to overwrite concurrently changed catalog destination');
     }
-    for (let index = 0; index < entries.length; index += 1) {
-      const { destination, contents } = entries[index];
-      const current = await destinationFingerprint(destination);
-      const expected = index === 0 ? before[0] : before[1];
-      if (!fingerprintsMatch(current, expected)) {
-        throw new Error('refusing to overwrite concurrently changed catalog destination');
+    for (const entry of entries) {
+      await moveVerifiedOld(entry);
+      await checkpoint(onCheckpoint, 'before-commit', entry.destination);
+      if (!(await restoreWithoutClobber(entry.temporary, entry.destination, linkFile))) {
+        recoveryRequired = true;
+        throw new Error(`refusing to publish because ${path.basename(entry.destination)} was concurrently recreated`);
       }
-      await renameFile(temporaries[index], destination);
-      temporaries[index] = null;
-      if (!(await destinationMatchesContents(destination, contents))) {
-        throw new Error('catalog destination changed during publication');
+      const published = await destinationFingerprint(entry.destination);
+      if (!fingerprintsMatch(published, entry.newFingerprint)) {
+        recoveryRequired = true;
+        throw new Error(`catalog destination changed during publication: ${path.basename(entry.destination)}`);
       }
-      published.push(index);
+      entry.published = true;
     }
     await loadReviewedCatalogFiles(projectRoot);
-    for (const { destination, contents } of entries) {
-      if (!(await destinationMatchesContents(destination, contents))) {
+    for (const entry of entries) {
+      if (!(await destinationMatchesContents(entry.destination, entry.contents))) {
         throw new Error('catalog destination changed after publication validation');
       }
     }
+    completed = true;
   } catch (error) {
-    failure = error;
     const rollbackFailures = [];
-    for (const index of published.toReversed()) {
-      const { destination, contents } = entries[index];
-      if (!(await destinationMatchesContents(destination, contents))) {
-        rollbackFailures.push(`refused rollback for concurrently changed ${path.basename(destination)}`);
-        continue;
-      }
+    for (const entry of entries.toReversed()) {
       try {
-        await renameFile(backups[index], destination);
-        backups[index] = null;
+        if (!(await restoreEntry(entry))) {
+          rollbackFailures.push(`refused rollback for concurrently changed ${path.basename(entry.destination)}`);
+        }
       } catch (rollbackError) {
-        rollbackFailures.push(`rollback failed for ${path.basename(destination)}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
+        rollbackFailures.push(`rollback failed for ${path.basename(entry.destination)}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
       }
     }
     if (rollbackFailures.length > 0) {
-      throw new Error(`${failure instanceof Error ? failure.message : String(failure)}; ${rollbackFailures.join('; ')}`);
+      recoveryRequired = true;
+      throw new Error(`${error instanceof Error ? error.message : String(error)}; ${rollbackFailures.join('; ')}; recovery artifacts retained`);
     }
-    throw failure;
+    if (recoveryRequired) {
+      throw new Error(`${error instanceof Error ? error.message : String(error)}; recovery artifacts retained`);
+    }
+    throw error;
   } finally {
-    await Promise.all([
-      ...temporaries.filter(Boolean).map((temporary) => unlink(temporary).catch(() => {})),
-      ...backups.filter(Boolean).map((backup) => unlink(backup).catch(() => {})),
-    ]);
+    if (completed || !recoveryRequired) {
+      await Promise.all(entries.flatMap((entry) => [
+        entry.temporary,
+        entry.backup,
+        entry.quarantine,
+        entry.rollbackQuarantine,
+      ].filter(Boolean).map((artifact) => unlink(artifact).catch(() => {}))));
+    }
   }
 }
 
