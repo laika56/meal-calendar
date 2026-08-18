@@ -91,7 +91,7 @@ test('MFDS fetch progress is bounded to safe page-count checkpoints', () => {
 });
 
 test('MFDS brands deterministically generate or reuse a reviewed name or alias without merging makers', async () => {
-  const existingBrands = await readJson('data/franchise/brands.json');
+  const existingBrands = (await readJson('data/franchise/brands.json')).filter(({ id }) => id === 'subway');
   const mcdonalds = toPublicCatalogRecord(mfdsFranchiseItem, reviewedAt);
   const subwayAlias = toPublicCatalogRecord({ ...mfdsFranchiseItem, MAKER_NM: '서브웨이' }, reviewedAt);
   const result = reconcilePublicBrands([mcdonalds, subwayAlias], existingBrands, reviewedAt);
@@ -141,6 +141,11 @@ test('MFDS franchise records are strict, stable, and preserve only reviewed valu
   assert.equal(record.createdAt, reviewedAt);
   assert.equal(record.updatedAt, reviewedAt);
   assert.equal(toPublicCatalogRecord(mfdsNonFranchiseItem, reviewedAt), null);
+  assert.equal(toPublicCatalogRecord({ ...mfdsFranchiseItem, MAKER_NM: '   ' }, reviewedAt), null);
+  assert.throws(
+    () => toPublicCatalogRecord({ ...mfdsFranchiseItem, MAKER_NM: 42 }, reviewedAt),
+    /maker must be a string or null/,
+  );
   assert.throws(
     () => toPublicCatalogRecord({ ...mfdsFranchiseItem, SERVING_SIZE: '1개' }, reviewedAt),
     /expected SERVING_SIZE/,
@@ -158,6 +163,7 @@ test('canonical MFDS snapshots reject duplicate codes and order records determin
     generatedAt: reviewedAt,
     sourceId: 'mfds-franchise',
     sourceManifestSha256: 'a'.repeat(64),
+    excludedMissingMaker: 0,
   };
 
   assert.deepEqual(
@@ -183,6 +189,7 @@ test('validator allows a public-only brand with null officialUrl but refuses an 
         generatedAt: reviewedAt,
         sourceId: 'mfds-franchise',
         sourceManifestSha256: 'b'.repeat(64),
+        excludedMissingMaker: 0,
       },
     ));
     await loadReviewedCatalogFiles(fixtureRoot);
@@ -190,7 +197,8 @@ test('validator allows a public-only brand with null officialUrl but refuses an 
 
   await withCatalogFixture(async (fixtureRoot) => {
     const brands = JSON.parse(await readFile(path.join(fixtureRoot, 'data/franchise/brands.json'), 'utf8'));
-    brands[0] = { ...brands[0], officialUrl: null };
+    const subwayIndex = brands.findIndex(({ id }) => id === 'subway');
+    brands[subwayIndex] = { ...brands[subwayIndex], officialUrl: null };
     await writeFixtureJson(fixtureRoot, 'data/franchise/brands.json', brands);
     await assert.rejects(
       () => loadReviewedCatalogFiles(fixtureRoot),
@@ -209,21 +217,22 @@ test('checked-in registries and records are canonical, connected, and only conta
   const { sources, brands, records } = await loadReviewedCatalogFiles(projectRoot);
 
   assert.deepEqual(sourcesFile.map(({ id }) => id), ['mfds-franchise', 'subway-menu-1528']);
-  assert.deepEqual(brandsFile.map(({ id }) => id), ['subway']);
+  assert.equal(brandsFile[0].id.startsWith('mfds-brand-'), true);
+  assert.equal(brandsFile.at(-1).id, 'subway');
   assert.deepEqual(officialFile.map(({ id }) => id), ['subway-menu-1528']);
-  assert.deepEqual(publicFile, {
-    generatedAt: null,
-    sourceId: 'mfds-franchise',
-    sourceManifestSha256: null,
-    records: [],
-  });
+  assert.ok(isIsoUtcDate(publicFile.generatedAt));
+  assert.equal(publicFile.sourceId, 'mfds-franchise');
+  assert.match(publicFile.sourceManifestSha256, /^[a-f0-9]{64}$/);
+  assert.ok(Number.isSafeInteger(publicFile.excludedMissingMaker));
+  assert.ok(publicFile.excludedMissingMaker > 0);
+  assert.ok(publicFile.records.length > 0);
 
   const sourceIds = new Set(sources.map(({ id }) => id));
   const brandById = new Map(brands.map((brand) => [brand.id, brand]));
   assert.equal(sourceIds.size, sources.length);
   assert.equal(brandById.size, brands.length);
   assert.deepEqual([...new Set(records.map(({ id }) => id))].length, records.length);
-  assert.deepEqual(records.map(({ id }) => id), ['subway-menu-1528']);
+  assert.ok(records.length > 1);
 
   const aliases = new Set();
   for (const brand of brands) {
@@ -251,7 +260,11 @@ test('checked-in registries and records are canonical, connected, and only conta
     assert.equal(record.brandName, brand.name);
     assert.equal(record.sourceType, source.type);
     assert.equal(new URL(record.sourceUrl).hostname, new URL(source.url).hostname);
-    assert.ok(record.sourceUrl.startsWith('https://www.subway.co.kr/menuView/sandwich?menuItemIdx='));
+    if (record.sourceType === 'official_brand') {
+      assert.ok(record.sourceUrl.startsWith('https://www.subway.co.kr/menuView/sandwich?menuItemIdx='));
+    } else {
+      assert.equal(record.sourceUrl, 'https://apis.data.go.kr/1471000/FoodNtrCpntDbInfo02/getFoodNtrCpntDbInq02');
+    }
     assert.equal(record.sourceUpdatedAt, null);
     assert.ok(isIsoUtcDate(record.verifiedAt));
     assert.ok(isIsoUtcDate(record.createdAt));
@@ -276,12 +289,14 @@ test('catalog manifest is deterministic and the validator reports the reviewed b
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(manifest.sha256, /^[a-f0-9]{64}$/);
-  assert.deepEqual(manifest.counts, {
-    sources: 2, brands: 1, foods: 1, officialRecords: 1, publicRecords: 0,
-  });
+  assert.equal(manifest.counts.sources, 2);
+  assert.equal(manifest.counts.brands, catalog.brands.length);
+  assert.equal(manifest.counts.foods, catalog.records.length);
+  assert.equal(manifest.counts.officialRecords, 1);
+  assert.equal(manifest.counts.publicRecords, catalog.records.length - 1);
   assert.match(
     result.stdout,
-    new RegExp(`^sources 2\\nbrands 1\\nfoods 1\\npublicRecords 0\\ncatalogSha256 ${manifest.sha256}\\nNo issues\\.$`),
+    new RegExp(`^sources 2\\nbrands ${manifest.counts.brands}\\nfoods ${manifest.counts.foods}\\npublicRecords ${manifest.counts.publicRecords}\\ncatalogSha256 ${manifest.sha256}\\nNo issues\\.$`),
   );
   assert.equal(after, before);
 });

@@ -67,6 +67,14 @@ function assertRawIdentity(rawItem, parsed) {
   assertNonEmptyString(parsed.maker, 'MAKER_NM');
 }
 
+function hasMissingFranchiseMaker(rawItem) {
+  if (rawItem?.FOOD_OR_CD !== '2') return false;
+  const maker = rawItem.MAKER_NM;
+  return maker === null
+    || maker === undefined
+    || (typeof maker === 'string' && normalizeCatalogText(maker) === '');
+}
+
 /** Returns 1-indexed MFDS page numbers required to cover totalCount records. */
 export function buildMfdsPages(totalCount, rowsPerPage) {
   assertNonNegativeInteger(totalCount, 'totalCount');
@@ -87,6 +95,7 @@ export function shouldReportMfdsProgress(pageNo, totalPages) {
 export function toPublicCatalogRecord(rawItem, generatedAt) {
   assertIsoUtcDate(generatedAt, 'generatedAt');
   if (rawItem?.FOOD_OR_CD !== '2') return null;
+  if (hasMissingFranchiseMaker(rawItem)) return null;
 
   const parsed = parseMfdsFoodItem(rawItem);
   assertRawIdentity(rawItem, parsed);
@@ -186,12 +195,13 @@ export function canonicalSnapshot(records, metadata) {
   if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) {
     throw new TypeError('metadata must be an object');
   }
-  const { generatedAt, sourceId, sourceManifestSha256 } = metadata;
+  const { generatedAt, sourceId, sourceManifestSha256, excludedMissingMaker } = metadata;
   assertIsoUtcDate(generatedAt, 'metadata.generatedAt');
   assertNonEmptyString(sourceId, 'metadata.sourceId');
   if (typeof sourceManifestSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sourceManifestSha256)) {
     throw new TypeError('metadata.sourceManifestSha256 must be a lowercase SHA-256 hash');
   }
+  assertNonNegativeInteger(excludedMissingMaker, 'metadata.excludedMissingMaker');
 
   const ids = new Set();
   const orderedRecords = records.map((record) => structuredClone(record)).toSorted((left, right) => {
@@ -203,7 +213,7 @@ export function canonicalSnapshot(records, metadata) {
     if (ids.has(record.id)) throw new Error(`duplicate catalog record id ${record.id}`);
     ids.add(record.id);
   }
-  return { generatedAt, sourceId, sourceManifestSha256, records: orderedRecords };
+  return { generatedAt, sourceId, sourceManifestSha256, excludedMissingMaker, records: orderedRecords };
 }
 
 function itemArray(page) {
@@ -262,6 +272,7 @@ async function collectMfdsSnapshot(apiKey, generatedAt) {
   const rawManifest = createHash('sha256');
   rawManifest.update('[', 'utf8');
   let rawCount = 0;
+  let excludedMissingMaker = 0;
   let needsSeparator = false;
   const records = [];
 
@@ -271,6 +282,10 @@ async function collectMfdsSnapshot(apiKey, generatedAt) {
       rawManifest.update(canonicalJson(item), 'utf8');
       needsSeparator = true;
       rawCount += 1;
+      if (hasMissingFranchiseMaker(item)) {
+        excludedMissingMaker += 1;
+        continue;
+      }
       const record = toPublicCatalogRecord(item, generatedAt);
       if (record) records.push(record);
     }
@@ -303,7 +318,12 @@ async function collectMfdsSnapshot(apiKey, generatedAt) {
     throw new Error(`MFDS snapshot is incomplete: expected ${first.totalCount} raw records, received ${rawCount}`);
   }
   rawManifest.update(']', 'utf8');
-  return { rawCount, records, sourceManifestSha256: rawManifest.digest('hex') };
+  return {
+    rawCount,
+    records,
+    excludedMissingMaker,
+    sourceManifestSha256: rawManifest.digest('hex'),
+  };
 }
 
 async function destinationFingerprint(destination) {
@@ -384,6 +404,7 @@ async function main() {
     generatedAt,
     sourceId: SOURCE_ID,
     sourceManifestSha256: collected.sourceManifestSha256,
+    excludedMissingMaker: collected.excludedMissingMaker,
   });
   const contents = `${canonicalJson(snapshot)}\n`;
   const brandsContents = `${JSON.stringify(reconciled.brands, null, 2)}\n`;
@@ -396,6 +417,7 @@ async function main() {
   process.stdout.write([
     `rawRecords ${collected.rawCount}`,
     `${write ? 'publicRecords' : 'plannedPublicRecords'} ${snapshot.records.length}`,
+    `excludedMissingMaker ${collected.excludedMissingMaker}`,
     `brands ${reconciled.brands.length}`,
     `snapshotSha256 ${snapshotSha256}`,
     `elapsedMs ${Date.now() - startedAt}`,

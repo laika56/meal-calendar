@@ -10,7 +10,7 @@ const SOURCE_KEYS = new Set(['id', 'type', 'name', 'url', 'licenseNote', 'checke
 const BRAND_KEYS = new Set([
   'id', 'name', 'normalizedName', 'aliases', 'category', 'officialUrl', 'active', 'createdAt', 'updatedAt',
 ]);
-const SNAPSHOT_KEYS = new Set(['generatedAt', 'sourceId', 'sourceManifestSha256', 'records']);
+const SNAPSHOT_KEYS = new Set(['generatedAt', 'sourceId', 'sourceManifestSha256', 'excludedMissingMaker', 'records']);
 const ISO_UTC_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 
@@ -142,6 +142,9 @@ function validateSnapshot(snapshot) {
   assertNonEmptyString(snapshot.sourceId, 'public snapshot.sourceId');
   if (snapshot.sourceManifestSha256 !== null && !SHA256.test(snapshot.sourceManifestSha256)) {
     refuse('public snapshot.sourceManifestSha256 must be null or a lowercase SHA-256 hash');
+  }
+  if (!Number.isSafeInteger(snapshot.excludedMissingMaker) || snapshot.excludedMissingMaker < 0) {
+    refuse('public snapshot.excludedMissingMaker must be a non-negative safe integer');
   }
   if (!Array.isArray(snapshot.records)) refuse('public snapshot.records must be an array');
   return snapshot;
