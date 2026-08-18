@@ -4,7 +4,7 @@
     "type": "public_data",
     "name": "식약처 통합식품영양성분 DB",
     "url": "https://apis.data.go.kr/1471000/FoodNtrCpntDbInfo02/getFoodNtrCpntDbInq02",
-    "licenseNote": null,
+    "licenseNote": "Primary license evidence: https://www.data.go.kr/data/15127578/openapi.do?recommendDataYn=Y (checked 2026-08-18): 이용허락범위 제한 없음. The source page exposes no separate third-party-rights field. This snapshot uses API nutrition fields only; it does not collect brand logos or images.",
     "checkedAt": "2026-08-18T00:00:00.000Z",
     "active": true
   },

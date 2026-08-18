@@ -128,7 +128,7 @@ function validateBrands(brands) {
       aliases.add(alias);
     }
     assertNonEmptyString(brand.category, 'brand.category');
-    assertHttpUrl(brand.officialUrl, 'brand.officialUrl');
+    if (brand.officialUrl !== null) assertHttpUrl(brand.officialUrl, 'brand.officialUrl');
     if (typeof brand.active !== 'boolean') refuse(`brand.active must be a boolean for ${brand.id}`);
     assertIsoUtcDate(brand.createdAt, 'brand.createdAt');
     assertIsoUtcDate(brand.updatedAt, 'brand.updatedAt');
@@ -185,6 +185,9 @@ function validateRecords(records, sources, brands) {
       refuse(`record ${value.id} sourceUrl domain does not match ${value.sourceId}`);
     }
     if (value.sourceType === 'official_brand') {
+      if (typeof brand.officialUrl !== 'string') {
+        refuse(`official brand ${value.brandId} must have an officialUrl`);
+      }
       const officialHostname = new URL(brand.officialUrl).hostname;
       if (
         new URL(source.url).hostname !== officialHostname

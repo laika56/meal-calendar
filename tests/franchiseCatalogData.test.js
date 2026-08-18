@@ -11,9 +11,22 @@ import {
   loadReviewedCatalogFiles,
 } from '../scripts/validate-franchise-data.mjs';
 import { normalizeCatalogText } from '../src/lib/franchiseCatalog.js';
+import {
+  buildMfdsPages,
+  canonicalSnapshot,
+  publicBrandIdForMaker,
+  reconcilePublicBrands,
+  shouldReportMfdsProgress,
+  toPublicCatalogRecord,
+} from '../scripts/build-mfds-franchise-data.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const reviewedAt = '2026-08-18T00:00:00.000Z';
+const mfdsBrandFixture = JSON.parse(
+  await readFile(path.join(projectRoot, 'tests/fixtures/mfds-brand-sample.json'), 'utf8'),
+);
+const mfdsFranchiseItem = mfdsBrandFixture.cases.franchise_with_weight.items[1];
+const mfdsNonFranchiseItem = mfdsBrandFixture.cases.generic_no_maker.items[0];
 
 function pick(value, keys) {
   return Object.fromEntries(keys.map((key) => [key, value[key]]));
@@ -61,6 +74,129 @@ test('Subway BMT is bound to the reviewed Korean official page', async () => {
     },
   );
   assert.equal(bmt.verifiedAt, reviewedAt);
+});
+
+test('MFDS page plan covers zero, one, exact-boundary, and multi-page result sets', () => {
+  assert.deepEqual(buildMfdsPages(0, 500), []);
+  assert.deepEqual(buildMfdsPages(1, 500), [1]);
+  assert.deepEqual(buildMfdsPages(500, 500), [1]);
+  assert.deepEqual(buildMfdsPages(1_001, 500), [1, 2, 3]);
+});
+
+test('MFDS fetch progress is bounded to safe page-count checkpoints', () => {
+  assert.equal(shouldReportMfdsProgress(1, 639), true);
+  assert.equal(shouldReportMfdsProgress(24, 639), false);
+  assert.equal(shouldReportMfdsProgress(25, 639), true);
+  assert.equal(shouldReportMfdsProgress(639, 639), true);
+});
+
+test('MFDS brands deterministically generate or reuse a reviewed name or alias without merging makers', async () => {
+  const existingBrands = await readJson('data/franchise/brands.json');
+  const mcdonalds = toPublicCatalogRecord(mfdsFranchiseItem, reviewedAt);
+  const subwayAlias = toPublicCatalogRecord({ ...mfdsFranchiseItem, MAKER_NM: '서브웨이' }, reviewedAt);
+  const result = reconcilePublicBrands([mcdonalds, subwayAlias], existingBrands, reviewedAt);
+
+  assert.equal(
+    publicBrandIdForMaker(mfdsFranchiseItem.MAKER_NM),
+    'mfds-brand-ffd3bb1b019cf849',
+  );
+  assert.equal(result.records[0].brandId, publicBrandIdForMaker(mfdsFranchiseItem.MAKER_NM));
+  assert.equal(result.records[0].brandName, mfdsFranchiseItem.MAKER_NM);
+  assert.equal(result.records[1].brandId, 'subway');
+  assert.equal(result.records[1].brandName, '써브웨이');
+  assert.deepEqual(result.brands.map(({ id }) => id), ['mfds-brand-ffd3bb1b019cf849', 'subway']);
+  assert.deepEqual(result.brands[0], {
+    id: 'mfds-brand-ffd3bb1b019cf849',
+    name: '맥도날드',
+    normalizedName: '맥도날드',
+    aliases: [],
+    category: 'MFDS 프랜차이즈',
+    officialUrl: null,
+    active: true,
+    createdAt: reviewedAt,
+    updatedAt: reviewedAt,
+  });
+  assert.notEqual(publicBrandIdForMaker('맥도날드 코리아'), publicBrandIdForMaker(mfdsFranchiseItem.MAKER_NM));
+});
+
+test('MFDS franchise records are strict, stable, and preserve only reviewed values', () => {
+  const record = toPublicCatalogRecord(mfdsFranchiseItem, reviewedAt);
+
+  assert.equal(record.id, `mfds-${mfdsFranchiseItem.FOOD_CD}`);
+  assert.equal(record.name, mfdsFranchiseItem.FOOD_NM_KR);
+  assert.equal(record.brandName, mfdsFranchiseItem.MAKER_NM);
+  assert.deepEqual(record.basis, { amount: 100, unit: 'g', label: '100g' });
+  assert.deepEqual(record.nutrients, {
+    kcal: 261,
+    carbG: 22.42,
+    proteinG: 12.11,
+    fatG: 13.9,
+    sugarG: null,
+    sodiumMg: null,
+  });
+  assert.equal(record.sourceId, 'mfds-franchise');
+  assert.equal(record.sourceType, 'public_data');
+  assert.equal(record.confidence, 'public');
+  assert.equal(record.verifiedAt, reviewedAt);
+  assert.equal(record.createdAt, reviewedAt);
+  assert.equal(record.updatedAt, reviewedAt);
+  assert.equal(toPublicCatalogRecord(mfdsNonFranchiseItem, reviewedAt), null);
+  assert.throws(
+    () => toPublicCatalogRecord({ ...mfdsFranchiseItem, SERVING_SIZE: '1개' }, reviewedAt),
+    /expected SERVING_SIZE/,
+  );
+  assert.throws(
+    () => toPublicCatalogRecord({ ...mfdsFranchiseItem, FOOD_CD: '' }, reviewedAt),
+    /FOOD_CD must be a non-empty string/,
+  );
+});
+
+test('canonical MFDS snapshots reject duplicate codes and order records deterministically', () => {
+  const first = toPublicCatalogRecord(mfdsFranchiseItem, reviewedAt);
+  const second = { ...first, id: 'mfds-D202-000000000-0001' };
+  const metadata = {
+    generatedAt: reviewedAt,
+    sourceId: 'mfds-franchise',
+    sourceManifestSha256: 'a'.repeat(64),
+  };
+
+  assert.deepEqual(
+    canonicalSnapshot([first, second], metadata).records.map(({ id }) => id),
+    [second.id, first.id],
+  );
+  assert.deepEqual(
+    canonicalSnapshot([second, first], metadata),
+    canonicalSnapshot([first, second], metadata),
+  );
+  assert.throws(() => canonicalSnapshot([first, first], metadata), /duplicate catalog record id/);
+});
+
+test('validator allows a public-only brand with null officialUrl but refuses an official-brand binding without one', async () => {
+  await withCatalogFixture(async (fixtureRoot) => {
+    const brands = JSON.parse(await readFile(path.join(fixtureRoot, 'data/franchise/brands.json'), 'utf8'));
+    const record = toPublicCatalogRecord(mfdsFranchiseItem, reviewedAt);
+    const reconciled = reconcilePublicBrands([record], brands, reviewedAt);
+    await writeFixtureJson(fixtureRoot, 'data/franchise/brands.json', reconciled.brands);
+    await writeFixtureJson(fixtureRoot, 'data/franchise/public/mfds-franchise.json', canonicalSnapshot(
+      reconciled.records,
+      {
+        generatedAt: reviewedAt,
+        sourceId: 'mfds-franchise',
+        sourceManifestSha256: 'b'.repeat(64),
+      },
+    ));
+    await loadReviewedCatalogFiles(fixtureRoot);
+  });
+
+  await withCatalogFixture(async (fixtureRoot) => {
+    const brands = JSON.parse(await readFile(path.join(fixtureRoot, 'data/franchise/brands.json'), 'utf8'));
+    brands[0] = { ...brands[0], officialUrl: null };
+    await writeFixtureJson(fixtureRoot, 'data/franchise/brands.json', brands);
+    await assert.rejects(
+      () => loadReviewedCatalogFiles(fixtureRoot),
+      /official brand subway must have an officialUrl/,
+    );
+  });
 });
 
 test('checked-in registries and records are canonical, connected, and only contain reviewed nutrients', async () => {

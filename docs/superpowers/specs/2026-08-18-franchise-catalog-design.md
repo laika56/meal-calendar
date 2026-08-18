@@ -115,6 +115,9 @@ franchiseCatalogRuns/{runId}/sources/{sourceId}
 ```
 
 `brandId`는 정규화된 브랜드명으로부터 생성한 안정적인 slug다. 별칭은 중복 없이 정렬한다.
+공공데이터에만 존재해 공식 사이트를 아직 검수하지 않은 브랜드는 `officialUrl: null`을 허용한다.
+단, `official_brand` 레코드가 하나라도 연결되는 브랜드는 `officialUrl`이 필수이며 출처와 레코드
+URL의 hostname이 모두 그 공식 hostname과 일치해야 한다.
 
 ### `franchiseCatalogRuns/{runId}/foods/{foodId}`
 

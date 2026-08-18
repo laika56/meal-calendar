@@ -260,6 +260,7 @@ git commit -m "feat: add reviewed franchise catalog data"
 **Files:**
 - Create: `scripts/build-mfds-franchise-data.mjs`
 - Modify: `tests/franchiseCatalogData.test.js`
+- Modify: `data/franchise/brands.json`
 - Replace generated content: `data/franchise/public/mfds-franchise.json`
 
 **Interfaces:**
@@ -272,11 +273,14 @@ Extract pure helpers from the script for tests:
 
 ```js
 export function buildMfdsPages(totalCount, rowsPerPage)
+export function publicBrandIdForMaker(makerName)
 export function toPublicCatalogRecord(rawItem, generatedAt)
 export function canonicalSnapshot(records, metadata)
 ```
 
-Test zero items, one page, exact page boundary, multiple pages, duplicate `FOOD_CD`, non-franchise exclusion, malformed items, stable ID, and deterministic ordering.
+Test zero items, one page, exact page boundary, multiple pages, duplicate `FOOD_CD`, non-franchise exclusion,
+malformed items, missing maker refusal, deterministic maker-derived brand IDs, existing alias reuse, stable food ID,
+and deterministic ordering.
 
 - [ ] **Step 2: Run focused tests and verify RED**
 
@@ -286,7 +290,14 @@ Expected: new imports fail because the snapshot builder does not exist.
 
 - [ ] **Step 3: Implement paginated fetch and strict filtering**
 
-Require `MFDS_API_KEY`; decode it exactly as `functions/index.js` does. Request JSON pages with a fixed `numOfRows` of 100. Stop only when the collected raw record count reaches `totalCount`. Abort each request after 8 seconds. A failed or malformed page aborts the entire build; do not publish a partial snapshot.
+Require `MFDS_API_KEY`; decode it exactly as `functions/index.js` does. Request JSON pages with a fixed
+`numOfRows` of 500 (verified against the live API on 2026-08-18; 1,000 returned no rows). Stop only when the
+collected raw record count reaches `totalCount`. Abort each request after 8 seconds. A failed or malformed page
+aborts the entire build; do not publish a partial snapshot. Strictly retain only `FOOD_OR_CD === '2'` records.
+
+Resolve each retained `MAKER_NM` against reviewed brand names and aliases. For an unseen nonempty maker, generate
+`mfds-brand-` plus the first 16 lowercase hex characters of SHA-256 over the normalized maker name, set
+`officialUrl: null`, and add the canonical brand to `brands.json`. Never merge two different normalized makers.
 
 - [ ] **Step 4: Implement exclusive output publication**
 
@@ -306,7 +317,9 @@ Expected: exit 0; nonzero franchise count; no destination modification; no key p
 
 - [ ] **Step 7: Review licensing and write the snapshot**
 
-Confirm the dataset page license and third-party-rights conditions documented in `sources.json`. Then run:
+Confirm and record the primary public-data page statement `이용허락범위 제한 없음`. This authorizes the API
+nutrition fields used here; do not collect brand logos or images. Record that the page exposes no separate
+third-party-rights field. Then run:
 
 ```bash
 node scripts/build-mfds-franchise-data.mjs --write
@@ -318,7 +331,7 @@ Expected: nonzero `publicRecords`, canonical hash, and `No issues.`. If licensin
 - [ ] **Step 8: Commit Task 3**
 
 ```bash
-git add scripts/build-mfds-franchise-data.mjs tests/franchiseCatalogData.test.js data/franchise/public/mfds-franchise.json data/franchise/sources.json
+git add scripts/build-mfds-franchise-data.mjs tests/franchiseCatalogData.test.js data/franchise/public/mfds-franchise.json data/franchise/sources.json data/franchise/brands.json
 git commit -m "feat: build MFDS franchise catalog snapshot"
 ```
 
