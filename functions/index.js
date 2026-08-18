@@ -177,15 +177,28 @@ export async function searchMfdsFoods(q) {
   };
 }
 
+function requireSearchDependencies(dependencies) {
+  if (!dependencies || typeof dependencies !== 'object' || Array.isArray(dependencies)) {
+    throw new TypeError('search dependencies must be an object');
+  }
+  for (const key of ['queryCatalogFoods', 'searchMfdsFoods', 'cacheFoodItems']) {
+    if (typeof dependencies[key] !== 'function') {
+      throw new TypeError(`search dependencies.${key} must be a function`);
+    }
+  }
+  return dependencies;
+}
+
 /**
  * Merges independently-failable catalog and MFDS searches into the stable API
- * response payload. Dependencies are injectable for deterministic tests.
+ * response payload. Callers must supply all external dependencies explicitly.
  */
-export async function runSearchFoods(q, {
-  queryCatalogFoods = (query) => queryCatalogFoodsFromFirestore(getFirestore(), query),
-  searchMfdsFoods: findMfdsFoods = searchMfdsFoods,
-  cacheFoodItems: cache = cacheFoodItems,
-} = {}) {
+export async function runSearchFoods(q, dependencies) {
+  const {
+    queryCatalogFoods,
+    searchMfdsFoods: findMfdsFoods,
+    cacheFoodItems: cache,
+  } = requireSearchDependencies(dependencies);
   const [catalogOutcome, mfdsOutcome] = await Promise.allSettled([
     queryCatalogFoods(q),
     findMfdsFoods(q),
@@ -233,11 +246,17 @@ export async function runSearchFoods(q, {
   return response;
 }
 
+function productionSearchDependencies() {
+  return {
+    queryCatalogFoods: (query) => queryCatalogFoodsFromFirestore(getFirestore(), query),
+    searchMfdsFoods,
+    cacheFoodItems,
+  };
+}
+
 export function createSearchFoods({
   authenticate = requireAuth,
-  queryCatalogFoods = (query) => queryCatalogFoodsFromFirestore(getFirestore(), query),
-  searchMfdsFoods: findMfdsFoods = searchMfdsFoods,
-  cacheFoodItems: cache = cacheFoodItems,
+  dependencies = productionSearchDependencies(),
 } = {}) {
   return onRequest(
     { secrets: ['MFDS_API_KEY'], region: 'asia-northeast3', cors: false },
@@ -256,11 +275,7 @@ export function createSearchFoods({
       }
 
       try {
-        res.status(200).json(await runSearchFoods(q, {
-          queryCatalogFoods,
-          searchMfdsFoods: findMfdsFoods,
-          cacheFoodItems: cache,
-        }));
+        res.status(200).json(await runSearchFoods(q, dependencies));
       } catch (err) {
         res.status(err.status ?? 502).json({ error: err.message ?? '검색 결과를 가져오지 못했다' });
       }

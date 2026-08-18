@@ -47,6 +47,15 @@ function mfdsResult(items = [publicBmt]) {
   };
 }
 
+function searchDependencies(overrides = {}) {
+  return {
+    queryCatalogFoods: async () => ({ items: [officialBmt], hasMore: false }),
+    searchMfdsFoods: async () => mfdsResult([]),
+    cacheFoodItems: async () => {},
+    ...overrides,
+  };
+}
+
 function deferred() {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });
@@ -170,6 +179,15 @@ test('returns validated source results when the MFDS cache write fails', async (
   assert.equal(response.hasMore, false);
 });
 
+test('runSearchFoods refuses every omitted source or cache dependency before any lookup starts', async () => {
+  for (const dependency of ['queryCatalogFoods', 'searchMfdsFoods', 'cacheFoodItems']) {
+    await assert.rejects(
+      runSearchFoods('김밥', searchDependencies({ [dependency]: null })),
+      new RegExp(`search dependencies\\.${dependency} must be a function`),
+    );
+  }
+});
+
 test('the deployed HTTP handler rejects an unauthenticated request before any lookup', async () => {
   const res = response();
 
@@ -185,15 +203,16 @@ test('the HTTP handler waits for authentication before beginning catalog and MFD
   let mfdsStarted = false;
   const handler = createSearchFoods({
     authenticate: async () => auth.promise,
-    queryCatalogFoods: async () => {
-      catalogStarted = true;
-      return { items: [officialBmt], hasMore: false };
-    },
-    searchMfdsFoods: async () => {
-      mfdsStarted = true;
-      return mfdsResult([]);
-    },
-    cacheFoodItems: async () => {},
+    dependencies: searchDependencies({
+      queryCatalogFoods: async () => {
+        catalogStarted = true;
+        return { items: [officialBmt], hasMore: false };
+      },
+      searchMfdsFoods: async () => {
+        mfdsStarted = true;
+        return mfdsResult([]);
+      },
+    }),
   });
   const res = response();
   const completed = handler(request({ q: '이탈리안 비엠티' }), res);
@@ -214,9 +233,10 @@ test('the HTTP handler returns 400 for an empty query without querying either so
   let lookupCalled = false;
   const handler = createSearchFoods({
     authenticate: async () => ({ uid: 'user-1' }),
-    queryCatalogFoods: async () => { lookupCalled = true; return { items: [], hasMore: false }; },
-    searchMfdsFoods: async () => { lookupCalled = true; return mfdsResult([]); },
-    cacheFoodItems: async () => {},
+    dependencies: searchDependencies({
+      queryCatalogFoods: async () => { lookupCalled = true; return { items: [], hasMore: false }; },
+      searchMfdsFoods: async () => { lookupCalled = true; return mfdsResult([]); },
+    }),
   });
   const res = response();
 
@@ -248,9 +268,10 @@ test('the HTTP handler wires both default source seams and keeps each one-source
   for (const scenario of cases) {
     const handler = createSearchFoods({
       authenticate: async () => ({ uid: 'user-1' }),
-      queryCatalogFoods: scenario.queryCatalogFoods,
-      searchMfdsFoods: scenario.searchMfdsFoods,
-      cacheFoodItems: async () => {},
+      dependencies: searchDependencies({
+        queryCatalogFoods: scenario.queryCatalogFoods,
+        searchMfdsFoods: scenario.searchMfdsFoods,
+      }),
     });
     const res = response();
 
@@ -265,15 +286,16 @@ test('the HTTP handler wires both default source seams and keeps each one-source
 test('the HTTP handler maps a double source failure to 502 and keeps cache failure non-fatal', async () => {
   const bothFailing = createSearchFoods({
     authenticate: async () => ({ uid: 'user-1' }),
-    queryCatalogFoods: async () => { throw new Error('catalog failed'); },
-    searchMfdsFoods: async () => { throw new Error('mfds failed'); },
-    cacheFoodItems: async () => {},
+    dependencies: searchDependencies({
+      queryCatalogFoods: async () => { throw new Error('catalog failed'); },
+      searchMfdsFoods: async () => { throw new Error('mfds failed'); },
+    }),
   });
   const cacheFailing = createSearchFoods({
     authenticate: async () => ({ uid: 'user-1' }),
-    queryCatalogFoods: async () => ({ items: [officialBmt], hasMore: false }),
-    searchMfdsFoods: async () => mfdsResult(),
-    cacheFoodItems: async () => { throw new Error('cache failed'); },
+    dependencies: searchDependencies({
+      cacheFoodItems: async () => { throw new Error('cache failed'); },
+    }),
   });
   const failedResponse = response();
   const cachedResponse = response();
