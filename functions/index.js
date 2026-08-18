@@ -7,6 +7,10 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 
 import { parseMfdsFoodItem, resolveServing } from './shared/mfdsParser.js';
+import {
+  mergeCatalogAndMfdsResults,
+  queryCatalogFoods as queryCatalogFoodsFromFirestore,
+} from './shared/franchiseCatalog.js';
 import { buildSearchPlan } from './shared/searchPlan.js';
 import { mergeSearchResults, rankSearchResults } from './shared/searchResults.js';
 
@@ -118,6 +122,117 @@ async function cacheFoodItems(items) {
   await batch.commit();
 }
 
+function mfdsItemToSearchFood(item) {
+  const serving = resolveServing(item);
+  return {
+    foodKey: `mfds_${item.foodCode}`,
+    name: item.name,
+    category: item.category,
+    per100g: item.per100g,
+    basis: item.basis,
+    maker: item.maker,
+    isFranchise: item.isFranchise,
+    serving,
+    servingNote: item.servingNote ?? null,
+  };
+}
+
+/** Runs the existing MFDS search plan and retains diagnostics if every attempt fails. */
+export async function searchMfdsFoods(q) {
+  const plan = buildSearchPlan(q);
+  const batches = [];
+  const attempts = [];
+  let skippedTotal = 0;
+
+  for (const entry of plan) {
+    let result;
+    try {
+      result = await fetchOnePlan(entry);
+    } catch (err) {
+      logger.error('[mfds] 질의 실패', { entry, error: err.message });
+      attempts.push({ ...entry, count: null, failed: true });
+      continue;
+    }
+    skippedTotal += result.skippedCount;
+    attempts.push({ ...entry, count: result.parsed.length });
+    if (result.parsed.length > 0) {
+      batches.push(result.parsed);
+      break;
+    }
+  }
+
+  if (batches.length === 0 && attempts.every((attempt) => attempt.failed)) {
+    const error = new Error('식약처 API 호출에 실패했다');
+    error.attempts = attempts;
+    error.skipped = skippedTotal;
+    throw error;
+  }
+
+  const cacheItems = rankSearchResults(mergeSearchResults(batches), q);
+  return {
+    items: cacheItems.map(mfdsItemToSearchFood),
+    cacheItems,
+    attempts,
+    skipped: skippedTotal,
+  };
+}
+
+/**
+ * Merges independently-failable catalog and MFDS searches into the stable API
+ * response payload. Dependencies are injectable for deterministic tests.
+ */
+export async function runSearchFoods(q, {
+  queryCatalogFoods = (query) => queryCatalogFoodsFromFirestore(getFirestore(), query),
+  searchMfdsFoods: findMfdsFoods = searchMfdsFoods,
+  cacheFoodItems: cache = cacheFoodItems,
+} = {}) {
+  const [catalogOutcome, mfdsOutcome] = await Promise.allSettled([
+    queryCatalogFoods(q),
+    findMfdsFoods(q),
+  ]);
+
+  if (catalogOutcome.status === 'rejected') {
+    logger.error('[catalog] 질의 실패', catalogOutcome.reason);
+  }
+  if (mfdsOutcome.status === 'rejected') {
+    logger.error('[mfds] 전체 질의 실패', mfdsOutcome.reason);
+  }
+  if (catalogOutcome.status === 'rejected' && mfdsOutcome.status === 'rejected') {
+    throw Object.assign(new Error('식약처 API와 프랜차이즈 카탈로그 호출에 실패했다'), { status: 502 });
+  }
+
+  const catalog = catalogOutcome.status === 'fulfilled'
+    ? catalogOutcome.value
+    : { items: [], hasMore: false };
+  const mfds = mfdsOutcome.status === 'fulfilled'
+    ? mfdsOutcome.value
+    : {
+      items: [],
+      cacheItems: [],
+      attempts: mfdsOutcome.reason?.attempts ?? [],
+      skipped: mfdsOutcome.reason?.skipped ?? 0,
+    };
+  const items = mergeCatalogAndMfdsResults(catalog.items, mfds.items, q);
+
+  if (mfdsOutcome.status === 'fulfilled') {
+    try {
+      await cache(mfds.cacheItems ?? []);
+    } catch (err) {
+      logger.error('[mfds] foods/ 캐시 쓰기 실패', err);
+    }
+  }
+
+  const response = {
+    items,
+    hasMore: catalog.hasMore === true,
+    attempts: mfds.attempts,
+    skipped: mfds.skipped,
+  };
+  if (catalogOutcome.status === 'rejected') response.catalogUnavailable = true;
+  if (mfdsOutcome.status === 'rejected') response.mfdsUnavailable = true;
+  return response;
+}
+
 export const searchFoods = onRequest(
   { secrets: ['MFDS_API_KEY'], region: 'asia-northeast3', cors: false },
   async (req, res) => {
@@ -134,67 +249,10 @@ export const searchFoods = onRequest(
       return;
     }
 
-    // 검색어를 통째로 한 번 던지면 브랜드명이 앞에 붙는 순간 0건이 된다 —
-    // `서가원 김밥` 0건인데 `김밥` 은 2,840건이다 (2026-08-13 실측).
-    // buildSearchPlan 이 「원문 → 브랜드+식품 → 브랜드만 → 식품만」 순서로 계획을 준다.
-    const plan = buildSearchPlan(q);
-    const batches = [];
-    const attempts = [];
-    let skippedTotal = 0;
-
-    for (const entry of plan) {
-      let result;
-      try {
-        result = await fetchOnePlan(entry);
-      } catch (err) {
-        logger.error('[mfds] 질의 실패', { entry, error: err.message });
-        // 한 시도가 실패해도 다음 시도를 해본다. 전부 실패하면 아래에서 502 를 낸다
-        attempts.push({ ...entry, count: null, failed: true });
-        continue;
-      }
-      skippedTotal += result.skippedCount;
-      attempts.push({ ...entry, count: result.parsed.length });
-      if (result.parsed.length > 0) {
-        batches.push(result.parsed);
-        break; // 결과가 나오면 멈춘다. 뒤 계획은 더 넓은(덜 정확한) 질의다
-      }
-    }
-
-    if (batches.length === 0 && attempts.every((a) => a.failed)) {
-      res.status(502).json({ error: '식약처 API 호출에 실패했다' });
-      return;
-    }
-
-    const items = rankSearchResults(mergeSearchResults(batches), q);
-
     try {
-      await cacheFoodItems(items);
+      res.status(200).json(await runSearchFoods(q));
     } catch (err) {
-      // 캐싱 실패해도 검색 결과는 준다 — 캐시는 최적화지 기능이 아니다
-      logger.error('[mfds] foods/ 캐시 쓰기 실패', err);
+      res.status(err.status ?? 502).json({ error: err.message ?? '검색 결과를 가져오지 못했다' });
     }
-
-    res.status(200).json({
-      items: items.map((item) => {
-        const serving = resolveServing(item);
-        return {
-          foodKey: `mfds_${item.foodCode}`,
-          name: item.name,
-          category: item.category,
-          per100g: item.per100g,
-          basis: item.basis, // 'g' | 'mL' — per100g 가 100g 기준인지 100mL 기준인지
-          maker: item.maker,
-          isFranchise: item.isFranchise,
-          // 1회분을 알면 화면이 「1개」로 받고, 모르면(null) g 을 직접 받는다.
-          // 모르는 걸 총중량으로 때우지 않는다 — 프로틴 1kg 통이 3,950kcal 로 기록된다
-          serving, // { amount, unit, source } | null
-          servingNote: item.servingNote ?? null, // '드레싱 15g, 덮밥소스 165g' 같은 원문
-        };
-      }),
-      // 어떤 질의로 몇 건이 나왔는지. 「왜 이게 나왔지」를 화면·로그에서 설명할 수 있다
-      attempts,
-      // 파싱 실패로 버린 개수. 0 이 아니면 무언가 놓치고 있다는 신호다 — 숨기지 않는다
-      skipped: skippedTotal,
-    });
   },
 );

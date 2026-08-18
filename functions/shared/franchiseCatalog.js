@@ -217,6 +217,103 @@ export function catalogRecordToSearchFood(record) {
   return searchFood;
 }
 
+function catalogQueryTokens(query) {
+  const normalized = normalizeCatalogText(query);
+  if (normalized === '') return [];
+  return [...new Set(normalized.split(' ').flatMap((token) => token
+    .split(/(?<=[가-힣])(?=[a-z0-9])|(?<=[a-z0-9])(?=[가-힣])/u)
+    .filter(Boolean)))];
+}
+
+function assertCatalogManifest(value, label, { status } = {}) {
+  assertPlainObject(value, label);
+  if (typeof value.runId !== 'string' || value.runId === '') {
+    throw new TypeError(`${label}.runId must be a non-empty string`);
+  }
+  assertPlainObject(value.counts, `${label}.counts`);
+  for (const key of ['sources', 'brands', 'foods']) {
+    if (!Number.isSafeInteger(value.counts[key]) || value.counts[key] < 0) {
+      throw new TypeError(`${label}.counts.${key} must be a non-negative safe integer`);
+    }
+  }
+  for (const key of ['catalogSha256', 'payloadSha256']) {
+    if (typeof value[key] !== 'string' || !/^[a-f0-9]{64}$/u.test(value[key])) {
+      throw new TypeError(`${label}.${key} must be a SHA-256 hex string`);
+    }
+  }
+  if (status !== undefined && value.status !== status) {
+    throw new Error(`${label}.status must be ${status}`);
+  }
+}
+
+function sameCatalogManifest(pointer, run) {
+  return pointer.runId === run.runId
+    && pointer.counts.sources === run.counts.sources
+    && pointer.counts.brands === run.counts.brands
+    && pointer.counts.foods === run.counts.foods
+    && pointer.catalogSha256 === run.catalogSha256
+    && pointer.payloadSha256 === run.payloadSha256;
+}
+
+/**
+ * Queries the ready catalog snapshot through a single indexed token lookup.
+ * This accepts a Firestore-compatible database, but is deliberately never
+ * called by browser code: browser clients cannot read the catalog collections.
+ */
+export async function queryCatalogFoods(db, query, limit = 100) {
+  if (!db || typeof db.doc !== 'function' || typeof db.collection !== 'function') {
+    throw new TypeError('db must be Firestore-compatible');
+  }
+  if (typeof query !== 'string') throw new TypeError('query must be a string');
+  if (!Number.isSafeInteger(limit) || limit <= 0) {
+    throw new TypeError('limit must be a positive safe integer');
+  }
+
+  const tokens = catalogQueryTokens(query);
+  if (tokens.length === 0) return { items: [], hasMore: false };
+  const strongestToken = tokens.reduce((strongest, token) => (
+    token.length >= strongest.length ? token : strongest
+  ));
+
+  const pointerSnapshot = await db.doc('franchiseCatalogState/current').get();
+  if (!pointerSnapshot.exists) throw new Error('catalog current pointer is missing');
+  const pointer = pointerSnapshot.data();
+  assertCatalogManifest(pointer, 'catalog current pointer');
+
+  const runPath = `franchiseCatalogRuns/${pointer.runId}`;
+  const runSnapshot = await db.doc(runPath).get();
+  if (!runSnapshot.exists) throw new Error('catalog referenced run is missing');
+  const run = runSnapshot.data();
+  assertCatalogManifest(run, 'catalog referenced run', { status: 'ready' });
+  if (!sameCatalogManifest(pointer, run)) {
+    throw new Error('catalog current pointer does not match ready run manifest');
+  }
+
+  const snapshot = await db.collection(`${runPath}/foods`)
+    .where('searchTokens', 'array-contains', strongestToken)
+    .limit(limit + 1)
+    .get();
+  if (!snapshot || !Array.isArray(snapshot.docs)) {
+    throw new TypeError('catalog foods query returned an invalid snapshot');
+  }
+
+  const matched = [];
+  for (const document of snapshot.docs) {
+    if (!document || typeof document.data !== 'function') {
+      throw new TypeError('catalog foods query returned an invalid document');
+    }
+    const record = validateCatalogRecord(document.data());
+    if (record.active && tokens.every((token) => record.searchTokens.includes(token))) {
+      matched.push(catalogRecordToSearchFood(record));
+    }
+  }
+
+  return {
+    items: matched.slice(0, limit),
+    hasMore: matched.length > limit,
+  };
+}
+
 function assertSearchItems(value, label) {
   if (!Array.isArray(value)) throw new TypeError(`${label} must be an array`);
   for (const item of value) {

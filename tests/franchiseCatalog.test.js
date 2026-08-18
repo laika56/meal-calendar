@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import * as catalog from '../src/lib/franchiseCatalog.js';
 
-const { normalizeCatalogText, validateCatalogRecord } = catalog;
+const { normalizeCatalogText, queryCatalogFoods, validateCatalogRecord } = catalog;
 
 const subwayBmtFixture = {
   id: 'official_subway_1528',
@@ -41,8 +41,130 @@ function withNutrient(record, nutrient, value) {
   };
 }
 
+function snapshot(data, exists = true) {
+  return { exists, data: () => data };
+}
+
+function readyCatalogDb(records, { run = {}, pointer = {} } = {}) {
+  const currentPointer = {
+    runId: 'ready-run',
+    counts: { sources: 1, brands: 1, foods: records.length },
+    catalogSha256: 'a'.repeat(64),
+    payloadSha256: 'b'.repeat(64),
+    ...pointer,
+  };
+  const runManifest = {
+    status: 'ready',
+    runId: 'ready-run',
+    counts: currentPointer.counts,
+    catalogSha256: currentPointer.catalogSha256,
+    payloadSha256: currentPointer.payloadSha256,
+    ...run,
+  };
+  const calls = [];
+
+  return {
+    calls,
+    doc(path) {
+      return {
+        async get() {
+          if (path === 'franchiseCatalogState/current') return snapshot(currentPointer);
+          if (path === 'franchiseCatalogRuns/ready-run') return snapshot(runManifest);
+          throw new Error(`unexpected document read: ${path}`);
+        },
+      };
+    },
+    collection(path) {
+      assert.equal(path, 'franchiseCatalogRuns/ready-run/foods');
+      return {
+        where(field, operator, token) {
+          calls.push({ field, operator, token });
+          return {
+            limit(limit) {
+              calls.at(-1).limit = limit;
+              return {
+                async get() {
+                  return { docs: records.map((record) => ({ data: () => record })) };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
 test('normalizes Subway aliases without erasing Korean identity', () => {
   assert.equal(normalizeCatalogText('  서브웨이  Italian B.M.T.™ '), '서브웨이 italian bmt');
+});
+
+test('queries one strongest catalog token then applies every query token in memory', async () => {
+  const matching = subwayBmtFixture;
+  const wrongMenu = {
+    ...subwayBmtFixture,
+    id: 'subway-turkey',
+    name: '터키',
+    aliases: ['turkey', '터키'],
+    normalizedName: '터키',
+    searchTokens: ['subway', '써브웨이', '서브웨이', '터키', 'turkey'],
+    sourceId: 'subway-menu-turkey',
+  };
+  const db = readyCatalogDb([matching, wrongMenu]);
+
+  const result = await queryCatalogFoods(db, '서브웨이 이탈리안BMT');
+
+  assert.deepEqual(db.calls, [{ field: 'searchTokens', operator: 'array-contains', token: '이탈리안', limit: 101 }]);
+  assert.deepEqual(result.items.map((item) => item.foodKey), ['catalog_official_subway_1528']);
+  assert.equal(result.hasMore, false);
+});
+
+test('finds the official BMT through both Subway spellings and an exact menu-only query', async () => {
+  for (const query of ['써브웨이', '서브웨이', '이탈리안 비엠티']) {
+    const db = readyCatalogDb([subwayBmtFixture]);
+    const result = await queryCatalogFoods(db, query);
+
+    assert.deepEqual(result.items.map((item) => item.foodKey), ['catalog_official_subway_1528']);
+    assert.equal(db.calls.length, 1);
+    assert.equal(db.calls[0].field, 'searchTokens');
+    assert.equal(db.calls[0].operator, 'array-contains');
+    assert.equal(db.calls[0].limit, 101);
+  }
+});
+
+test('does not read Firestore for an empty catalog query', async () => {
+  const db = readyCatalogDb([subwayBmtFixture]);
+
+  assert.deepEqual(await queryCatalogFoods(db, '   '), { items: [], hasMore: false });
+  assert.deepEqual(db.calls, []);
+});
+
+test('caps a broad brand-only catalog result set at 100 and reports hasMore', async () => {
+  const records = Array.from({ length: 101 }, (_, index) => ({
+    ...subwayBmtFixture,
+    id: `official_subway_${String(index).padStart(3, '0')}`,
+    sourceId: `subway-menu-${index}`,
+  }));
+  const db = readyCatalogDb(records);
+
+  const result = await queryCatalogFoods(db, '서브웨이');
+
+  assert.equal(result.items.length, 100);
+  assert.equal(result.hasMore, true);
+  assert.deepEqual(db.calls, [{ field: 'searchTokens', operator: 'array-contains', token: '서브웨이', limit: 101 }]);
+});
+
+test('rejects a pointer mismatch or any malformed returned catalog record as a source failure', async () => {
+  const pointerMismatch = readyCatalogDb([subwayBmtFixture], {
+    run: { payloadSha256: 'c'.repeat(64) },
+  });
+  const malformedRecord = readyCatalogDb([
+    subwayBmtFixture,
+    { ...subwayBmtFixture, id: 'invalid-bmt', nutrients: { ...subwayBmtFixture.nutrients, kcal: -1 } },
+  ]);
+
+  await assert.rejects(queryCatalogFoods(pointerMismatch, '써브웨이'), /does not match ready run manifest/);
+  await assert.rejects(queryCatalogFoods(malformedRecord, '써브웨이'), /kcal must be null or a finite non-negative number/);
 });
 
 test('preserves missing nutrients as null and rejects invented or invalid numbers', () => {
