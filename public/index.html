@@ -475,6 +475,41 @@
     color: var(--bg); background: var(--fg); border-radius: 12px;
   }
 
+  /* 다중 입력 사전 확인 + 추가 직후 완료 화면 */
+  .primary-button {
+    -webkit-appearance: none; appearance: none; border: 0; width: 100%;
+    min-height: 48px; font: inherit; font-weight: 600; font-size: 16px;
+    color: var(--bg); background: var(--fg); border-radius: 12px;
+  }
+  .primary-button:disabled { opacity: .4; }
+  .secondary-button {
+    -webkit-appearance: none; appearance: none; width: 100%;
+    min-height: 48px; font: inherit; font-weight: 600; font-size: 15px;
+    color: var(--fg); background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  }
+  .button-stack { display: flex; flex-direction: column; gap: 8px; }
+
+  .confirm-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .confirm-item {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+    border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 10px 12px;
+  }
+  .confirm-name { font-size: 13px; font-weight: 600; color: var(--fg); }
+  .confirm-name small { display: block; font-size: 11px; color: var(--muted); font-weight: 500; margin-top: 2px; }
+  .confirm-result { font-size: 12px; text-align: right; color: var(--muted); flex-shrink: 0; }
+  .confirm-item.confirmed .confirm-result { color: var(--ok-bright); }
+  .confirm-item.estimated .confirm-result { color: var(--under); }
+  .confirm-item.failed { opacity: .6; }
+  .confirm-item.failed .confirm-result { color: var(--over); }
+
+  .success-card {
+    background: var(--ok-bg); border: 1px solid var(--ok); border-radius: 10px;
+    padding: 14px; margin-bottom: 14px;
+  }
+  .success-card strong { display: block; font-size: 17px; color: var(--fg); margin-bottom: 4px; }
+  .success-card span { font-size: 13px; color: var(--muted); }
+  .add-success .form-result { margin-bottom: 14px; }
+
   /* ── 반응(反應) ────────────────────────────────────────────────────
      이 앱은 매일 쓰는 도구다. 모션은 "예뻐 보이려고"가 아니라
      **지금 뭐가 일어났는지 알려주려고**만 쓴다. 두 가지뿐이다:
@@ -738,6 +773,28 @@
       </label>
       <div id="portionPreview" class="form-result"></div>
       <button id="confirmPortion" type="button">이 양으로 추가</button>
+    </div>
+
+    <div id="multiConfirm" class="multi-confirm" hidden>
+      <div class="sheet-header">
+        <button id="cancelMultiConfirm" type="button" aria-label="입력으로 돌아가기">‹ 뒤로</button>
+        <h2>이렇게 들어갑니다</h2>
+      </div>
+      <div id="confirmList" class="confirm-list"></div>
+      <button id="confirmMultiAdd" type="button" class="primary-button">모두 추가</button>
+    </div>
+
+    <div id="addSuccess" class="add-success" hidden>
+      <div class="sheet-header">
+        <span></span>
+        <h2>추가 완료</h2>
+      </div>
+      <div id="successCard" class="success-card"></div>
+      <div id="successNote" class="form-result" hidden></div>
+      <div class="button-stack">
+        <button id="fixAmountBtn" type="button" class="secondary-button">양 고치기</button>
+        <button id="doneAddBtn" type="button" class="primary-button">완료</button>
+      </div>
     </div>
   </div>
 </div>

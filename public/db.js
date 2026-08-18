@@ -12,7 +12,7 @@ import {
   sendEmailVerification, sendPasswordResetEmail,
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js';
 import {
-  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  initializeFirestore, persistentLocalCache, persistentSingleTabManager,
   doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, serverTimestamp,
   limit, orderBy,
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js';
@@ -25,8 +25,14 @@ const auth = getAuth(app);
 // persistentLocalCache 를 initializeFirestore 시점에 넘긴다.
 // 구버전의 enableIndexedDbPersistence() 는 deprecated 이고, getFirestore() 뒤에 켜면
 // 이미 시작된 인스턴스라 실패한다.
+//
+// tabManager 는 single 로 쓴다. 이 앱은 iOS 홈화면 PWA — 브라우저 탭이 여러 개
+// 동시에 열릴 일이 없다. multiple 은 탭 간 「주 탭」 리스(lease)를 IndexedDB로
+// 협상하는 오버헤드가 매 실행마다 붙는데, 여기선 그 협상 상대가 없어서 순수 비용이다.
+// (2026-08-18: 아이폰 PWA에서 "열 때마다 느리다" 제보 — 이게 원인인지는 아직 실기기로
+// 확인 못 했다. offline 퍼시스턴스 자체는 그대로 켜져 있다, 절대규칙 6 그대로.)
 const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() }),
 });
 
 // ── 인증 ──────────────────────────────────────────────────────────────

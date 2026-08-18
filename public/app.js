@@ -122,6 +122,15 @@ const el = {
   servingNote: document.getElementById('servingNote'),
   confirmPortion: document.getElementById('confirmPortion'),
   cancelPortion: document.getElementById('cancelPortion'),
+  multiConfirm: document.getElementById('multiConfirm'),
+  confirmList: document.getElementById('confirmList'),
+  confirmMultiAdd: document.getElementById('confirmMultiAdd'),
+  cancelMultiConfirm: document.getElementById('cancelMultiConfirm'),
+  addSuccess: document.getElementById('addSuccess'),
+  successCard: document.getElementById('successCard'),
+  successNote: document.getElementById('successNote'),
+  fixAmountBtn: document.getElementById('fixAmountBtn'),
+  doneAddBtn: document.getElementById('doneAddBtn'),
   authGate: document.getElementById('authGate'),
   guestStart: document.getElementById('guestStart'),
   gateSignUpForm: document.getElementById('gateSignUpForm'),
@@ -859,6 +868,8 @@ function openEntryForm(slotKey, slotLabel) {
   el.searchInput.value = '';
   el.searchResults.innerHTML = '';
   el.searchStatus.hidden = true;
+  lastAddedInfo = null;
+  multiConfirmResolved = [];
   showPortionPrompt(false);
   renderQuickPicks();
 }
@@ -870,45 +881,47 @@ document.getElementById('closeEntry').addEventListener('click', () => {
 
 // ── 빠른 기록 + 식약처 검색 ──────────────────────────────────────────
 
+// entryForm 시트 안의 네 패널(검색/빠른기록, 양 선택, 다중입력 확인, 추가 직후 완료)은
+// 항상 하나만 보인다 — 하나를 열 때 나머지 세 개를 확실히 닫아서 겹쳐 보이는 걸 막는다.
+function showEntryPanel(panel) {
+  el.entryChooser.hidden = panel !== 'chooser';
+  el.portionPrompt.hidden = panel !== 'portion';
+  el.multiConfirm.hidden = panel !== 'multiConfirm';
+  el.addSuccess.hidden = panel !== 'addSuccess';
+}
+
 function showPortionPrompt(show) {
-  el.entryChooser.hidden = show;
-  el.portionPrompt.hidden = !show;
+  showEntryPanel(show ? 'portion' : 'chooser');
 }
 
 /**
- * 한 줄에 여러 음식(`반숙란 2개, 우유 200g`)을 넣었을 때.
- *
- * 조각마다 검색·추가를 순차로 돌린다. **한 조각이 실패해도 나머지를 계속한다** —
- * 하나 때문에 전체를 버리는 게 이 프로젝트에서 가장 비쌌던 버그였다.
- * 끝나고 못 넣은 조각을 사람에게 그대로 보여준다 (절대규칙 7).
+ * 한 줄에 여러 음식(`반숙란 2개, 우유 200g`)을 넣었을 때, 조각마다 검색·매칭만
+ * 해보고 **아무것도 저장하지 않는다.** 저장은 사용자가 화면3(확인 목록)에서
+ * "N개 모두 추가"를 눌러야 일어난다 (절대규칙 2 — 지어낸 값을 조용히 넣지 않는다,
+ * 여기서는 "조용히 저장하지 않는다"로 확장한 것).
  */
-async function runMultiQuickInput(pieces) {
-  const failed = [];      // 못 알아들은 것 (파싱·검색·이름대조 실패)
-  const incomplete = [];  // 알아들었지만 DB 에 영양값이 없는 것
-  let added = 0;
+async function resolveMultiPieces(pieces) {
+  const results = [];
 
   for (const piece of pieces) {
-    el.searchStatus.hidden = false;
-    el.searchStatus.textContent = `${piece.text} … (${added + failed.length + 1}/${pieces.length})`;
-
     // 'unsupported-serving' 은 「단위는 알아들었는데 대표 중량 표에 없다」는 뜻이다.
     // 예전엔 여기서 포기했는데, 이제 DB 가 1인분을 안다(김밥 230g, 빅맥 223g).
     // 검색해서 resolveServing 값이 있으면 그걸 개수에 곱한다 — 지어내는 게 아니라 DB 값이다.
     const usable = piece.parsed.ok || piece.parsed.reason === 'unsupported-serving';
-    if (!usable) { failed.push(piece.text); continue; }
+    if (!usable) { results.push({ text: piece.text, ok: false }); continue; }
 
     let items;
     try {
       items = await db.searchFoods(piece.parsed.query);
     } catch (err) {
       console.error('[meal-calendar] 검색 실패', piece.text, err);
-      failed.push(piece.text);
+      results.push({ text: piece.text, ok: false });
       continue;
     }
 
-    // 이름이 실제로 맞아떨어질 때만 자동 기록한다 — 엉뚱한 식품의 숫자가 들어가면 안 된다
+    // 이름이 실제로 맞아떨어질 때만 자동 기록 후보로 삼는다 — 엉뚱한 식품의 숫자가 들어가면 안 된다
     if (items.length === 0 || !hasNameMatch(piece.parsed.query, items)) {
-      failed.push(piece.text);
+      results.push({ text: piece.text, ok: false });
       continue;
     }
 
@@ -918,11 +931,11 @@ async function runMultiQuickInput(pieces) {
     let quickInput = piece.parsed;
     if (!piece.parsed.ok) {
       // DB 가 1인분을 모르면 여기서도 포기한다. 개수를 g 으로 바꿀 근거가 없다
-      if (!food.serving) { failed.push(piece.text); continue; }
+      if (!food.serving) { results.push({ text: piece.text, ok: false }); continue; }
       // count 는 발주 18 이 붙여준다. 없으면 곱할 수가 없으니 포기한다 —
       // undefined 를 곱해서 NaN 을 기록하는 것보다 "못 알아들었다"가 낫다
       const count = piece.parsed.count;
-      if (!Number.isFinite(count) || count <= 0) { failed.push(piece.text); continue; }
+      if (!Number.isFinite(count) || count <= 0) { results.push({ text: piece.text, ok: false }); continue; }
       amountG = food.serving.amount * count;
       quickInput = {
         ...piece.parsed,
@@ -934,15 +947,95 @@ async function runMultiQuickInput(pieces) {
       };
     }
 
-    // 여기까지 왔으면 식품은 찾았다. 그런데도 false 면 DB 에 탄단지 일부가 없다는 뜻이다.
-    // 「못 알아들었다」와 섞으면 사용자가 뭘 고쳐야 할지 알 수 없다 (절대규칙 7).
-    const ok = await addSearchedFood(food, amountG, quickInput, { batch: true });
-    if (ok) added += 1; else incomplete.push(piece.text);
+    // 미리 보여줄 kcal·완전성 판정. addSearchedFood 가 저장 시점에 똑같은 계산을
+    // 다시 하므로(단일 진실 소스), 여기 값은 화면 표시 전용이고 저장 여부를 좌우하지 않는다.
+    const scaled = scaleNutrients(food.per100g, amountG);
+    const incomplete = Object.values(scaled).some((value) => value === null);
+
+    results.push({
+      text: piece.text,
+      ok: true,
+      incomplete,
+      food,
+      amountG,
+      quickInput,
+      kcal: scaled.kcal,
+      name: quickInput.query ?? food.name,
+      displayAmount: quickInput.estimated ? quickInput.displayAmount : `${amountG}g`,
+      estimated: Boolean(quickInput.estimated),
+    });
   }
 
+  return results;
+}
+
+let multiConfirmResolved = [];
+
+async function showMultiConfirm(pieces) {
   el.searchStatus.hidden = false;
+  el.searchStatus.textContent = '확인하는 중…';
+  multiConfirmResolved = await resolveMultiPieces(pieces);
+  el.searchStatus.hidden = true;
+  renderMultiConfirm();
+  showEntryPanel('multiConfirm');
+}
+
+function renderMultiConfirm() {
+  el.confirmList.innerHTML = '';
+  let usable = 0;
+
+  for (const r of multiConfirmResolved) {
+    const item = document.createElement('div');
+    if (!r.ok) {
+      item.className = 'confirm-item failed';
+      item.innerHTML = `<div class="confirm-name">${r.text}</div><div class="confirm-result">못 알아들었습니다</div>`;
+    } else if (r.incomplete) {
+      item.className = 'confirm-item failed';
+      item.innerHTML = `
+        <div class="confirm-name">${r.name}<small>${r.displayAmount}</small></div>
+        <div class="confirm-result">DB에 탄단지 없음 · 직접 입력 필요</div>
+      `;
+    } else {
+      usable += 1;
+      item.className = `confirm-item ${r.estimated ? 'estimated' : 'confirmed'}`;
+      const resultText = r.estimated
+        ? `참고값 ${r.displayAmount}으로 추정 · ${Math.round(r.kcal)} kcal`
+        : `${Math.round(r.kcal)} kcal · 확인됨`;
+      item.innerHTML = `
+        <div class="confirm-name">${r.name}<small>${r.displayAmount}</small></div>
+        <div class="confirm-result">${resultText}</div>
+      `;
+    }
+    el.confirmList.appendChild(item);
+  }
+
+  el.confirmMultiAdd.disabled = usable === 0;
+  el.confirmMultiAdd.textContent = usable > 0 ? `${usable}개 모두 추가` : '추가할 항목 없음';
+}
+
+el.cancelMultiConfirm.addEventListener('click', () => {
+  multiConfirmResolved = [];
+  showEntryPanel('chooser');
+});
+
+el.confirmMultiAdd.addEventListener('click', async () => {
+  const failed = [];      // 못 알아들은 것 (파싱·검색·이름대조 실패)
+  const incomplete = [];  // 알아들었지만 DB 에 영양값이 없는 것
+  let added = 0;
+
+  for (const r of multiConfirmResolved) {
+    if (!r.ok) { failed.push(r.text); continue; }
+    // 여기까지 왔으면 식품은 찾았다. 그런데도 false 면 DB 에 탄단지 일부가 없다는 뜻이다.
+    // 「못 알아들었다」와 섞으면 사용자가 뭘 고쳐야 할지 알 수 없다 (절대규칙 7).
+    const ok = await addSearchedFood(r.food, r.amountG, r.quickInput, { batch: true });
+    if (ok) added += 1; else incomplete.push(r.text);
+  }
+  multiConfirmResolved = [];
+
   const leftover = [...failed, ...incomplete];
   if (leftover.length === 0) {
+    showEntryPanel('chooser');
+    el.searchStatus.hidden = false;
     el.searchStatus.textContent = `${added}개 추가했습니다.`;
     el.searchInput.value = '';
     el.entrySheet.hidden = true;
@@ -951,15 +1044,16 @@ async function runMultiQuickInput(pieces) {
   }
 
   // 남은 조각을 입력칸에 되돌려준다 — 다시 타이핑하게 만들지 않는다
+  showEntryPanel('chooser');
   el.searchInput.value = leftover.join(', ');
-
+  el.searchStatus.hidden = false;
   const reasons = [];
   if (failed.length > 0) reasons.push(`${failed.length}개는 못 알아들었습니다`);
   if (incomplete.length > 0) reasons.push(`${incomplete.length}개는 DB에 탄단지가 없어 직접 입력해야 합니다`);
   el.searchStatus.textContent = added > 0
     ? `${added}개 추가. ${reasons.join(', ')}.`
     : `${reasons.join(', ')}.`;
-}
+});
 
 el.searchForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -969,7 +1063,7 @@ el.searchForm.addEventListener('submit', async (event) => {
   // 단일 입력은 검색 결과를 보여주고 고르게 하는 경로가 이미 잘 돌고 있다
   const pieces = splitQuickFoodInput(el.searchInput.value);
   if (pieces.length > 1) {
-    await runMultiQuickInput(pieces);
+    await showMultiConfirm(pieces);
     return;
   }
 
@@ -1022,7 +1116,7 @@ el.searchForm.addEventListener('submit', async (event) => {
   }
 
   // 대표중량 표에 없는 단위(`김밥 1개`)라도 DB 가 1인분을 알면 개수를 곱한다.
-  // 다중 입력(runMultiQuickInput)에는 이 다리가 이미 있었는데 단일 입력에는 없어서,
+  // 다중 입력(resolveMultiPieces)에는 이 다리가 이미 있었는데 단일 입력에는 없어서,
   // **쉼표를 붙이면 되고 안 붙이면 안 되는** 상태였다. 같은 입력은 같게 동작해야 한다.
   if (parsed.reason === 'unsupported-serving' && hasNameMatch(parsed.query, items)) {
     const food = selectBestFood(parsed.query, items);
@@ -1118,13 +1212,9 @@ async function addSearchedFood(food, amountG, quickInput = null, { batch = false
     return false;
   }
 
+  // batch(다중입력 커밋 중)에서는 슬롯을 안 지운다 — 다음 조각도 같은 슬롯에 넣어야 한다.
+  // 지웠더니 두 번째 조각에서 slots[null] 이 되어 "not iterable" 로 터졌다.
   const slotKey = state.pendingSlot;
-  if (!batch) {
-    el.entrySheet.hidden = true;
-    // batch 에서는 지우지 않는다 — 다음 조각도 같은 슬롯에 넣어야 한다.
-    // 지웠더니 두 번째 조각에서 slots[null] 이 되어 "not iterable" 로 터졌다.
-    state.pendingSlot = null;
-  }
   showPortionPrompt(false);
 
   // Firestore 는 undefined 필드를 거부한다 — setDoc 이 통째로 실패해서 기록이 안 들어간다.
@@ -1135,9 +1225,10 @@ async function addSearchedFood(food, amountG, quickInput = null, { batch = false
     sourceLabel: SERVING_SOURCE_LABELS[quickInput.servingSource] ?? null,
   } : null;
 
+  const entryName = quickInput?.query ?? food.name;
   await addEntryToSlot(slotKey, buildEntry({
     foodKey: food.foodKey,
-    name: quickInput?.query ?? food.name,
+    name: entryName,
     amountG,
     kcal: scaled.kcal,
     carbG: scaled.carbG,
@@ -1149,8 +1240,57 @@ async function addSearchedFood(food, amountG, quickInput = null, { batch = false
     // 중복이다. g 명시든 개수 추정이든 상관없이 항상 남긴다 (I5, 예전엔 추정 경로에만 있었다).
     matchedFoodName: quickInput ? food.name : null,
   }));
+
+  if (!batch) {
+    // addEntryToSlot → persistDay 가 state.monthData 를 낙관적으로 먼저 갱신하므로,
+    // await 이 끝난 지금 이 슬롯의 마지막 항목이 방금 넣은 항목이다.
+    const entries = currentDay().slots?.[slotKey] ?? [];
+    showAddSuccess({
+      slotKey,
+      index: entries.length - 1,
+      name: entryName,
+      displayAmount: estimate?.displayAmount || `${amountG}g`,
+      kcal: scaled.kcal,
+      estimate,
+    });
+  }
   return true;
 }
+
+let lastAddedInfo = null;
+
+/** 화면5 — 추가 직후. 「완료」로 닫거나 「양 고치기」로 방금 넣은 걸 지우고 다시 입력한다. */
+function showAddSuccess(info) {
+  lastAddedInfo = info;
+  el.successCard.innerHTML = `
+    <strong>${Math.round(info.kcal)} kcal 추가됨</strong>
+    <span>${info.name} · ${info.displayAmount}</span>
+  `;
+  if (info.estimate) {
+    el.successNote.hidden = false;
+    el.successNote.textContent =
+      '추정으로 넣은 항목은 「추정」 표시가 남습니다. 실제 무게를 알게 되면 「양 고치기」로 다시 넣을 수 있습니다.';
+  } else {
+    el.successNote.hidden = true;
+  }
+  showEntryPanel('addSuccess');
+}
+
+el.doneAddBtn.addEventListener('click', () => {
+  lastAddedInfo = null;
+  el.entrySheet.hidden = true;
+  state.pendingSlot = null;
+});
+
+el.fixAmountBtn.addEventListener('click', async () => {
+  if (!lastAddedInfo) return;
+  const { slotKey, index, name } = lastAddedInfo;
+  lastAddedInfo = null;
+  await removeEntry(slotKey, index);
+  showEntryPanel('chooser');
+  el.searchInput.value = name;
+  el.searchInput.focus();
+});
 
 function renderPortionPreview() {
   const amountG = Number(el.portionAmount.value);
