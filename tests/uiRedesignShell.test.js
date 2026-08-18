@@ -147,3 +147,45 @@ test('barcode flow lazy-loads the pinned reader and closes camera tracks at life
   assert.match(app, /source:\s*food\.source/);
   assert.match(app, /barcode:\s*food\.barcode/);
 });
+
+test('search results expose response-provided source and serving nutrition safely', () => {
+  const html = read('public/index.html');
+  const app = read('public/app.js');
+
+  assert.match(html, /id="partialNutritionNote"/);
+  assert.match(app, /food\.source\?\.label/);
+  assert.doesNotMatch(app, /isFranchise\s*\?\s*['"]공식값/);
+  assert.match(app, /sourceLink\.target\s*=\s*'_blank'/);
+  assert.match(app, /sourceLink\.rel\s*=\s*'noopener noreferrer'/);
+  assert.match(app, /sourceLink\.href\s*=\s*food\.source\.url/);
+  assert.match(app, /food\.servingNutrients\?\.kcal/);
+  assert.match(app, /1인분 \$\{food\.serving\.amount\}\$\{food\.serving\.unit\} · \$\{Math\.round\(food\.servingNutrients\.kcal\)\}kcal/);
+});
+
+test('partial search selection preserves numeric values and identifies every missing field', () => {
+  const app = read('public/app.js');
+
+  assert.match(app, /if \(Number\.isFinite\(scaled\.kcal\)\)/);
+  assert.match(app, /if \(Number\.isFinite\(scaled\.carbG\)\)/);
+  assert.match(app, /if \(Number\.isFinite\(scaled\.proteinG\)\)/);
+  assert.match(app, /if \(Number\.isFinite\(scaled\.fatG\)\)/);
+  assert.match(app, /공식 자료에 없는 \$\{missingFields\.join\('·'\)\}은 직접 입력해야 합니다\./);
+  assert.match(app, /nutritionProvenance/);
+  assert.match(app, /carbG:\s*'manual'/);
+  assert.match(app, /fatG:\s*'manual'/);
+});
+
+test('blank manual nutrient fields are not coerced to zero during partial completion', () => {
+  const app = read('public/app.js');
+
+  assert.match(app, /function formNumber\(data, field\)/);
+  assert.match(app, /value\.trim\(\) === '' \? Number\.NaN : Number\(value\)/);
+});
+
+test('broad catalog searches give the approved refinement instruction', () => {
+  const app = read('public/app.js');
+
+  assert.match(app, /검색 결과가 많습니다\. 브랜드와 메뉴명을 함께 입력해 주세요\./);
+  assert.match(app, /searchResponse\?\.hasMore\s*===\s*true/);
+  assert.match(app, /if \(parsed\.ok && !hasMore\)/);
+});

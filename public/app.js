@@ -106,6 +106,7 @@ const el = {
   entryForm: document.getElementById('manualEntryForm'),
   entryTitle: document.getElementById('entryTitle'),
   entryError: document.getElementById('entryError'),
+  partialNutritionNote: document.getElementById('partialNutritionNote'),
   quickPresets: document.getElementById('quickPresets'),
   presetChips: document.getElementById('presetChips'),
   quickMeals: document.getElementById('quickMeals'),
@@ -181,7 +182,7 @@ function emptySlots() {
 
 function buildEntry({
   foodKey, name, amountG, kcal, carbG, proteinG, fatG, addedBy, estimate, matchedFoodName,
-  source, barcode,
+  source, barcode, nutritionProvenance,
 }) {
   return {
     foodKey: foodKey ?? `manual_${crypto.randomUUID()}`,
@@ -194,6 +195,7 @@ function buildEntry({
     ...(matchedFoodName ? { matchedFoodName } : {}),
     ...(source ? { source } : {}),
     ...(barcode ? { barcode } : {}),
+    ...(nutritionProvenance ? { nutritionProvenance } : {}),
   };
 }
 
@@ -878,6 +880,8 @@ function openEntryForm(slotKey, slotLabel) {
   el.entryTitle.textContent = `${slotLabel} 항목 추가`;
   el.entryForm.reset();
   el.entryError.hidden = true;
+  manualEntryContext = null;
+  el.partialNutritionNote.hidden = true;
   el.entrySheet.hidden = false;
   el.searchInput.value = '';
   el.searchResults.innerHTML = '';
@@ -1269,14 +1273,16 @@ el.searchForm.addEventListener('submit', async (event) => {
   el.searchStatus.hidden = false;
   el.searchStatus.textContent = parsed.ok ? '대표 중량으로 계산 중…' : '검색 중…';
 
-  let items;
+  let searchResponse;
   try {
-    items = await db.searchFoods(q);
+    searchResponse = await db.searchFoods(q);
   } catch (err) {
     console.error('[meal-calendar] 검색 실패', err);
     el.searchStatus.textContent = `검색 실패 — ${err.message}`;
     return;
   }
+  const items = Array.isArray(searchResponse) ? searchResponse : (searchResponse.items ?? []);
+  const hasMore = searchResponse?.hasMore === true || items.length >= 100;
 
   if (items.length === 0) {
     // 식약처 DB 는 브랜드 메뉴를 거의 안 담는다 — `서브웨이`·`서가원 김밥` 은 이름·제조사
@@ -1331,58 +1337,118 @@ el.searchForm.addEventListener('submit', async (event) => {
     }
   }
 
-  el.searchStatus.hidden = true;
-  if (parsed.ok) {
+  el.searchStatus.hidden = !hasMore;
+  if (hasMore) {
+    el.searchStatus.className = 'search-status';
+    el.searchStatus.textContent = '검색 결과가 많습니다. 브랜드와 메뉴명을 함께 입력해 주세요.';
+  }
+  if (parsed.ok && !hasMore) {
     el.searchStatus.hidden = false;
     el.searchStatus.textContent = '정확히 일치하는 이름이 없습니다. 아래에서 골라주세요.';
-  } else if (parsed.reason === 'unsupported-serving') {
+  } else if (parsed.reason === 'unsupported-serving' && !hasMore) {
     el.searchStatus.hidden = false;
     el.searchStatus.textContent = '이 단위는 아직 자동 환산하지 못합니다. 음식을 고른 뒤 g을 입력해주세요.';
   }
 
   const servingTable = await loadServingTable();
   for (const food of items) {
+    const result = document.createElement('div');
+    result.className = 'search-result';
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'search-result';
-    const kcalText = food.per100g.kcal == null ? '?' : Math.round(food.per100g.kcal);
+    button.className = 'search-result-main';
+    const name = document.createElement('span');
+    name.className = 'r-name';
+    name.textContent = food.name;
+    const meta = document.createElement('span');
+    meta.className = 'r-meta';
+    const kcalText = Number.isFinite(food.per100g?.kcal) ? Math.round(food.per100g.kcal) : '?';
     let servingLabel = '';
-    let servingClass = '';
+    const officialServing = food.serving?.source === 'official-serving'
+      && Number.isFinite(food.servingNutrients?.kcal);
     if (food.serving) {
       servingLabel = `1인분 ${food.serving.amount}${food.serving.unit}`;
-      servingClass = 'r-serving-known';
     } else if (servingTable) {
       try {
         const estimate = estimateServingFromCategory(food, servingTable);
         if (estimate) {
           servingLabel = `참고값 ${estimate.amount}${estimate.unit}`;
-          servingClass = 'r-serving-reference';
         }
       } catch (err) {
         console.error('[meal-calendar] 검색 결과 참고값 계산 실패', err);
       }
     }
-    button.innerHTML = `
-      <span class="r-name">${food.name}</span>
-      <span class="r-meta">${food.category ?? ''} · 100g당 ${kcalText}kcal${servingLabel ? ` · <span class="${servingClass}">${servingLabel}</span>` : ''}</span>
-    `;
+    const nutritionLabel = officialServing
+      ? `1인분 ${food.serving.amount}${food.serving.unit} · ${Math.round(food.servingNutrients.kcal)}kcal`
+      : `100g당 ${kcalText}kcal`;
+    const sourceDetails = [food.maker, food.source?.label].filter(Boolean);
+    meta.textContent = sourceDetails.length > 0
+      ? [...sourceDetails, nutritionLabel, ...(officialServing || !servingLabel ? [] : [servingLabel])].join(' · ')
+      : [food.category, nutritionLabel, servingLabel].filter(Boolean).join(' · ');
+    button.append(name, meta);
     // parsed.ok 면 사용자가 이미 입력한 양(g 명시든 개수 추정 환산이든)을 그대로 넘긴다 —
     // 이름을 못 찾았다고 이미 알려준 수량까지 지우고 100g 기본값으로 되돌리지 않는다.
     button.addEventListener('click', () => openPortionPrompt(food, parsed.ok ? parsed.amountG : undefined));
-    el.searchResults.appendChild(button);
+    result.appendChild(button);
+    if (isSafeExternalUrl(food.source?.url)) {
+      const sourceLink = document.createElement('a');
+      sourceLink.className = 'r-source-link';
+      sourceLink.href = food.source.url;
+      sourceLink.target = '_blank';
+      sourceLink.rel = 'noopener noreferrer';
+      sourceLink.textContent = '출처 보기';
+      result.appendChild(sourceLink);
+    }
+    el.searchResults.appendChild(result);
   }
 });
 
 let selectedFood = null;
+let manualEntryContext = null;
+
+const NUTRIENT_FIELD_LABELS = {
+  kcal: '칼로리',
+  carbG: '탄수화물',
+  proteinG: '단백질',
+  fatG: '지방',
+};
+
+function isSafeExternalUrl(value) {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function formNumber(data, field) {
+  const value = data.get(field);
+  return typeof value === 'string' && value.trim() === '' ? Number.NaN : Number(value);
+}
 
 function fillManualEntry(food, amountG, scaled) {
   el.entryForm.reset();
   el.entryForm.name.value = food.name;
   el.entryForm.amountG.value = amountG;
-  if (scaled.kcal != null) el.entryForm.kcal.value = scaled.kcal;
-  if (scaled.carbG != null) el.entryForm.carbG.value = scaled.carbG;
-  if (scaled.proteinG != null) el.entryForm.proteinG.value = scaled.proteinG;
-  if (scaled.fatG != null) el.entryForm.fatG.value = scaled.fatG;
+  if (Number.isFinite(scaled.kcal)) el.entryForm.kcal.value = scaled.kcal;
+  if (Number.isFinite(scaled.carbG)) el.entryForm.carbG.value = scaled.carbG;
+  if (Number.isFinite(scaled.proteinG)) el.entryForm.proteinG.value = scaled.proteinG;
+  if (Number.isFinite(scaled.fatG)) el.entryForm.fatG.value = scaled.fatG;
+  const missingFields = Object.entries(NUTRIENT_FIELD_LABELS)
+    .filter(([field]) => !Number.isFinite(scaled[field]))
+    .map(([, label]) => label);
+  el.partialNutritionNote.hidden = missingFields.length === 0;
+  if (missingFields.length > 0) {
+    el.partialNutritionNote.textContent = `공식 자료에 없는 ${missingFields.join('·')}은 직접 입력해야 합니다.`;
+  }
+  manualEntryContext = {
+    source: food.source,
+    numericFields: Object.fromEntries(
+      Object.entries(scaled).filter(([, value]) => Number.isFinite(value)),
+    ),
+  };
   showPortionPrompt(false);
 }
 
@@ -1650,11 +1716,11 @@ el.entryForm.addEventListener('submit', async (event) => {
   const data = new FormData(el.entryForm);
   const fields = {
     name: String(data.get('name')).trim(),
-    amountG: Number(data.get('amountG')),
-    kcal: Number(data.get('kcal')),
-    carbG: Number(data.get('carbG')),
-    proteinG: Number(data.get('proteinG')),
-    fatG: Number(data.get('fatG')),
+    amountG: formNumber(data, 'amountG'),
+    kcal: formNumber(data, 'kcal'),
+    carbG: formNumber(data, 'carbG'),
+    proteinG: formNumber(data, 'proteinG'),
+    fatG: formNumber(data, 'fatG'),
   };
 
   const invalid = ['amountG', 'kcal', 'carbG', 'proteinG', 'fatG']
@@ -1669,10 +1735,29 @@ el.entryForm.addEventListener('submit', async (event) => {
 
   const saveAsPreset = data.get('saveAsPreset') === 'on';
   const slotKey = state.pendingSlot;
+  const nutritionProvenance = manualEntryContext ? {
+    kcal: 'manual',
+    carbG: 'manual',
+    proteinG: 'manual',
+    fatG: 'manual',
+    ...Object.fromEntries(
+      Object.entries(manualEntryContext.numericFields)
+        .filter(([field, value]) => fields[field] === value)
+        .map(([field]) => [field, manualEntryContext.source?.type ?? 'manual']),
+    ),
+    sourceUrl: manualEntryContext.source?.url ?? null,
+    verifiedAt: manualEntryContext.source?.verifiedAt ?? null,
+  } : null;
   el.entrySheet.hidden = true;
   state.pendingSlot = null;
 
-  await addEntryToSlot(slotKey, buildEntry({ ...fields, addedBy: 'manual' }));
+  await addEntryToSlot(slotKey, buildEntry({
+    ...fields,
+    addedBy: 'manual',
+    source: manualEntryContext?.source,
+    nutritionProvenance,
+  }));
+  manualEntryContext = null;
 
   if (saveAsPreset) {
     const { name, amountG, kcal, carbG, proteinG, fatG } = fields;

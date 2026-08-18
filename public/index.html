@@ -459,14 +459,21 @@
   }
   .search-results { display: flex; flex-direction: column; gap: 6px; }
   .search-result {
-    -webkit-appearance: none; appearance: none; width: 100%; text-align: left;
+    width: 100%;
     border: 1px solid var(--line); background: var(--card); border-radius: 10px;
-    padding: 10px 12px; font: inherit; color: var(--fg);
+  }
+  .search-result-main {
+    -webkit-appearance: none; appearance: none; width: 100%; text-align: left;
+    border: 0; background: none; padding: 10px 12px 7px; font: inherit; color: var(--fg);
   }
   .search-result .r-name { font-size: 13px; font-weight: 600; display: block; }
   .search-result .r-meta { font-size: 12px; color: var(--muted); }
   .search-result .r-serving-known { color: var(--accent-light); }
   .search-result .r-serving-reference { color: var(--info); }
+  .search-result .r-source-link {
+    display: inline-block; margin: 0 12px 10px; color: var(--info); font-size: 12px; text-decoration: none;
+  }
+  .search-result .r-source-link:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
   .meal-preset-list { display: flex; flex-direction: column; gap: 6px; }
   .meal-preset-list .meal-preset { border-radius: 10px; justify-content: space-between; }
 
@@ -480,6 +487,9 @@
     border-radius: 10px; padding: 10px 12px;
   }
   .portion-prompt .form-result { margin-bottom: 14px; }
+  .partial-nutrition-note {
+    margin: -2px 0 12px; color: var(--warning); font-size: 12px; line-height: 1.55;
+  }
   #confirmPortion {
     -webkit-appearance: none; appearance: none; border: 0; width: 100%;
     min-height: 48px; font: inherit; font-weight: 600; font-size: 16px;
@@ -547,13 +557,13 @@
   /* 눌린 순간은 즉시(전환 없이) 반응하고, 뗄 때만 부드럽게 돌아온다 —
      반대로 하면 톡 눌렀을 때 반응이 늦게 와서 씹힌 것처럼 느껴진다. */
   header button, .day, .ghost-btn, .chip, .chip-add, .chip-del,
-  .search-result, .search-row button, .serving-chips button,
+  .search-result-main, .search-row button, .serving-chips button,
   .gate-tabs button, .link-button, .sheet-header button,
   .profile-form button[type="submit"] {
     transition: transform .18s ease, background-color .18s ease, opacity .18s ease;
   }
   header button:active, .day:active, .ghost-btn:active, .chip:active,
-  .chip-add:active, .chip-del:active, .search-result:active,
+  .chip-add:active, .chip-del:active, .search-result-main:active,
   .search-row button:active, .serving-chips button:active,
   .gate-tabs button:active, .profile-form button[type="submit"]:active {
     transform: scale(.96);
@@ -582,7 +592,7 @@
       animation-duration: .01ms !important;
     }
     header button:active, .day:active, .ghost-btn:active, .chip:active,
-    .chip-add:active, .chip-del:active, .search-result:active,
+    .chip-add:active, .chip-del:active, .search-result-main:active,
     .search-row button:active, .serving-chips button:active,
     .gate-tabs button:active, .profile-form button[type="submit"]:active {
       transform: none;
@@ -758,6 +768,7 @@
         모르는 값은 비워두지 말고 포장지·조회 결과에서 확인해 넣는다 —
         추정치로 채우면 기록이 거짓이 된다.
       </p>
+      <p id="partialNutritionNote" class="partial-nutrition-note" aria-live="polite" hidden></p>
       <label>칼로리 (kcal)
         <input name="kcal" type="number" inputmode="decimal" min="0" step="0.1" required>
       </label>

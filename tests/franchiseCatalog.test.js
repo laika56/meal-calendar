@@ -246,6 +246,22 @@ test('converts mass-basis nutrients exactly to compatibility per100g while retai
   });
 });
 
+test('BMT has the exact source-aware serving summary without invented missing nutrients', () => {
+  const food = catalog.catalogRecordToSearchFood(subwayBmtFixture);
+  const summary = [
+    food.maker,
+    food.source.label,
+    `1인분 ${food.serving.amount}${food.serving.unit}`,
+    `${food.servingNutrients.kcal}kcal`,
+  ].join(' · ');
+
+  assert.equal(summary, '써브웨이 · 공식값 · 1인분 228g · 388kcal');
+  assert.equal(food.servingNutrients.carbG, null);
+  assert.equal(food.servingNutrients.fatG, null);
+  assert.notEqual(food.servingNutrients.carbG, 0);
+  assert.notEqual(food.servingNutrients.fatG, 0);
+});
+
 test('keeps non-mass official nutrients out of gram compatibility fields', () => {
   const record = {
     ...subwayBmtFixture,
