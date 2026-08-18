@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { open, readFile, rename, stat, unlink } from 'node:fs/promises';
+import {
+  cp, link, mkdtemp, open, readFile, rename, rm, stat, unlink, writeFile,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseMfdsFoodItem } from '../src/lib/mfdsParser.js';
 import { normalizeCatalogText } from '../src/lib/franchiseCatalog.js';
+import { loadReviewedCatalogFiles } from './validate-franchise-data.mjs';
 
 const MFDS_ENDPOINT = 'https://apis.data.go.kr/1471000/FoodNtrCpntDbInfo02/getFoodNtrCpntDbInq02';
 const ROWS_PER_PAGE = 500;
@@ -225,13 +229,59 @@ function itemArray(page) {
   throw new Error('MFDS response has an unrecognized items shape');
 }
 
-function parsePage(page) {
+function parseMfdsInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`MFDS response ${label} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
+/** Returns the exact item count the requested page must contain. */
+export function expectedMfdsItemCount(totalCount, rowsPerPage, pageNo) {
+  assertNonNegativeInteger(totalCount, 'totalCount');
+  if (!Number.isSafeInteger(rowsPerPage) || rowsPerPage <= 0) {
+    throw new TypeError('rowsPerPage must be a positive safe integer');
+  }
+  if (!Number.isSafeInteger(pageNo) || pageNo < 1) {
+    throw new TypeError('pageNo must be a positive safe integer');
+  }
+  const pageCount = Math.ceil(totalCount / rowsPerPage);
+  if (totalCount === 0 && pageNo === 1) return 0;
+  if (pageNo > pageCount) {
+    throw new Error(`MFDS response pageNo ${pageNo} is outside totalCount ${totalCount}`);
+  }
+  return Math.min(rowsPerPage, totalCount - ((pageNo - 1) * rowsPerPage));
+}
+
+/** Refuses a successful-but-shifted, duplicated, or incomplete MFDS page. */
+export function validateMfdsPage(page, { pageNo, totalCount = undefined, rowsPerPage = ROWS_PER_PAGE } = {}) {
+  if (!Number.isSafeInteger(pageNo) || pageNo < 1) {
+    throw new TypeError('pageNo must be a positive safe integer');
+  }
+  if (!Number.isSafeInteger(rowsPerPage) || rowsPerPage <= 0) {
+    throw new TypeError('rowsPerPage must be a positive safe integer');
+  }
   if (!page || typeof page !== 'object' || page.header?.resultCode !== '00') {
     throw new Error('MFDS response is malformed or unsuccessful');
   }
-  const totalCount = page.body?.totalCount;
-  assertNonNegativeInteger(totalCount, 'MFDS totalCount');
-  return { totalCount, items: itemArray(page) };
+  const responsePageNo = parseMfdsInteger(page.body?.pageNo, 'pageNo');
+  const responseRowsPerPage = parseMfdsInteger(page.body?.numOfRows, 'numOfRows');
+  const responseTotalCount = parseMfdsInteger(page.body?.totalCount, 'totalCount');
+  if (responsePageNo !== pageNo) {
+    throw new Error(`MFDS response pageNo ${responsePageNo} does not match requested pageNo ${pageNo}`);
+  }
+  if (responseRowsPerPage !== rowsPerPage) {
+    throw new Error(`MFDS response numOfRows ${responseRowsPerPage} does not match requested numOfRows ${rowsPerPage}`);
+  }
+  if (totalCount !== undefined && responseTotalCount !== totalCount) {
+    throw new Error('MFDS totalCount changed during snapshot collection');
+  }
+  const items = itemArray(page);
+  const expectedCount = expectedMfdsItemCount(responseTotalCount, rowsPerPage, pageNo);
+  if (items.length !== expectedCount) {
+    throw new Error(`MFDS response page ${pageNo} expected ${expectedCount} items, received ${items.length}`);
+  }
+  return { totalCount: responseTotalCount, items };
 }
 
 async function readEnvApiKey(projectRoot) {
@@ -249,26 +299,42 @@ async function readEnvApiKey(projectRoot) {
   return null;
 }
 
-async function fetchMfdsPage(apiKey, pageNo) {
+export async function fetchMfdsPage(apiKey, pageNo, {
+  fetchImpl = fetch,
+  rowsPerPage = ROWS_PER_PAGE,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+  totalCount = undefined,
+} = {}) {
+  assertNonEmptyString(apiKey, 'MFDS API key');
+  if (!Number.isSafeInteger(pageNo) || pageNo < 1) throw new TypeError('pageNo must be a positive safe integer');
+  if (!Number.isSafeInteger(rowsPerPage) || rowsPerPage <= 0) throw new TypeError('rowsPerPage must be a positive safe integer');
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new TypeError('timeoutMs must be a positive safe integer');
   const url = new URL(MFDS_ENDPOINT);
   // Match Cloud Functions exactly: portal-issued keys are already percent-encoded.
   url.searchParams.set('serviceKey', decodeURIComponent(apiKey));
   url.searchParams.set('type', 'json');
-  url.searchParams.set('numOfRows', String(ROWS_PER_PAGE));
+  url.searchParams.set('numOfRows', String(rowsPerPage));
   url.searchParams.set('pageNo', String(pageNo));
-  const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+  const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!response.ok) throw new Error(`MFDS request failed with HTTP ${response.status}`);
   try {
-    return parsePage(await response.json());
+    return validateMfdsPage(await response.json(), { pageNo, totalCount, rowsPerPage });
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('MFDS')) throw error;
     throw new Error(`MFDS response is malformed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
-async function collectMfdsSnapshot(apiKey, generatedAt) {
-  const first = await fetchMfdsPage(apiKey, 1);
-  const pageNumbers = buildMfdsPages(first.totalCount, ROWS_PER_PAGE);
+export async function collectMfdsSnapshot(apiKey, generatedAt, {
+  fetchPage = fetchMfdsPage,
+  rowsPerPage = ROWS_PER_PAGE,
+  concurrency = FETCH_CONCURRENCY,
+  reportProgress = null,
+} = {}) {
+  if (!Number.isSafeInteger(rowsPerPage) || rowsPerPage <= 0) throw new TypeError('rowsPerPage must be a positive safe integer');
+  if (!Number.isSafeInteger(concurrency) || concurrency <= 0) throw new TypeError('concurrency must be a positive safe integer');
+  const first = await fetchPage(apiKey, 1, { rowsPerPage });
+  const pageNumbers = buildMfdsPages(first.totalCount, rowsPerPage);
   const rawManifest = createHash('sha256');
   rawManifest.update('[', 'utf8');
   let rawCount = 0;
@@ -291,27 +357,33 @@ async function collectMfdsSnapshot(apiKey, generatedAt) {
     }
   }
 
-  function reportProgress(pageNo) {
+  function emitProgress(pageNo) {
     if (shouldReportMfdsProgress(pageNo, pageNumbers.length)) {
-      process.stderr.write(`fetchProgress page ${pageNo}/${pageNumbers.length} rawRecords ${rawCount}\n`);
+      if (reportProgress) {
+        reportProgress({ pageNo, totalPages: pageNumbers.length, rawCount });
+      } else {
+        process.stderr.write(`fetchProgress page ${pageNo}/${pageNumbers.length} rawRecords ${rawCount}\n`);
+      }
     }
   }
 
   collectPage(first.items);
-  reportProgress(1);
+  emitProgress(1);
   const remainingPages = pageNumbers.slice(1);
-  for (let start = 0; start < remainingPages.length; start += FETCH_CONCURRENCY) {
-    const batchPageNumbers = remainingPages.slice(start, start + FETCH_CONCURRENCY);
+  for (let start = 0; start < remainingPages.length; start += concurrency) {
+    const batchPageNumbers = remainingPages.slice(start, start + concurrency);
     const pages = await Promise.all(batchPageNumbers.map(async (pageNo) => ({
       pageNo,
-      page: await fetchMfdsPage(apiKey, pageNo),
+      page: await fetchPage(apiKey, pageNo, { rowsPerPage, totalCount: first.totalCount }),
     })));
     for (const { pageNo, page } of pages) {
-      if (page.totalCount !== first.totalCount) {
-        throw new Error('MFDS totalCount changed during snapshot collection');
+      if (page.totalCount !== first.totalCount) throw new Error('MFDS totalCount changed during snapshot collection');
+      const expectedCount = expectedMfdsItemCount(first.totalCount, rowsPerPage, pageNo);
+      if (!Array.isArray(page.items) || page.items.length !== expectedCount) {
+        throw new Error(`MFDS response page ${pageNo} expected ${expectedCount} items, received ${Array.isArray(page.items) ? page.items.length : 'invalid'}`);
       }
       collectPage(page.items);
-      reportProgress(pageNo);
+      emitProgress(pageNo);
     }
   }
   if (rawCount !== first.totalCount) {
@@ -338,11 +410,10 @@ function fingerprintsMatch(left, right) {
     && left.contents.equals(right.contents);
 }
 
-async function publishExclusive(destination, contents) {
-  const before = await destinationFingerprint(destination);
+async function writeExclusiveTemporary(destination, contents) {
   const temporary = path.join(
     path.dirname(destination),
-    `.${path.basename(destination)}.${process.pid}.${Date.now()}.tmp`,
+    `.${path.basename(destination)}.${process.pid}.${Date.now()}.${createHash('sha256').update(contents, 'utf8').digest('hex').slice(0, 12)}.tmp`,
   );
   let handle;
   try {
@@ -351,14 +422,125 @@ async function publishExclusive(destination, contents) {
     await handle.sync();
     await handle.close();
     handle = undefined;
-    const immediatelyBeforeRename = await destinationFingerprint(destination);
-    if (!fingerprintsMatch(before, immediatelyBeforeRename)) {
-      throw new Error('refusing to overwrite concurrently changed snapshot destination');
-    }
-    await rename(temporary, destination);
+    return temporary;
   } finally {
     await handle?.close();
-    await unlink(temporary).catch(() => {});
+    if (handle) await unlink(temporary).catch(() => {});
+  }
+}
+
+function temporarySibling(destination, label) {
+  return path.join(
+    path.dirname(destination),
+    `.${path.basename(destination)}.${process.pid}.${Date.now()}.${label}`,
+  );
+}
+
+async function destinationMatchesContents(destination, contents) {
+  try {
+    return (await readFile(destination, 'utf8')) === contents;
+  } catch {
+    return false;
+  }
+}
+
+/** Validates the complete candidate catalog in an isolated overlay before publication. */
+export async function validateCatalogPair(projectRoot, { brandsContents, snapshotContents }) {
+  assertNonEmptyString(projectRoot, 'projectRoot');
+  if (typeof brandsContents !== 'string' || typeof snapshotContents !== 'string') {
+    throw new TypeError('catalog candidates must be strings');
+  }
+  const stagingRoot = await mkdtemp(path.join(tmpdir(), 'meal-calendar-catalog-preflight-'));
+  try {
+    await cp(path.join(projectRoot, 'data'), path.join(stagingRoot, 'data'), { recursive: true });
+    await Promise.all([
+      writeFile(path.join(stagingRoot, 'data/franchise/brands.json'), brandsContents, 'utf8'),
+      writeFile(path.join(stagingRoot, SNAPSHOT_RELATIVE_PATH), snapshotContents, 'utf8'),
+    ]);
+    await loadReviewedCatalogFiles(stagingRoot);
+  } finally {
+    await rm(stagingRoot, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Replaces the reviewed brands and public snapshot as one recoverable pair.
+ * Every replacement is preceded by a concurrent-change check; rollback only
+ * touches a destination while it still contains this invocation's exact bytes.
+ */
+export async function publishCatalogPair(projectRoot, { brandsContents, snapshotContents }, {
+  renameFile = rename,
+} = {}) {
+  await validateCatalogPair(projectRoot, { brandsContents, snapshotContents });
+  const entries = [
+    { destination: path.join(projectRoot, 'data/franchise/brands.json'), contents: brandsContents },
+    { destination: path.join(projectRoot, SNAPSHOT_RELATIVE_PATH), contents: snapshotContents },
+  ];
+  const before = await Promise.all(entries.map(({ destination }) => destinationFingerprint(destination)));
+  const temporaries = [];
+  const backups = [];
+  const published = [];
+  let failure;
+  try {
+    for (const entry of entries) temporaries.push(await writeExclusiveTemporary(entry.destination, entry.contents));
+    const beforePublication = await Promise.all(entries.map(({ destination }) => destinationFingerprint(destination)));
+    if (!before.every((fingerprint, index) => fingerprintsMatch(fingerprint, beforePublication[index]))) {
+      throw new Error('refusing to overwrite concurrently changed catalog destination');
+    }
+    for (const { destination } of entries) {
+      const backup = temporarySibling(destination, 'backup');
+      await link(destination, backup);
+      backups.push(backup);
+    }
+    const afterBackups = await Promise.all(entries.map(({ destination }) => destinationFingerprint(destination)));
+    if (!before.every((fingerprint, index) => fingerprintsMatch(fingerprint, afterBackups[index]))) {
+      throw new Error('refusing to overwrite concurrently changed catalog destination');
+    }
+    for (let index = 0; index < entries.length; index += 1) {
+      const { destination, contents } = entries[index];
+      const current = await destinationFingerprint(destination);
+      const expected = index === 0 ? before[0] : before[1];
+      if (!fingerprintsMatch(current, expected)) {
+        throw new Error('refusing to overwrite concurrently changed catalog destination');
+      }
+      await renameFile(temporaries[index], destination);
+      temporaries[index] = null;
+      if (!(await destinationMatchesContents(destination, contents))) {
+        throw new Error('catalog destination changed during publication');
+      }
+      published.push(index);
+    }
+    await loadReviewedCatalogFiles(projectRoot);
+    for (const { destination, contents } of entries) {
+      if (!(await destinationMatchesContents(destination, contents))) {
+        throw new Error('catalog destination changed after publication validation');
+      }
+    }
+  } catch (error) {
+    failure = error;
+    const rollbackFailures = [];
+    for (const index of published.toReversed()) {
+      const { destination, contents } = entries[index];
+      if (!(await destinationMatchesContents(destination, contents))) {
+        rollbackFailures.push(`refused rollback for concurrently changed ${path.basename(destination)}`);
+        continue;
+      }
+      try {
+        await renameFile(backups[index], destination);
+        backups[index] = null;
+      } catch (rollbackError) {
+        rollbackFailures.push(`rollback failed for ${path.basename(destination)}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
+      }
+    }
+    if (rollbackFailures.length > 0) {
+      throw new Error(`${failure instanceof Error ? failure.message : String(failure)}; ${rollbackFailures.join('; ')}`);
+    }
+    throw failure;
+  } finally {
+    await Promise.all([
+      ...temporaries.filter(Boolean).map((temporary) => unlink(temporary).catch(() => {})),
+      ...backups.filter(Boolean).map((backup) => unlink(backup).catch(() => {})),
+    ]);
   }
 }
 
@@ -411,8 +593,7 @@ async function main() {
   const snapshotSha256 = createHash('sha256').update(contents, 'utf8').digest('hex');
 
   if (write) {
-    await publishExclusive(path.join(projectRoot, 'data/franchise/brands.json'), brandsContents);
-    await publishExclusive(path.join(projectRoot, SNAPSHOT_RELATIVE_PATH), contents);
+    await publishCatalogPair(projectRoot, { brandsContents, snapshotContents: contents });
   }
   process.stdout.write([
     `rawRecords ${collected.rawCount}`,

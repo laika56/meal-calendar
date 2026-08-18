@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import test from 'node:test';
@@ -14,10 +14,14 @@ import { normalizeCatalogText } from '../src/lib/franchiseCatalog.js';
 import {
   buildMfdsPages,
   canonicalSnapshot,
+  collectMfdsSnapshot,
+  fetchMfdsPage,
   publicBrandIdForMaker,
+  publishCatalogPair,
   reconcilePublicBrands,
   shouldReportMfdsProgress,
   toPublicCatalogRecord,
+  validateMfdsPage,
 } from '../scripts/build-mfds-franchise-data.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -57,6 +61,21 @@ async function writeFixtureJson(root, relativePath, value) {
   await writeFile(path.join(root, relativePath), `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function mfdsPage({ pageNo, totalCount, items, numOfRows = 500 }) {
+  return {
+    header: { resultCode: '00' },
+    body: { pageNo, numOfRows, totalCount, items: { item: items } },
+  };
+}
+
+function mfdsItem(code) {
+  return {
+    ...mfdsFranchiseItem,
+    FOOD_CD: `test-${code}`,
+    FOOD_NM_KR: `테스트 메뉴 ${code}`,
+  };
+}
+
 test('Subway BMT is bound to the reviewed Korean official page', async () => {
   const { records } = await loadReviewedCatalogFiles(projectRoot);
   const bmt = records.find(({ id }) => id === 'subway-menu-1528');
@@ -81,6 +100,140 @@ test('MFDS page plan covers zero, one, exact-boundary, and multi-page result set
   assert.deepEqual(buildMfdsPages(1, 500), [1]);
   assert.deepEqual(buildMfdsPages(500, 500), [1]);
   assert.deepEqual(buildMfdsPages(1_001, 500), [1, 2, 3]);
+});
+
+test('MFDS pages reject duplicated or shifted identities, wrong row size, and final-page overfill', () => {
+  const finalItem = { FOOD_CD: 'final' };
+  assert.deepEqual(
+    validateMfdsPage(mfdsPage({ pageNo: 3, totalCount: 1_001, items: [finalItem] }), {
+      pageNo: 3,
+      totalCount: 1_001,
+      rowsPerPage: 500,
+    }),
+    { totalCount: 1_001, items: [finalItem] },
+  );
+  assert.throws(
+    () => validateMfdsPage(mfdsPage({ pageNo: 2, totalCount: 1_001, items: [finalItem] }), {
+      pageNo: 3, totalCount: 1_001, rowsPerPage: 500,
+    }),
+    /pageNo/,
+  );
+  assert.throws(
+    () => validateMfdsPage(mfdsPage({ pageNo: 3, totalCount: 1_001, items: [finalItem], numOfRows: 100 }), {
+      pageNo: 3, totalCount: 1_001, rowsPerPage: 500,
+    }),
+    /numOfRows/,
+  );
+  assert.throws(
+    () => validateMfdsPage(mfdsPage({ pageNo: 3, totalCount: 1_001, items: [finalItem, finalItem] }), {
+      pageNo: 3, totalCount: 1_001, rowsPerPage: 500,
+    }),
+    /expected 1 items/,
+  );
+  assert.throws(
+    () => validateMfdsPage(mfdsPage({ pageNo: 3, totalCount: 1_001, items: Array(500).fill(finalItem) }), {
+      pageNo: 3, totalCount: 1_001, rowsPerPage: 500,
+    }),
+    /expected 1 items/,
+  );
+  assert.throws(
+    () => validateMfdsPage({ header: { resultCode: '00' }, body: { pageNo: 3, numOfRows: 500, totalCount: 1_001, items: 'invalid' } }, {
+      pageNo: 3, totalCount: 1_001, rowsPerPage: 500,
+    }),
+    /unrecognized items shape/,
+  );
+});
+
+test('MFDS fetch propagates timeout and HTTP errors without exposing the key', async () => {
+  let receivedUrl;
+  let receivedSignal;
+  await assert.rejects(
+    () => fetchMfdsPage('encoded%2Fsecret', 1, {
+      fetchImpl: async (url, options) => {
+        receivedUrl = new URL(url);
+        receivedSignal = options.signal;
+        throw new Error('request timeout');
+      },
+    }),
+    /request timeout/,
+  );
+  assert.equal(receivedUrl.searchParams.get('serviceKey'), 'encoded/secret');
+  assert.equal(receivedUrl.searchParams.get('pageNo'), '1');
+  assert.equal(receivedUrl.searchParams.get('numOfRows'), '500');
+  assert.ok(receivedSignal instanceof AbortSignal);
+  await assert.rejects(
+    () => fetchMfdsPage('key', 1, { fetchImpl: async () => ({ ok: false, status: 503 }) }),
+    /HTTP 503/,
+  );
+});
+
+test('MFDS collection bounds concurrency and merges completed pages in requested order', async () => {
+  const requested = [];
+  let active = 0;
+  let maximumActive = 0;
+  const pages = new Map([
+    [1, { totalCount: 5, items: [mfdsItem('a'), mfdsItem('b')] }],
+    [2, { totalCount: 5, items: [mfdsItem('c'), mfdsItem('d')] }],
+    [3, { totalCount: 5, items: [mfdsItem('e')] }],
+  ]);
+  const collected = await collectMfdsSnapshot('key', reviewedAt, {
+    rowsPerPage: 2,
+    concurrency: 2,
+    reportProgress: () => {},
+    fetchPage: async (_apiKey, pageNo) => {
+      requested.push(pageNo);
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, pageNo === 2 ? 15 : 1));
+      active -= 1;
+      return pages.get(pageNo);
+    },
+  });
+
+  assert.deepEqual(requested, [1, 2, 3]);
+  assert.equal(maximumActive, 2);
+  assert.deepEqual(collected.records.map(({ id }) => id), [
+    'mfds-test-a', 'mfds-test-b', 'mfds-test-c', 'mfds-test-d', 'mfds-test-e',
+  ]);
+});
+
+test('MFDS publication validates before writes and restores both files after the second replacement fails', async () => {
+  await withCatalogFixture(async (fixtureRoot) => {
+    const brandsPath = path.join(fixtureRoot, 'data/franchise/brands.json');
+    const snapshotPath = path.join(fixtureRoot, 'data/franchise/public/mfds-franchise.json');
+    const [brandsBefore, snapshotBefore] = await Promise.all([readFile(brandsPath, 'utf8'), readFile(snapshotPath, 'utf8')]);
+    let replacementCount = 0;
+    await assert.rejects(
+      () => publishCatalogPair(fixtureRoot, {
+        brandsContents: `${JSON.stringify(JSON.parse(brandsBefore), null, 4)}\n`,
+        snapshotContents: snapshotBefore,
+      }, {
+        renameFile: async (from, destination) => {
+          replacementCount += 1;
+          if (destination === snapshotPath) throw new Error('simulated second replacement failure');
+          return rename(from, destination);
+        },
+      }),
+      /simulated second replacement failure/,
+    );
+    assert.equal(replacementCount, 3);
+    assert.equal(await readFile(brandsPath, 'utf8'), brandsBefore);
+    assert.equal(await readFile(snapshotPath, 'utf8'), snapshotBefore);
+
+    let validationRenameCalls = 0;
+    await assert.rejects(
+      () => publishCatalogPair(fixtureRoot, {
+        brandsContents: '[]\n',
+        snapshotContents: snapshotBefore,
+      }, {
+        renameFile: async (...args) => {
+          validationRenameCalls += 1;
+          return rename(...args);
+        },
+      }),
+    );
+    assert.equal(validationRenameCalls, 0);
+  });
 });
 
 test('MFDS fetch progress is bounded to safe page-count checkpoints', () => {
