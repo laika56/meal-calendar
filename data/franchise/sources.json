@@ -1,0 +1,20 @@
+[
+  {
+    "id": "mfds-franchise",
+    "type": "public_data",
+    "name": "식약처 통합식품영양성분 DB",
+    "url": "https://apis.data.go.kr/1471000/FoodNtrCpntDbInfo02/getFoodNtrCpntDbInq02",
+    "licenseNote": null,
+    "checkedAt": "2026-08-18T00:00:00.000Z",
+    "active": true
+  },
+  {
+    "id": "subway-menu-1528",
+    "type": "official_brand",
+    "name": "써브웨이 코리아 이탈리안 비엠티",
+    "url": "https://www.subway.co.kr/menuView/sandwich?menuItemIdx=1528",
+    "licenseNote": null,
+    "checkedAt": "2026-08-18T00:00:00.000Z",
+    "active": true
+  }
+]

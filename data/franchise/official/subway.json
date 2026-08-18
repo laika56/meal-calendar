@@ -1,0 +1,45 @@
+[
+  {
+    "id": "subway-menu-1528",
+    "brandId": "subway",
+    "brandName": "써브웨이",
+    "name": "이탈리안 비엠티",
+    "aliases": [
+      "italian bmt",
+      "이탈리안 비엠티"
+    ],
+    "normalizedName": "이탈리안 비엠티",
+    "searchTokens": [
+      "bmt",
+      "italian",
+      "subway",
+      "써브웨이",
+      "서브웨이",
+      "이탈리안",
+      "비엠티"
+    ],
+    "category": "샌드위치",
+    "basis": {
+      "amount": 228,
+      "unit": "g",
+      "label": "1인분"
+    },
+    "nutrients": {
+      "kcal": 388,
+      "carbG": null,
+      "proteinG": 21,
+      "fatG": null,
+      "sugarG": 8.6,
+      "sodiumMg": 1064
+    },
+    "sourceId": "subway-menu-1528",
+    "sourceType": "official_brand",
+    "sourceUrl": "https://www.subway.co.kr/menuView/sandwich?menuItemIdx=1528",
+    "sourceUpdatedAt": null,
+    "verifiedAt": "2026-08-18T00:00:00.000Z",
+    "confidence": "official",
+    "active": true,
+    "createdAt": "2026-08-18T00:00:00.000Z",
+    "updatedAt": "2026-08-18T00:00:00.000Z"
+  }
+]

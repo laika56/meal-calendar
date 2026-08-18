@@ -1,0 +1,16 @@
+[
+  {
+    "id": "subway",
+    "name": "써브웨이",
+    "normalizedName": "써브웨이",
+    "aliases": [
+      "subway",
+      "서브웨이"
+    ],
+    "category": "샌드위치",
+    "officialUrl": "https://www.subway.co.kr/",
+    "active": true,
+    "createdAt": "2026-08-18T00:00:00.000Z",
+    "updatedAt": "2026-08-18T00:00:00.000Z"
+  }
+]
