@@ -1,4 +1,4 @@
-import { toEan13, upcEToUpcA } from './barcode.js';
+import { isValidBarcode, toEan13, upcEToUpcA } from './barcode.js';
 
 const RETAIL_FORMATS = new Set(['EAN13', 'EAN8', 'UPCA', 'UPCE']);
 const CORE_NUTRIENTS = ['kcal', 'proteinG', 'fatG', 'carbG'];
@@ -16,6 +16,14 @@ export function normalizeRetailBarcode(results) {
     if (result.format === 'UPCE') {
       barcode = upcEToUpcA(barcode);
       if (barcode === null) continue;
+    }
+    // EAN-8 은 EAN-13 으로 확장할 수 없다(다른 번호 체계다). 그렇다고 버리면 안 된다 —
+    // **Open Food Facts 는 EAN-8 제품을 8자리 코드 그대로 저장한다.** 발주30 은 여기서
+    // toEan13 만 통과시켰고, 그 결과 EAN-8 제품이 조회조차 안 되는 회귀가 났다
+    // (2026-08-19, 명세를 쓴 쪽 잘못이다). 체크디지트만 확인하고 원문으로 내보낸다.
+    if (barcode.length === 8) {
+      if (isValidBarcode(barcode)) return barcode;
+      continue;
     }
     const ean13 = toEan13(barcode);
     if (ean13 !== null) return ean13;

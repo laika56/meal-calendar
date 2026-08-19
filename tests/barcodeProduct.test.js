@@ -21,8 +21,24 @@ test('normalizes a valid UPC-A to EAN-13', () => {
   );
 });
 
-test('skips EAN-8 because it cannot be normalized to EAN-13', () => {
-  assert.equal(normalizeRetailBarcode([{ format: 'EAN8', text: '96385074' }]), null);
+test('passes a valid EAN-8 through unchanged instead of dropping it', () => {
+  // EAN-8 은 EAN-13 으로 확장할 수 없지만 Open Food Facts 는 8자리 코드 그대로 저장한다.
+  // 발주30 이 toEan13 만 통과시켜서 EAN-8 제품이 조회조차 안 되는 회귀가 났었다.
+  assert.equal(normalizeRetailBarcode([{ format: 'EAN8', text: '96385074' }]), '96385074');
+});
+
+test('still rejects an EAN-8 whose check digit is wrong', () => {
+  assert.equal(normalizeRetailBarcode([{ format: 'EAN8', text: '96385075' }]), null);
+});
+
+test('skips a broken EAN-8 but still finds a good code later in the batch', () => {
+  assert.equal(
+    normalizeRetailBarcode([
+      { format: 'EAN8', text: '96385075' },
+      { format: 'EAN13', text: '9780143007234' },
+    ]),
+    '9780143007234',
+  );
 });
 
 test('expands a valid UPC-E and normalizes it to EAN-13', () => {

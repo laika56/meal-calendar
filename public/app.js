@@ -1490,6 +1490,20 @@ function renderPortionPreview() {
     el.portionPreview.textContent = '양을 올바르게 입력해라.';
     return;
   }
+  // 양이 비었을 때 0kcal 을 띄우면 **DB에 값이 없는 것처럼 보인다.** 바코드로 찍으면
+  // 1인분을 모르는 채 오므로(OFF는 serving 을 안 준다) 이 화면이 기본 상태인데,
+  // 실제로는 100g당 값을 이미 받아온 상태다. 그걸 보여줘야 "스캔이 됐다"가 전달된다.
+  // 추측이 아니라 조회해온 실제 값이라 절대규칙 2·7에 걸리지 않는다.
+  if (el.portionAmount.value.trim() === '' || amountG === 0) {
+    const per100 = selectedFood.per100g ?? {};
+    const basis = selectedFood.basis === 'ml' ? 'mL' : 'g';
+    el.portionPreview.innerHTML = `
+      양을 입력하면 계산됩니다.<br>
+      <b>100${basis}당</b> ${per100.kcal ?? '?'} kcal
+      (탄 ${per100.carbG ?? '?'}g · 단 ${per100.proteinG ?? '?'}g · 지 ${per100.fatG ?? '?'}g)
+    `;
+    return;
+  }
   const scaled = scaleNutrients(selectedFood.per100g, amountG);
   el.portionPreview.innerHTML = `
     <b>${scaled.kcal ?? '?'}</b> kcal
@@ -1585,7 +1599,11 @@ function renderServingChips(food) {
     // (라멘이 100g으로 잡히는 것과 같은 부류) — 절대규칙7, 알린다.
     // 다만 「직접 재서 넣으세요」로 끝내면 **무게를 모르는 사람에게 아무 답이 아니다.**
     // 같은 분류의 대표 중량을 참고값으로 덧붙인다 (아래 renderCategoryEstimate).
-    el.servingNote.textContent = '1인분 정보 없음 — 아래 참고값을 누르거나 직접 입력하세요.';
+    // 「아래 참고값을 누르거나」라고 쓰면 안 된다 — 참고값 칩은 renderCategoryEstimate 가
+    // 식약처 분류를 찾았을 때만 생긴다. **바코드(OFF) 제품은 분류가 없어서 칩이 하나도
+    // 안 나오는데** 화면은 없는 것을 가리키고 있었다(2026-08-19 실기기 제보).
+    // 칩이 실제로 생기면 renderCategoryEstimate 가 이 문구를 자기 것으로 덮는다.
+    el.servingNote.textContent = '1인분 정보 없음 — 먹은 양을 직접 입력하세요.';
     el.servingNote.hidden = false;
   } else {
     el.servingNote.hidden = true;
