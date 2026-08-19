@@ -11,8 +11,16 @@
 <title>식단 캘린더</title>
 <!-- app.js가 import를 하나씩 만날 때마다 순차로 받아오던 걸 병렬로 바꾼다.
      파일 수는 그대로지만 왕복이 순차→병렬이라 체감 로딩이 줄어든다.
-     db.js/Firebase SDK는 일부러 안 넣는다 — 동적 import로 늦게 부르는 게
-     의도된 최적화다(app.js 주석 참고), 여기서 미리 당기면 그 의도가 깨진다. -->
+
+     **db.js도 여기 넣는다(2026-08-20 정정).** 예전 주석은 "동적 import 로 늦게 부르는 게
+     의도된 최적화라 미리 당기면 깨진다"고 적어뒀는데, 그건 두 가지를 섞은 것이다.
+     실행을 막는 건 **정적 import** 고, `modulepreload` 는 캐시만 데운다 — 동적 import 는
+     여전히 app.js 40번째 줄 그 자리에서 일어나고 캘린더 그리드는 그대로 네트워크 없이 뜬다.
+
+     안 당겼을 때 무슨 일이 나는지 실측했다(2026-08-19 배포본): app.js 는 자기 정적
+     import 39개가 전부 풀려야 실행되므로, 그 안의 `import('/public/db.js')` 가
+     **셸이 다 끝난 1,421ms 에야** 시작했다. 그 뒤로 인증(→1,742ms) → firestore(→2,793ms)
+     가 줄줄이 밀렸다. **SDK 를 셸과 나란히 받게만 해도 그 줄이 통째로 앞당겨진다.** -->
 <!-- 첫 화면 뒤의 지연은 앱 코드가 아니라 **외부 호스트 4곳과의 연결 수립**이다.
      2026-08-19 배포본 실측: 앱 리소스 24개는 서비스워커 캐시에서 13~35ms 에 끝나는데,
      그 뒤 gstatic(SDK) → securetoken(토큰) → identitytoolkit(계정) → firestore(데이터)가
@@ -25,6 +33,13 @@
 <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
 <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
 <link rel="modulepreload" href="/public/app.js">
+<!-- db.js 와 그 안의 Firebase SDK. 셸과 **나란히** 받게 하려고 명시한다 — 위 설명 참고.
+     gstatic 세 개를 직접 적는 이유: modulepreload 가 의존 모듈까지 따라가는지는
+     브라우저마다 다르고, 여기서 아끼려는 게 바로 그 왕복이라 추측에 맡기지 않는다. -->
+<link rel="modulepreload" href="/public/db.js">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js" crossorigin>
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js" crossorigin>
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js" crossorigin>
 <link rel="modulepreload" href="/src/lib/calendarGrid.js">
 <link rel="modulepreload" href="/src/lib/metabolism.js">
 <link rel="modulepreload" href="/src/lib/dayTotals.js">
