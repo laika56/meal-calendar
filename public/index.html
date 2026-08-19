@@ -39,6 +39,7 @@
 <link rel="modulepreload" href="/src/lib/uiDashboard.js">
 <link rel="modulepreload" href="/src/lib/offParser.js">
 <link rel="modulepreload" href="/src/lib/barcodeProduct.js">
+<link rel="modulepreload" href="/src/lib/nutritionLabelCamera.js">
 <style>
   :root {
     --bg: #0a0b0d; --fg: #f2f4f7; --muted: #9aa2ad;
@@ -519,6 +520,25 @@
     text-align: center;
   }
   .barcode-copy-bank { display: none; }
+  .nutrition-label-reticle {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 88%; aspect-ratio: 4 / 3; border: 2px solid var(--ok-bright);
+    border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .55);
+  }
+  .nutrition-label-reticle::after {
+    content: '영양성분표를 이 안에 맞춰주세요';
+    position: absolute; left: 0; right: 0; bottom: -34px;
+    color: var(--fg); font-size: 12px; text-align: center;
+  }
+  .nutrition-label-actions {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;
+  }
+  .nutrition-label-actions button, .nutrition-label-actions label {
+    display: grid; place-items: center; min-height: 44px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+    color: var(--muted); font: inherit; font-size: 13px; cursor: pointer;
+  }
+  .nutrition-label-actions input { display: none; }
   .quick-hint {
     color: var(--muted); font-size: 12px; line-height: 1.55;
     margin: -2px 0 10px;
@@ -857,11 +877,8 @@
 
     <button id="barcodeOpen" class="barcode-open" type="button">바코드 스캔</button>
     <div class="feature-actions">
-      <label for="nutritionLabelFile" id="nutritionLabelOpen">영양성분표 촬영
-        <input id="nutritionLabelFile" type="file" accept="image/*" capture="environment">
-      </label>
+      <button id="nutritionLabelOpen" type="button">영양성분표 인식</button>
     </div>
-    <div id="nutritionLabelStatus" class="search-status" aria-live="polite" hidden></div>
 
     <div id="quickPresets" class="quick-section" hidden>
       <h3>자주 먹는 것</h3>
@@ -930,6 +947,27 @@
         <span>Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.</span>
         <span>제품은 찾았지만 영양정보가 없습니다. 직접 입력해 주세요.</span>
         <span>카메라를 사용할 수 없습니다. 직접 입력해 주세요.</span>
+      </div>
+    </div>
+
+    <div id="nutritionLabelScanner" class="barcode-scanner" hidden>
+      <div class="sheet-header">
+        <button id="nutritionLabelCancel" type="button">취소</button>
+        <h2>영양성분표를 비춰주세요</h2>
+      </div>
+      <div class="barcode-stage">
+        <video id="nutritionLabelVideo" playsinline muted autoplay></video>
+        <div class="nutrition-label-reticle" aria-hidden="true"></div>
+      </div>
+      <canvas id="nutritionLabelCanvas"></canvas>
+      <div id="nutritionLabelStatus" class="barcode-status" aria-live="polite">
+        흔들리지 않게 비추면 자동으로 인식합니다.
+      </div>
+      <div class="nutrition-label-actions">
+        <button id="nutritionLabelCapture" type="button">지금 인식</button>
+        <label for="nutritionLabelFile">사진에서 불러오기
+          <input id="nutritionLabelFile" type="file" accept="image/*">
+        </label>
       </div>
     </div>
 

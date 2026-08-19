@@ -26,7 +26,8 @@ import {
   runSingleSearchConsumer,
 } from '/public/searchSelectionGate.js';
 import { parseNutritionLabel } from '/src/lib/nutritionLabel.js';
-import { recognizeNutritionLabel } from '/public/nutritionLabelOcr.js';
+import { assessLabelFrame, labelFrameSignature } from '/src/lib/nutritionLabelCamera.js';
+import { createNutritionLabelRecognizer, recognizeNutritionLabel } from '/public/nutritionLabelOcr.js';
 import { revisionReason, reviseEntry } from '/src/lib/entryRevision.js';
 import { sevenDayKeys, summarizeSevenDays } from '/src/lib/weeklySummary.js';
 import { buildExportEnvelope, serializeDaysCsv, serializeExportJson, validateExportEnvelope } from '/src/lib/dataTransfer.js';
@@ -158,6 +159,12 @@ const el = {
   barcodeCanvas: document.getElementById('barcodeCanvas'),
   barcodeStatus: document.getElementById('barcodeStatus'),
   barcodeCancel: document.getElementById('barcodeCancel'),
+  nutritionLabelOpen: document.getElementById('nutritionLabelOpen'),
+  nutritionLabelScanner: document.getElementById('nutritionLabelScanner'),
+  nutritionLabelVideo: document.getElementById('nutritionLabelVideo'),
+  nutritionLabelCanvas: document.getElementById('nutritionLabelCanvas'),
+  nutritionLabelCancel: document.getElementById('nutritionLabelCancel'),
+  nutritionLabelCapture: document.getElementById('nutritionLabelCapture'),
   nutritionLabelFile: document.getElementById('nutritionLabelFile'),
   nutritionLabelStatus: document.getElementById('nutritionLabelStatus'),
   weeklySummary: document.getElementById('weeklySummary'),
@@ -1001,6 +1008,7 @@ async function renderQuickPicks() {
 
 function openEntryForm(slotKey, slotLabel) {
   stopBarcodeScanner();
+  releaseNutritionLabelScanner();
   state.pendingSlot = slotKey;
   el.entryTitle.textContent = `${slotLabel} 항목 추가`;
   el.entryForm.reset();
@@ -1017,32 +1025,9 @@ function openEntryForm(slotKey, slotLabel) {
   renderQuickPicks();
 }
 
-el.nutritionLabelFile.addEventListener('change', async () => {
-  const [file] = el.nutritionLabelFile.files ?? [];
-  if (!file) return;
-  el.nutritionLabelStatus.hidden = false;
-  el.nutritionLabelStatus.textContent = '영양성분표를 기기에서 읽는 중…';
-  try {
-    const parsed = parseNutritionLabel(await recognizeNutritionLabel(file));
-    el.entryForm.name.value = '';
-    el.entryForm.amountG.value = parsed.amount ?? '';
-    el.entryForm.kcal.value = parsed.kcal ?? '';
-    el.entryForm.carbG.value = parsed.carbG ?? '';
-    el.entryForm.proteinG.value = parsed.proteinG ?? '';
-    el.entryForm.fatG.value = parsed.fatG ?? '';
-    manualEntryContext = { source: 'nutrition-label', addedBy: 'label-scan', numericFields: {} };
-    el.nutritionLabelStatus.textContent = '읽은 값을 포장지와 대조한 뒤 이름·양·열량을 확인해 주세요.';
-    el.entryForm.name.focus();
-  } catch (error) {
-    console.error('[meal-calendar] 영양성분표 OCR 실패', error);
-    el.nutritionLabelStatus.textContent = '사진을 읽지 못했습니다. 아래 칸에 직접 입력해 주세요.';
-  } finally {
-    el.nutritionLabelFile.value = '';
-  }
-});
-
 document.getElementById('closeEntry').addEventListener('click', () => {
   stopBarcodeScanner();
+  releaseNutritionLabelScanner();
   el.entrySheet.hidden = true;
   state.pendingSlot = null;
 });
@@ -1055,6 +1040,7 @@ document.getElementById('closeEntry').addEventListener('click', () => {
 function showEntryPanel(panel) {
   el.entryChooser.hidden = panel !== 'chooser';
   el.barcodeScanner.hidden = panel !== 'barcode';
+  el.nutritionLabelScanner.hidden = panel !== 'nutritionLabel';
   el.portionPrompt.hidden = panel !== 'portion';
   el.multiConfirm.hidden = panel !== 'multiConfirm';
   el.addSuccess.hidden = panel !== 'addSuccess';
@@ -1063,6 +1049,203 @@ function showEntryPanel(panel) {
 function showPortionPrompt(show) {
   showEntryPanel(show ? 'portion' : 'chooser');
 }
+
+let nutritionLabelStream = null;
+let nutritionLabelFrame = null;
+let nutritionLabelSession = 0;
+let nutritionLabelRecognizer = null;
+let nutritionLabelBusy = false;
+let nutritionLabelPreviousSignature = null;
+let nutritionLabelStableFrames = 0;
+let nutritionLabelLastSampleAt = 0;
+
+function setNutritionLabelStatus(message) {
+  el.nutritionLabelStatus.textContent = message;
+}
+
+function applyNutritionLabel(parsed) {
+  if (parsed.amount === null || parsed.kcal === null) return false;
+  el.entryForm.name.value = '';
+  el.entryForm.amountG.value = parsed.amount;
+  el.entryForm.kcal.value = parsed.kcal;
+  el.entryForm.carbG.value = parsed.carbG ?? '';
+  el.entryForm.proteinG.value = parsed.proteinG ?? '';
+  el.entryForm.fatG.value = parsed.fatG ?? '';
+  manualEntryContext = { source: 'nutrition-label', addedBy: 'label-scan', numericFields: {} };
+  releaseNutritionLabelScanner();
+  showEntryPanel('chooser');
+  el.searchStatus.className = 'search-status search-status-warning';
+  el.searchStatus.textContent = '읽은 값을 포장지와 대조한 뒤 이름·양·열량을 확인해 주세요.';
+  el.searchStatus.hidden = false;
+  el.entryForm.name.focus();
+  return true;
+}
+
+function drawNutritionLabelFrame() {
+  const video = el.nutritionLabelVideo;
+  const { videoWidth, videoHeight } = video;
+  if (videoWidth <= 0 || videoHeight <= 0) return null;
+  const sourceWidth = Math.round(videoWidth * 0.88);
+  const sourceHeight = Math.min(Math.round(sourceWidth * 0.75), Math.round(videoHeight * 0.72));
+  const sourceX = Math.round((videoWidth - sourceWidth) / 2);
+  const sourceY = Math.round((videoHeight - sourceHeight) / 2);
+  const width = Math.min(sourceWidth, 1000);
+  const height = Math.max(1, Math.round(sourceHeight * width / sourceWidth));
+  const canvas = el.nutritionLabelCanvas;
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(video, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, width, height);
+  return context.getImageData(0, 0, width, height);
+}
+
+function nutritionCanvasBlob() {
+  return new Promise((resolve, reject) => {
+    el.nutritionLabelCanvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('nutrition label frame is unavailable'));
+    }, 'image/jpeg', 0.92);
+  });
+}
+
+async function recognizeNutritionLabelFrame(session) {
+  if (nutritionLabelBusy || session !== nutritionLabelSession || !nutritionLabelStream) return;
+  nutritionLabelBusy = true;
+  if (nutritionLabelFrame !== null) cancelAnimationFrame(nutritionLabelFrame);
+  nutritionLabelFrame = null;
+  setNutritionLabelStatus('영양성분표를 읽는 중입니다.');
+  try {
+    const blob = await nutritionCanvasBlob();
+    if (session !== nutritionLabelSession) return;
+    let recognizer = nutritionLabelRecognizer;
+    if (!recognizer) {
+      recognizer = await createNutritionLabelRecognizer();
+      if (session !== nutritionLabelSession) {
+        await recognizer.close();
+        return;
+      }
+      nutritionLabelRecognizer = recognizer;
+    }
+    const text = await recognizer.recognize(blob);
+    if (session !== nutritionLabelSession) return;
+    if (applyNutritionLabel(parseNutritionLabel(text))) return;
+    setNutritionLabelStatus('양과 열량을 찾지 못했습니다. 영양성분표를 더 가까이 비춰주세요.');
+  } catch (error) {
+    console.error('[meal-calendar] 영양성분표 자동 인식 실패', error);
+    if (session === nutritionLabelSession) {
+      setNutritionLabelStatus('인식하지 못했습니다. 다시 비추거나 지금 인식 버튼을 눌러주세요.');
+    }
+  } finally {
+    nutritionLabelBusy = false;
+    nutritionLabelPreviousSignature = null;
+    nutritionLabelStableFrames = 0;
+    if (session === nutritionLabelSession && nutritionLabelStream) {
+      nutritionLabelFrame = requestAnimationFrame((time) => sampleNutritionLabelFrame(time, session));
+    }
+  }
+}
+
+function sampleNutritionLabelFrame(time, session) {
+  nutritionLabelFrame = null;
+  if (session !== nutritionLabelSession || !nutritionLabelStream || nutritionLabelBusy) return;
+  if (time - nutritionLabelLastSampleAt >= 200) {
+    nutritionLabelLastSampleAt = time;
+    const image = drawNutritionLabelFrame();
+    if (image) {
+      const signature = labelFrameSignature(image.data, image.width, image.height);
+      const assessment = assessLabelFrame(nutritionLabelPreviousSignature, signature);
+      nutritionLabelPreviousSignature = signature;
+      nutritionLabelStableFrames = assessment.sharp && assessment.stable
+        ? nutritionLabelStableFrames + 1
+        : 0;
+      if (nutritionLabelStableFrames >= 3) {
+        recognizeNutritionLabelFrame(session);
+        return;
+      }
+      setNutritionLabelStatus(assessment.sharp
+        ? '흔들리지 않게 잠시 유지해 주세요.'
+        : '글자가 선명하게 보이도록 더 가까이 비춰주세요.');
+    }
+  }
+  nutritionLabelFrame = requestAnimationFrame((nextTime) => sampleNutritionLabelFrame(nextTime, session));
+}
+
+function releaseNutritionLabelScanner() {
+  nutritionLabelSession += 1;
+  if (nutritionLabelFrame !== null) cancelAnimationFrame(nutritionLabelFrame);
+  nutritionLabelFrame = null;
+  for (const track of nutritionLabelStream?.getTracks?.() ?? []) track.stop();
+  nutritionLabelStream = null;
+  el.nutritionLabelVideo.pause();
+  el.nutritionLabelVideo.srcObject = null;
+  nutritionLabelBusy = false;
+  nutritionLabelPreviousSignature = null;
+  nutritionLabelStableFrames = 0;
+  const recognizer = nutritionLabelRecognizer;
+  nutritionLabelRecognizer = null;
+  recognizer?.close().catch((error) => console.error('[meal-calendar] OCR 종료 실패', error));
+}
+
+async function startNutritionLabelScanner() {
+  releaseCamera();
+  releaseNutritionLabelScanner();
+  const session = nutritionLabelSession;
+  showEntryPanel('nutritionLabel');
+  setNutritionLabelStatus('카메라를 준비하는 중입니다.');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' } },
+      audio: false,
+    });
+    if (session !== nutritionLabelSession) {
+      for (const track of stream.getTracks()) track.stop();
+      return;
+    }
+    nutritionLabelStream = stream;
+    el.nutritionLabelVideo.srcObject = stream;
+    await el.nutritionLabelVideo.play();
+    setNutritionLabelStatus('흔들리지 않게 비추면 자동으로 인식합니다.');
+    nutritionLabelFrame = requestAnimationFrame((time) => sampleNutritionLabelFrame(time, session));
+  } catch (error) {
+    console.error('[meal-calendar] 영양성분표 카메라 시작 실패', error);
+    releaseNutritionLabelScanner();
+    showEntryPanel('chooser');
+    el.searchStatus.className = 'search-status search-status-warning';
+    el.searchStatus.textContent = '카메라를 사용할 수 없습니다. 사진을 불러오거나 직접 입력해 주세요.';
+    el.searchStatus.hidden = false;
+  }
+}
+
+el.nutritionLabelOpen.addEventListener('click', startNutritionLabelScanner);
+el.nutritionLabelCancel.addEventListener('click', () => {
+  releaseNutritionLabelScanner();
+  showEntryPanel('chooser');
+});
+el.nutritionLabelCapture.addEventListener('click', () => {
+  if (!drawNutritionLabelFrame()) {
+    setNutritionLabelStatus('카메라 화면을 준비하는 중입니다.');
+    return;
+  }
+  recognizeNutritionLabelFrame(nutritionLabelSession);
+});
+el.nutritionLabelFile.addEventListener('change', async () => {
+  const [file] = el.nutritionLabelFile.files ?? [];
+  if (!file) return;
+  const session = nutritionLabelSession;
+  setNutritionLabelStatus('영양성분표를 기기에서 읽는 중입니다.');
+  try {
+    const parsed = parseNutritionLabel(await recognizeNutritionLabel(file));
+    if (session !== nutritionLabelSession) return;
+    if (!applyNutritionLabel(parsed)) {
+      setNutritionLabelStatus('양과 열량을 찾지 못했습니다. 다른 사진을 선택하거나 직접 입력해 주세요.');
+    }
+  } catch (error) {
+    console.error('[meal-calendar] 영양성분표 OCR 실패', error);
+    setNutritionLabelStatus('사진을 읽지 못했습니다. 다른 사진을 선택하거나 직접 입력해 주세요.');
+  } finally {
+    el.nutritionLabelFile.value = '';
+  }
+});
 
 const ZXING_READER_URL = 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.3/dist/iife/reader/index.js';
 const BARCODE_FORMATS = ['EAN13', 'EAN8', 'UPCA', 'UPCE'];
@@ -1221,6 +1404,7 @@ async function scanBarcodeFrame(zxing, session) {
 }
 
 async function startBarcodeScanner() {
+  releaseNutritionLabelScanner();
   stopBarcodeScanner();
   const session = barcodeSession;
   showEntryPanel('barcode');
@@ -1264,6 +1448,7 @@ el.barcodeOpen.addEventListener('click', startBarcodeScanner);
 // 'ended' 가 되므로 hasLiveCamera() 가 false 를 주고 다음 열 때 새로 받는다.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') releaseCamera();
+  if (document.visibilityState === 'hidden') releaseNutritionLabelScanner();
 });
 el.barcodeCancel.addEventListener('click', () => {
   stopBarcodeScanner();

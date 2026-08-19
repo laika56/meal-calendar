@@ -10,6 +10,7 @@ const db = await readFile(new URL('public/db.js', root), 'utf8');
 test('shell exposes all six reliability and reuse entry points', () => {
   for (const id of [
     'nutritionLabelOpen', 'nutritionLabelFile', 'nutritionLabelStatus',
+    'nutritionLabelScanner', 'nutritionLabelVideo', 'nutritionLabelCanvas', 'nutritionLabelCancel',
     'openWeeklySummary', 'weeklySummary', 'weeklySummaryContent',
     'exportJson', 'exportCsv', 'importJsonFile', 'importStatus',
     'saveDayPreset', 'revisionHistory', 'revisionHistoryContent',
@@ -19,9 +20,18 @@ test('shell exposes all six reliability and reuse entry points', () => {
 test('app imports and consumes every approved pure module', () => {
   for (const module of [
     'nutritionLabel.js', 'weeklySummary.js', 'entryRevision.js',
-    'dataTransfer.js', 'presetV2.js', 'nutritionLabelOcr.js',
+    'dataTransfer.js', 'presetV2.js', 'nutritionLabelOcr.js', 'nutritionLabelCamera.js',
   ]) assert.match(app, new RegExp(module.replace('.', '\\.')));
   assert.match(app, /lookupBarcodeIdentity/);
+});
+
+test('nutrition label scanner auto-captures stable frames and keeps manual fallbacks', () => {
+  assert.match(html, /id="nutritionLabelCapture"/);
+  assert.match(html, /사진에서 불러오기/);
+  assert.match(app, /navigator\.mediaDevices\.getUserMedia/);
+  assert.match(app, /nutritionLabelStableFrames >= 3/);
+  assert.match(app, /parsed\.amount === null \|\| parsed\.kcal === null/);
+  assert.match(app, /releaseNutritionLabelScanner/);
 });
 
 test('database exposes range, export, restore, and structured preset boundaries', () => {
