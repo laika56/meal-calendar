@@ -301,6 +301,7 @@ standalone에서 실제 포장 바코드 판독 속도·초점·권한 재요청
 
 | 대상 | 잡은 쪽 | 상태 |
 |---|---|---|
+| `src/lib/barcodeProduct.js`, `tests/barcodeProduct.test.js` 체크디지트 검증 배선 | **Codex** | **완료·Claude 검수통과 (2026-08-19)** — 타깃 14/14, Claude 독립 검산 15/15. Codex 가 `SHELL_REVISION` 갱신 필요를 정확히 짚고 `public/` 금지를 지켜 멈췄다(계약대로 동작). 발주서가 그 항목을 빠뜨린 게 원인이라 **Claude 가 `public/sw.js` 의 `SHELL_REVISION` 을 재계산해 갱신**했고 전체 453 중 452 pass·0 fail·1 skip(에뮬레이터) |
 | `scripts/build-mfds-franchise-data.mjs`, `tests/franchiseCatalogData.test.js`, Task 3 report | **Codex** | **완료 (2026-08-18)** — Task 3 review-fix round 4/5, 실패 시 독립 old/new 복구본 무조건 보존·경로 보고. focused 22/22, 전체 373/373, validator 통과 |
 | `src/lib/offParser.js`, `tests/offParser.test.js` | **Codex** | **완료·Claude 검수통과(2026-08-18)** — 명세 11개 케이스 전부 매칭, 직접 재실행 확인. 사용자 컨펌 대기 → `orders/28` |
 | `src/lib/metabolism.js`, `src/lib/units.js` + 테스트 | **Codex** | **완료·커밋** (`meal-calendar` `0a1cf7c`) → `orders/01`, `orders/03` |

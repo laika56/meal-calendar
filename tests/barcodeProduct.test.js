@@ -7,24 +7,68 @@ import {
   toBarcodeFood,
 } from '../src/lib/barcodeProduct.js';
 
-test('selects the first supported retail barcode result', () => {
+test('returns a valid EAN-13 unchanged and trims scanner text', () => {
+  assert.equal(
+    normalizeRetailBarcode([{ format: 'EAN13', text: '  9780143007234  ' }]),
+    '9780143007234',
+  );
+});
+
+test('normalizes a valid UPC-A to EAN-13', () => {
+  assert.equal(
+    normalizeRetailBarcode([{ format: 'UPCA', text: '036000291452' }]),
+    '0036000291452',
+  );
+});
+
+test('skips EAN-8 because it cannot be normalized to EAN-13', () => {
+  assert.equal(normalizeRetailBarcode([{ format: 'EAN8', text: '96385074' }]), null);
+});
+
+test('expands a valid UPC-E and normalizes it to EAN-13', () => {
+  assert.equal(
+    normalizeRetailBarcode([{ format: 'UPCE', text: '04252614' }]),
+    '0042100005264',
+  );
+});
+
+test('rejects invalid UPC-E and invalid EAN-13 check digits', () => {
+  assert.equal(normalizeRetailBarcode([{ format: 'UPCE', text: '01278906' }]), null);
+  assert.equal(normalizeRetailBarcode([{ format: 'EAN13', text: '9780143007235' }]), null);
+});
+
+test('uses the first usable barcode whether invalid input comes before or after it', () => {
+  const invalid = { format: 'EAN13', text: '9780143007235' };
+  const valid = { format: 'EAN13', text: '9780143007234' };
+
+  assert.equal(normalizeRetailBarcode([invalid, valid]), '9780143007234');
+  assert.equal(normalizeRetailBarcode([valid, invalid]), '9780143007234');
+});
+
+test('skips non-retail results and continues to a usable retail barcode', () => {
   assert.equal(normalizeRetailBarcode([
-    { text: 'not-retail', format: 'QRCode' },
-    { text: '8801234567890', format: 'EAN13' },
-    { text: '12345678', format: 'EAN8' },
-  ]), '8801234567890');
+    { format: 'QR_CODE', text: '9780143007234' },
+    { format: 'UPCA', text: '036000291452' },
+  ]), '0036000291452');
+  assert.equal(
+    normalizeRetailBarcode([{ format: 'QR_CODE', text: '9780143007234' }]),
+    null,
+  );
 });
 
-test('accepts every approved retail barcode format and trims scanner text', () => {
-  for (const format of ['EAN13', 'EAN8', 'UPCA', 'UPCE']) {
-    assert.equal(normalizeRetailBarcode([{ text: ' 012345678905 ', format }]), '012345678905');
-  }
+test('skips nullish results and unusable text without throwing', () => {
+  assert.equal(normalizeRetailBarcode([
+    null,
+    undefined,
+    { format: 'EAN13', text: null },
+    { format: 'EAN13', text: '   ' },
+    { format: 'EAN13', text: '9780143007234' },
+  ]), '9780143007234');
 });
 
-test('returns null when no supported result has nonempty text', () => {
+test('returns null when no result is usable', () => {
   assert.equal(normalizeRetailBarcode([]), null);
   assert.equal(normalizeRetailBarcode([{ text: '', format: 'EAN13' }]), null);
-  assert.equal(normalizeRetailBarcode([{ text: '8801234567890', format: 'QRCode' }]), null);
 });
 
 test('rejects a scanner payload that is not an array', () => {

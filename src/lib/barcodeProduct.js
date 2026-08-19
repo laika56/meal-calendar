@@ -1,3 +1,5 @@
+import { toEan13, upcEToUpcA } from './barcode.js';
+
 const RETAIL_FORMATS = new Set(['EAN13', 'EAN8', 'UPCA', 'UPCE']);
 const CORE_NUTRIENTS = ['kcal', 'proteinG', 'fatG', 'carbG'];
 
@@ -9,8 +11,14 @@ export function normalizeRetailBarcode(results) {
   for (const result of results) {
     if (!RETAIL_FORMATS.has(result?.format)) continue;
     if (typeof result.text !== 'string') continue;
-    const barcode = result.text.trim();
-    if (barcode) return barcode;
+    let barcode = result.text.trim();
+    if (!barcode) continue;
+    if (result.format === 'UPCE') {
+      barcode = upcEToUpcA(barcode);
+      if (barcode === null) continue;
+    }
+    const ean13 = toEan13(barcode);
+    if (ean13 !== null) return ean13;
   }
   return null;
 }
