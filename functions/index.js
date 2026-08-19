@@ -13,6 +13,10 @@ import {
 } from './shared/franchiseCatalog.js';
 import { buildSearchPlan } from './shared/searchPlan.js';
 import { mergeSearchResults, rankSearchResults } from './shared/searchResults.js';
+import {
+  canonicalBarcode as canonicalCatalogBarcode,
+  queryBarcodeCatalog as queryBarcodeCatalogFromFirestore,
+} from './shared/barcodeCatalogLookup.js';
 
 initializeApp();
 
@@ -284,3 +288,47 @@ export function createSearchFoods({
 }
 
 export const searchFoods = createSearchFoods();
+
+function requireBarcodeDependencies(dependencies) {
+  if (!dependencies || typeof dependencies !== 'object' || Array.isArray(dependencies)
+    || typeof dependencies.queryBarcodeCatalog !== 'function') {
+    throw new TypeError('barcode dependencies.queryBarcodeCatalog must be a function');
+  }
+  return dependencies;
+}
+
+export async function runBarcodeLookup(code, dependencies) {
+  const { queryBarcodeCatalog } = requireBarcodeDependencies(dependencies);
+  const item = await queryBarcodeCatalog(code);
+  return item === null ? { item: null } : { item, source: 'shared-catalog' };
+}
+
+export function createBarcodeFood({
+  authenticate = requireAuth,
+  queryBarcodeCatalog = (code) => queryBarcodeCatalogFromFirestore(getFirestore(), code),
+} = {}) {
+  return onRequest(
+    { region: 'asia-northeast3', cors: false },
+    async (req, res) => {
+      try {
+        await authenticate(req);
+      } catch (error) {
+        res.status(error.status ?? 401).json({ error: error.message ?? '인증 실패' });
+        return;
+      }
+      const code = String(req.query.code ?? '').trim();
+      if (canonicalCatalogBarcode(code) === null) {
+        res.status(400).json({ error: '유효한 바코드가 필요하다' });
+        return;
+      }
+      try {
+        res.status(200).json(await runBarcodeLookup(code, { queryBarcodeCatalog }));
+      } catch (error) {
+        logger.error('[barcode-catalog] 조회 실패', error);
+        res.status(503).json({ error: '바코드 카탈로그를 확인하지 못했다' });
+      }
+    },
+  );
+}
+
+export const barcodeFood = createBarcodeFood();

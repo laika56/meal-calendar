@@ -2,9 +2,31 @@
 
 **이 파일이 현재 상태의 단일 출처다.** 다른 곳에 진행 목록을 만들지 않는다.
 
-최종 갱신: 2026-08-18
+최종 갱신: 2026-08-19
 
 ## 지금 상태
+
+## ✅ 공용 국내 바코드 카탈로그 1차 운영 반영 (2026-08-19)
+
+개인 스캔 이력을 학습하거나 저장하지 않고, 식약처 FoodQR 전체 공개 데이터에서 검증된
+바코드만 공용 Firestore 카탈로그로 게시했다. 스캔은 공용 카탈로그를 먼저 조회하고 miss나
+장애일 때 기존 Open Food Facts를 조회한다. 두 곳에 없으면 값을 만들지 않고 수동 입력으로 간다.
+
+- 원본 전수 측정: FoodQR 목록 4,033 / 표시 3,995 / 영양 43,442행,
+  식품이력추적 98,299행, 통합영양성분 319,060행
+- 게시: FoodQR 415 + 정확 품목보고번호 조인 1,694 = 총 2,109개, material SHA-256
+  `60609134883ac1a12778f856db77a907dffa5eb6efe6be52d1938252c023ef9d`
+- Firestore: ready run 2,109개와 실제 collection 2,109개 일치, payload SHA-256
+  `10b9e342daa7a8de7409b3bd0fdede59ac5f341967bc1dc7ba70ac164878b250`
+- 배포: `barcodeFood`(서울), Firestore deny rules, Hosting 완료
+- 운영 검증: 인증 hit 200, `8801392194078`은 공용 카탈로그와 OFF 모두 정직한 miss,
+  인증 사용자의 카탈로그 직접 read는 403
+- 전체 자동 검증: 514 tests 중 513 pass, 0 fail, emulator 전용 1 skip;
+  별도 공식 임시 JRE 에뮬레이터 실행 2/2 pass
+
+식품안전나라 C005/I2570은 측정 당시 `ERROR-503`이라 이번 게시에서 제외했다. 키를 앱이나
+저장소에 넣지 않았고, 서비스가 정상화되면 동일한 전체 측정·검증 절차로 추가한다. 실기기에서
+알려진 2,109개 중 하나의 실제 포장을 스캔하는 확인은 남아 있다.
 
 ## ✅ 프랜차이즈 카탈로그 운영 반영 완료 (2026-08-19)
 
@@ -301,6 +323,7 @@ standalone에서 실제 포장 바코드 판독 속도·초점·권한 재요청
 
 | 대상 | 잡은 쪽 | 상태 |
 |---|---|---|
+| 공용 국내 바코드 카탈로그(C005/I2570·식품이력추적·FoodQR) | **Codex** | **설계 명세 작성·사용자 검토 대기 (2026-08-19)** — 개인 학습 DB 없이 벌크 공용 카탈로그 우선 + OFF fallback. 인증키 비저장, 실데이터 분포·license gate 후 TDD |
 | `src/lib/barcodeProduct.js`, `tests/barcodeProduct.test.js` 체크디지트 검증 배선 | **Codex** | **완료·Claude 검수통과 (2026-08-19)** — 타깃 14/14, Claude 독립 검산 15/15. Codex 가 `SHELL_REVISION` 갱신 필요를 정확히 짚고 `public/` 금지를 지켜 멈췄다(계약대로 동작). 발주서가 그 항목을 빠뜨린 게 원인이라 **Claude 가 `public/sw.js` 의 `SHELL_REVISION` 을 재계산해 갱신**했고 전체 453 중 452 pass·0 fail·1 skip(에뮬레이터) |
 | `scripts/build-mfds-franchise-data.mjs`, `tests/franchiseCatalogData.test.js`, Task 3 report | **Codex** | **완료 (2026-08-18)** — Task 3 review-fix round 4/5, 실패 시 독립 old/new 복구본 무조건 보존·경로 보고. focused 22/22, 전체 373/373, validator 통과 |
 | `src/lib/offParser.js`, `tests/offParser.test.js` | **Codex** | **완료·Claude 검수통과(2026-08-18)** — 명세 11개 케이스 전부 매칭, 직접 재실행 확인. 사용자 컨펌 대기 → `orders/28` |

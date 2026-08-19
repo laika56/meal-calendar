@@ -401,3 +401,18 @@ export async function searchFoods(q) {
   }
   return normalizeSearchFoodsResponse(await res.json());
 }
+
+export async function lookupBarcode(code) {
+  requireUid();
+  const token = await auth.currentUser.getIdToken();
+  const res = await fetch(`/api/foods/barcode?code=${encodeURIComponent(code)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `바코드 조회 실패 (${res.status})`);
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+    || !Object.hasOwn(body, 'item') || (body.item !== null && typeof body.item !== 'object')) {
+    throw new Error('바코드 조회 응답을 이해할 수 없습니다.');
+  }
+  return body.item;
+}

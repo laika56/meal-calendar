@@ -10,6 +10,7 @@ const sourceDir = new URL('../src/lib/', import.meta.url);
 const fixCommand = 'node scripts/check-shared-sync.mjs --fix';
 const shouldFix = process.argv.slice(2).includes('--fix');
 const requiredSharedFiles = [
+  'barcodeCatalogLookup.js',
   'franchiseCatalog.js',
   'mfdsParser.js',
   'searchPlan.js',

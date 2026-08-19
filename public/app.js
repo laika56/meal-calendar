@@ -13,8 +13,9 @@ import {
 import { monthDashboardSummary, progressPercent, servingChoiceOptions } from '/src/lib/uiDashboard.js';
 import { parseOffProduct } from '/src/lib/offParser.js';
 import {
-  buildOpenFoodFactsUrl, normalizeRetailBarcode, toBarcodeFood,
+  buildOpenFoodFactsUrl, normalizeRetailBarcode, sharedCatalogRecordToFood, toBarcodeFood,
 } from '/src/lib/barcodeProduct.js';
+import { resolveBarcodeSources } from '/public/barcodeLookupFlow.js';
 import { createSearchResult } from '/public/searchResult.js';
 import {
   buildPartialNutritionProvenance, formNumber, showPartialNutritionEntry,
@@ -1007,52 +1008,29 @@ function showBarcodeManual(message, name = '') {
 
 async function resolveBarcodeProduct(barcode, session) {
   el.barcodeStatus.textContent = '제품 정보를 확인하고 있습니다.';
-  let response;
-  try {
-    response = await fetch(buildOpenFoodFactsUrl(barcode));
-    if (!response.ok) throw new Error(`Open Food Facts HTTP ${response.status}`);
-  } catch (error) {
-    console.error('[meal-calendar] Open Food Facts 조회 실패', error);
-    if (session === barcodeSession) {
-      showBarcodeManual('Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.');
-    }
-    return;
-  }
-
+  const result = await resolveBarcodeSources(barcode, {
+    async lookupShared(code) {
+      const record = await db.lookupBarcode(code);
+      return record === null ? null : sharedCatalogRecordToFood(record);
+    },
+    async lookupOff(code) {
+      const response = await fetch(buildOpenFoodFactsUrl(code));
+      if (!response.ok) throw new Error(`Open Food Facts HTTP ${response.status}`);
+      const parsed = parseOffProduct(await response.json());
+      return parsed === null ? null : toBarcodeFood(parsed);
+    },
+  });
   if (session !== barcodeSession) return;
-  let payload;
-  try {
-    payload = await response.json();
-  } catch (error) {
-    console.error('[meal-calendar] Open Food Facts 응답 해석 실패', error);
-    showBarcodeManual('Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.');
-    return;
-  }
-
-  let parsed;
-  try {
-    parsed = parseOffProduct(payload);
-  } catch (error) {
-    console.error('[meal-calendar] Open Food Facts 영양정보 해석 실패', error);
-    showBarcodeManual(
-      '제품은 찾았지만 영양정보가 없습니다. 직접 입력해 주세요.',
-      payload.product?.product_name ?? '',
-    );
-    return;
-  }
-  if (!parsed) {
-    showBarcodeManual('Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.');
-    return;
-  }
-
-  const food = toBarcodeFood(parsed);
-  if (!food) {
-    showBarcodeManual('제품은 찾았지만 영양정보가 없습니다. 직접 입력해 주세요.', parsed.name ?? '');
+  if (result.food === null) {
+    const message = result.sharedUnavailable && result.offUnavailable
+      ? '제품 조회 서비스에 연결하지 못했습니다. 직접 입력해 주세요.'
+      : '공용 바코드 DB와 Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.';
+    showBarcodeManual(message);
     return;
   }
 
   stopBarcodeScanner();
-  openPortionPrompt(food);
+  openPortionPrompt(result.food);
 }
 
 async function scanBarcodeFrame(zxing, session) {

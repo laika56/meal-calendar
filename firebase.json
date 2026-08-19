@@ -17,6 +17,10 @@
       {
         "source": "/api/foods/search",
         "function": { "functionId": "searchFoods", "region": "asia-northeast3" }
+      },
+      {
+        "source": "/api/foods/barcode",
+        "function": { "functionId": "barcodeFood", "region": "asia-northeast3" }
       }
     ],
     "headers": [

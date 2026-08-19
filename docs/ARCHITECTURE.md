@@ -121,10 +121,15 @@ Firestore의 날짜 문서 수를 세어 "N일치가 넘어가지 않는다"고 
 | 경로 | 하는 일 | 상태 |
 |---|---|---|
 | `GET /api/foods/search?q=` | 식약처 검색 → 정규화 → `foods/` 캐시에 upsert | **배포됨 (2026-08-13)** |
-| `GET /api/foods/barcode/:code` | Open Food Facts 조회 → 정규화 → 캐시 | Phase 8 |
+| `GET /api/foods/barcode?code=` | ready 공용 국내 바코드 카탈로그 exact 조회 | **배포됨 (2026-08-19)** |
 | `POST /api/roulette/explain` | (선택) solver 결과에 설명 문구. **숫자를 만들지 않는다** | Phase 6 |
 
 전부 인증 필요. 익명 uid라도 토큰 검증은 한다 — 안 하면 남이 내 쿼터를 태운다.
+
+바코드는 `barcodeCatalogRuns/{runId}/foods/{canonicalBarcode}`의 versioned run을 마지막
+transaction에서 `barcodeCatalogState/current`가 가리키게 한다. 브라우저의 직접 read/write는
+rules로 닫고 `barcodeFood`만 Admin SDK로 읽는다. 앱은 이 공용 조회가 miss/장애일 때만 OFF를
+호출하며, 스캔 결과를 공용 DB에 쓰거나 개인 학습 데이터로 축적하지 않는다.
 
 ### `searchFoods` 구현 메모
 

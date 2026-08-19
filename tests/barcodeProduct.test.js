@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildOpenFoodFactsUrl,
   normalizeRetailBarcode,
+  sharedCatalogRecordToFood,
   toBarcodeFood,
 } from '../src/lib/barcodeProduct.js';
 
@@ -12,6 +13,34 @@ test('returns a valid EAN-13 unchanged and trims scanner text', () => {
     normalizeRetailBarcode([{ format: 'EAN13', text: '  9780143007234  ' }]),
     '9780143007234',
   );
+});
+
+test('maps a shared catalog record without erasing partial nutrients or provenance', () => {
+  assert.deepEqual(sharedCatalogRecordToFood({
+    barcode: '0036000291452',
+    name: '검증 제품',
+    maker: '검증 제조사',
+    category: '가공식품',
+    serving: { amount: 80, unit: 'g', source: 'official-serving' },
+    per100g: { kcal: 210, proteinG: 12, fatG: null, carbG: null },
+    source: {
+      type: 'foodqr', sourceId: 'source-1', url: 'https://example.test/1', verifiedAt: '2026-08-19',
+    },
+  }), {
+    foodKey: 'barcode_0036000291452',
+    name: '검증 제품',
+    maker: '검증 제조사',
+    category: '가공식품',
+    source: 'barcode-catalog',
+    barcode: '0036000291452',
+    per100g: { kcal: 210, proteinG: 12, fatG: null, carbG: null },
+    basis: 'g',
+    serving: { amount: 80, unit: 'g', source: 'official-serving' },
+    nutritionProvenance: {
+      kcal: 'foodqr', proteinG: 'foodqr', fatG: null, carbG: null,
+    },
+  });
+  assert.equal(sharedCatalogRecordToFood({ name: '불완전' }), null);
 });
 
 test('normalizes a valid UPC-A to EAN-13', () => {
@@ -129,7 +158,7 @@ test('maps a complete parsed OFF product to the existing food shape', () => {
   });
 });
 
-test('returns null unless name, supported basis, and all four nutrients are present', () => {
+test('preserves missing macros as null when verified kcal and identity are present', () => {
   const complete = {
     code: '8801234567890',
     name: '테스트바',
@@ -142,5 +171,9 @@ test('returns null unless name, supported basis, and all four nutrients are pres
   assert.equal(toBarcodeFood({ ...complete, name: null }), null);
   assert.equal(toBarcodeFood({ ...complete, unit: null, per100: null }), null);
   assert.equal(toBarcodeFood({ ...complete, unit: 'oz' }), null);
-  assert.equal(toBarcodeFood({ ...complete, per100: { ...complete.per100, fatG: null } }), null);
+  assert.deepEqual(toBarcodeFood({
+    ...complete,
+    per100: { ...complete.per100, fatG: null, carbG: null },
+  }).per100g, { kcal: 210, proteinG: 12, fatG: null, carbG: null });
+  assert.equal(toBarcodeFood({ ...complete, per100: { ...complete.per100, kcal: null } }), null);
 });

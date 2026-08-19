@@ -9,6 +9,7 @@ const sharedDir = join(projectRoot, 'functions', 'shared');
 const sourceDir = join(projectRoot, 'src', 'lib');
 const fixCommand = 'node scripts/check-shared-sync.mjs --fix';
 const requiredSharedFiles = [
+  'barcodeCatalogLookup.js',
   'franchiseCatalog.js',
   'mfdsParser.js',
   'searchPlan.js',

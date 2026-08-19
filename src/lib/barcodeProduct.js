@@ -41,7 +41,10 @@ export function buildOpenFoodFactsUrl(barcode) {
 export function toBarcodeFood(parsed) {
   if (!parsed || typeof parsed.name !== 'string' || !parsed.name.trim()) return null;
   if (parsed.unit !== 'g' && parsed.unit !== 'ml') return null;
-  if (!parsed.per100 || CORE_NUTRIENTS.some((key) => !Number.isFinite(parsed.per100[key]))) return null;
+  if (!parsed.per100 || !Number.isFinite(parsed.per100.kcal)) return null;
+  if (CORE_NUTRIENTS.some((key) => (
+    parsed.per100[key] !== null && !Number.isFinite(parsed.per100[key])
+  ))) return null;
   if (typeof parsed.code !== 'string' || !parsed.code.trim()) return null;
 
   const barcode = parsed.code.trim();
@@ -57,5 +60,35 @@ export function toBarcodeFood(parsed) {
     // 사용자에게 그램을 묻지 않는 게 맞다. 파서가 검증에 실패하면 null 이 오고,
     // 그때는 기존대로 「1인분 정보 없음」 경로를 탄다.
     serving: parsed.serving ?? null,
+  };
+}
+
+export function sharedCatalogRecordToFood(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return null;
+  if (typeof record.barcode !== 'string' || !record.barcode) return null;
+  if (typeof record.name !== 'string' || !record.name.trim()) return null;
+  if (!record.per100g || !Number.isFinite(record.per100g.kcal)) return null;
+  if (!record.source || typeof record.source.type !== 'string') return null;
+  if (CORE_NUTRIENTS.some((key) => (
+    record.per100g[key] !== null && !Number.isFinite(record.per100g[key])
+  ))) return null;
+  const basis = record.serving?.unit === 'mL' ? 'mL' : 'g';
+  const nutritionProvenance = Object.fromEntries(CORE_NUTRIENTS.map((key) => [
+    key,
+    record.per100g[key] === null ? null : record.source.type,
+  ]));
+  return {
+    foodKey: `barcode_${record.barcode}`,
+    name: record.name.trim(),
+    maker: typeof record.maker === 'string' && record.maker.trim() ? record.maker.trim() : null,
+    category: typeof record.category === 'string' && record.category.trim()
+      ? record.category.trim()
+      : null,
+    source: 'barcode-catalog',
+    barcode: record.barcode,
+    per100g: { ...record.per100g },
+    basis,
+    serving: record.serving ? { ...record.serving } : null,
+    nutritionProvenance,
   };
 }
