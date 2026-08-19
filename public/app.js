@@ -952,14 +952,47 @@ function loadZxingReader() {
   return zxingReaderPromise;
 }
 
-function stopBarcodeScanner() {
-  barcodeSession += 1;
+/**
+ * 스캔을 멈춘다. **카메라 스트림은 살려둔다.**
+ *
+ * 전에는 여기서 `track.stop()` 으로 스트림을 버렸다. 그러면 다시 열 때 `getUserMedia`
+ * 가 새로 불리고 **iOS 가 매번 카메라 권한을 다시 묻는다.** 스캔을 두 번 하면 두 번
+ * 묻는다(2026-08-19 사용자 제보). 트랙을 끄기만 하면 프레임은 안 오면서 권한은 유지된다.
+ *
+ * 카메라를 실제로 놓아주는 것은 `releaseCamera()` 이고, 앱이 백그라운드로 갈 때 부른다 —
+ * 안 쓰는 동안 카메라를 잡고 있지 않기 위해서다.
+ */
+/**
+ * 프레임만 멈춘다. **`barcodeSession` 을 건드리지 않는다** — 판독에 성공한 직후처럼
+ * 그 세션으로 이어서 할 일이 남은 자리에서 부르기 때문이다. 세션을 올려버리면
+ * 뒤따르는 `resolveBarcodeProduct(barcode, session)` 이 자기 세션이 낡았다고 보고
+ * 조용히 빠져나간다.
+ */
+function pauseCameraFrames() {
   if (barcodeFrame !== null) cancelAnimationFrame(barcodeFrame);
   barcodeFrame = null;
+  for (const track of barcodeStream?.getTracks?.() ?? []) track.enabled = false;
+  el.barcodeVideo.pause();
+  // srcObject 는 비우지 않는다 — 다시 열 때 같은 스트림을 그대로 쓴다.
+}
+
+function stopBarcodeScanner() {
+  barcodeSession += 1;
+  pauseCameraFrames();
+}
+
+/** 카메라를 실제로 놓아준다. 다음에 열면 권한을 다시 묻는다. */
+function releaseCamera() {
+  stopBarcodeScanner();
   for (const track of barcodeStream?.getTracks?.() ?? []) track.stop();
   barcodeStream = null;
-  el.barcodeVideo.pause();
   el.barcodeVideo.srcObject = null;
+}
+
+/** 살아있는 카메라 스트림이 있나. 트랙이 하나라도 죽었으면 새로 받아야 한다. */
+function hasLiveCamera() {
+  return Boolean(barcodeStream)
+    && barcodeStream.getVideoTracks().some((track) => track.readyState === 'live');
 }
 
 function showBarcodeManual(message, name = '') {
@@ -1041,8 +1074,9 @@ async function scanBarcodeFrame(zxing, session) {
     if (session !== barcodeSession || !barcodeStream) return;
     const barcode = normalizeRetailBarcode(results);
     if (barcode) {
-      for (const track of barcodeStream.getTracks()) track.stop();
-      barcodeStream = null;
+      // 읽었으면 프레임만 멈춘다. 스트림은 살려둬서 다시 열 때 권한을 안 묻게 한다.
+      // 세션은 그대로 둔다 — 바로 아래 resolveBarcodeProduct 가 이 세션으로 판정한다.
+      pauseCameraFrames();
       await resolveBarcodeProduct(barcode, session);
       return;
     }
@@ -1066,16 +1100,23 @@ async function startBarcodeScanner() {
   try {
     const zxing = await loadZxingReader();
     if (session !== barcodeSession) return;
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: 'environment' } },
-      audio: false,
-    });
-    if (session !== barcodeSession) {
-      for (const track of stream.getTracks()) track.stop();
-      return;
+
+    // 살아있는 스트림이 있으면 그대로 쓴다. 이때는 getUserMedia 를 부르지 않으므로
+    // **iOS 가 권한을 다시 묻지 않는다.** 스캔을 여러 번 해도 한 번만 묻게 되는 지점이다.
+    if (hasLiveCamera()) {
+      for (const track of barcodeStream.getTracks()) track.enabled = true;
+    } else {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      if (session !== barcodeSession) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
+      barcodeStream = stream;
     }
-    barcodeStream = stream;
-    el.barcodeVideo.srcObject = stream;
+    el.barcodeVideo.srcObject = barcodeStream;
     await el.barcodeVideo.play();
     await scanBarcodeFrame(zxing, session);
   } catch (error) {
@@ -1087,6 +1128,14 @@ async function startBarcodeScanner() {
 }
 
 el.barcodeOpen.addEventListener('click', startBarcodeScanner);
+
+// 앱이 백그라운드로 가면 카메라를 놓아준다. 스캔 사이에는 스트림을 살려두지만
+// (권한을 다시 안 묻게 하려고) **안 쓰는 동안 카메라를 잡고 있지는 않는다.**
+// iOS 는 백그라운드에서 트랙을 알아서 죽이기도 하는데, 그 경우 readyState 가
+// 'ended' 가 되므로 hasLiveCamera() 가 false 를 주고 다음 열 때 새로 받는다.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') releaseCamera();
+});
 el.barcodeCancel.addEventListener('click', () => {
   stopBarcodeScanner();
   showEntryPanel('chooser');

@@ -109,3 +109,36 @@ test('포그라운드로 돌아올 때 새 배포를 확인한다', () => {
   const source = read('public/app.js');
   assert.match(source, /registration\.update\(\)/, '복귀 시 SW 갱신을 확인하지 않는다');
 });
+
+test('스캔을 닫아도 카메라 스트림을 버리지 않는다', () => {
+  // 닫을 때마다 track.stop() 을 하면 다시 열 때 getUserMedia 가 새로 불리고
+  // **iOS 가 매번 카메라 권한을 다시 묻는다**(2026-08-19 사용자 제보).
+  const source = read('public/app.js');
+
+  const pause = source.match(/function pauseCameraFrames\(\)[\s\S]*?\n\}/);
+  assert.ok(pause, 'pauseCameraFrames 가 없다');
+  assert.equal(
+    /track\.stop\(\)/.test(pause[0]), false,
+    'pauseCameraFrames 가 트랙을 정지시킨다 — 그러면 권한을 매번 다시 묻는다',
+  );
+  assert.match(pause[0], /enabled = false/, '트랙을 끄지 않는다');
+
+  // 세션을 올리면 뒤따르는 resolveBarcodeProduct 가 자기 세션이 낡았다고 보고 빠져나간다.
+  assert.equal(
+    /barcodeSession\s*\+=/.test(pause[0]), false,
+    'pauseCameraFrames 가 세션을 올린다 — 판독 직후 조회가 조용히 취소된다',
+  );
+
+  assert.match(source, /function releaseCamera\(\)/, '카메라를 놓아주는 경로가 없다');
+  assert.match(source, /hasLiveCamera\(\)/, '살아있는 스트림 재사용 분기가 없다');
+});
+
+test('앱이 백그라운드로 가면 카메라를 놓아준다', () => {
+  // 스캔 사이에는 스트림을 살려두지만, 안 쓰는 동안 카메라를 잡고 있으면 안 된다.
+  const source = read('public/app.js');
+  assert.match(
+    source,
+    /visibilityState === 'hidden'\)\s*releaseCamera\(\)/,
+    '백그라운드 전환 때 카메라를 놓아주지 않는다',
+  );
+});
