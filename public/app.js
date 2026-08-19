@@ -433,7 +433,7 @@ async function persistDay(slots) {
     setSaveState(null);
   } catch (err) {
     console.error('[meal-calendar] 저장 실패', err);
-    setSaveState('failed', '저장 실패 — 화면에는 반영됐지만 서버에 안 올라갔다. 네트워크 확인 후 다시 시도해라.');
+    setSaveState('failed', '저장하지 못했습니다. 화면에는 보이지만 서버에 올라가지 않았습니다 — 네트워크를 확인한 뒤 다시 시도해 주세요.');
   }
 }
 
@@ -636,7 +636,7 @@ async function saveDayWeight() {
 
   const weightKg = Number(raw);
   if (!Number.isFinite(weightKg) || weightKg <= 0) {
-    el.weightState.textContent = '숫자를 확인해라';
+    el.weightState.textContent = '숫자로 입력해 주세요';
     return;
   }
 
@@ -760,7 +760,7 @@ async function saveMealAsPreset(slotLabel, entries) {
     setTimeout(() => setSaveState(null), 2500);
   } catch (err) {
     console.error('[meal-calendar] 즐겨찾기 저장 실패', err);
-    setSaveState('failed', '즐겨찾기 저장 실패 — 네트워크를 확인해라.');
+    setSaveState('failed', '즐겨찾기를 저장하지 못했습니다. 네트워크를 확인해 주세요.');
   }
 }
 
@@ -1536,7 +1536,7 @@ el.fixAmountBtn.addEventListener('click', async () => {
 function renderPortionPreview() {
   const amountG = Number(el.portionAmount.value);
   if (!Number.isFinite(amountG) || amountG < 0) {
-    el.portionPreview.textContent = '양을 올바르게 입력해라.';
+    el.portionPreview.textContent = '양을 숫자로 입력해 주세요.';
     return;
   }
   // 양이 비었을 때 0kcal 을 띄우면 **DB에 값이 없는 것처럼 보인다.** 바코드로 찍으면
@@ -1732,7 +1732,7 @@ el.entryForm.addEventListener('submit', async (event) => {
     el.entryError.hidden = false;
     el.entryError.textContent = invalid
       ? `${invalid} 값이 올바르지 않다. 0 이상의 숫자를 넣어라.`
-      : '이름을 입력해라.';
+      : '이름을 입력해 주세요.';
     return;
   }
 
@@ -1925,7 +1925,7 @@ el.profileForm.addEventListener('submit', async (event) => {
   } catch (err) {
     el.formError.hidden = false;
     el.formError.textContent = err instanceof ImpossibleTargetError
-      ? '이 조합으로는 목표를 계산할 수 없다 (탄수화물이 음수가 됨). 목적이나 체중을 다시 확인해라.'
+      ? '이 조합으로는 목표를 계산할 수 없습니다. 단백질·지방이 칼로리를 넘어서 탄수화물이 음수가 됩니다 — 목적이나 체중을 다시 확인해 주세요.'
       : err.message;
     el.formResult.hidden = true;
     return;
