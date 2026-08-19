@@ -25,6 +25,12 @@ import {
   addMultiSearches, resolveMultiSearches, restoreMultiSearchLeftovers,
   runSingleSearchConsumer,
 } from '/public/searchSelectionGate.js';
+import { parseNutritionLabel } from '/src/lib/nutritionLabel.js';
+import { recognizeNutritionLabel } from '/public/nutritionLabelOcr.js';
+import { revisionReason, reviseEntry } from '/src/lib/entryRevision.js';
+import { sevenDayKeys, summarizeSevenDays } from '/src/lib/weeklySummary.js';
+import { buildExportEnvelope, serializeDaysCsv, serializeExportJson, validateExportEnvelope } from '/src/lib/dataTransfer.js';
+import { createDayPreset, createMealPreset, normalizePreset, planPresetApply } from '/src/lib/presetV2.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
 // 전부 받아질 때까지 이 모듈 전체의 실행이 밀린다. 캘린더 그리드는 네트워크 없이 그릴 수 있는데
@@ -152,6 +158,13 @@ const el = {
   barcodeCanvas: document.getElementById('barcodeCanvas'),
   barcodeStatus: document.getElementById('barcodeStatus'),
   barcodeCancel: document.getElementById('barcodeCancel'),
+  nutritionLabelFile: document.getElementById('nutritionLabelFile'),
+  nutritionLabelStatus: document.getElementById('nutritionLabelStatus'),
+  weeklySummary: document.getElementById('weeklySummary'),
+  weeklySummaryContent: document.getElementById('weeklySummaryContent'),
+  revisionHistory: document.getElementById('revisionHistory'),
+  revisionHistoryContent: document.getElementById('revisionHistoryContent'),
+  importStatus: document.getElementById('importStatus'),
   authGate: document.getElementById('authGate'),
   guestStart: document.getElementById('guestStart'),
   gateSignUpForm: document.getElementById('gateSignUpForm'),
@@ -243,6 +256,8 @@ function renderMonth() {
   el.monthOnTarget.textContent = `${summary.onTargetDays}일`;
   el.monthWeight.textContent = summary.latestWeightKg === null ? '—' : `${summary.latestWeightKg}kg`;
   el.monthNotice.hidden = known;
+  // 맥박은 눈으로만 보인다. 스크린리더에도 「아직 오는 중」을 알린다.
+  el.grid.setAttribute('aria-busy', state.monthState === 'loading' ? 'true' : 'false');
   if (state.monthState === 'loading') {
     el.monthNotice.className = 'month-notice';
     el.monthNotice.textContent = '기록을 불러오는 중…';
@@ -251,7 +266,9 @@ function renderMonth() {
     el.monthNotice.textContent = '기록을 불러오지 못했습니다. 아래 달력은 비어 보이지만 지워진 것이 아닙니다.';
   }
 
-  for (const cell of cells) {
+  const loading = state.monthState === 'loading';
+
+  for (const [index, cell] of cells.entries()) {
     const day = state.monthData.get(cell.date);
     const kcal = day?.totals?.kcal ?? 0;
     const hasRecord = Boolean(day) && kcal > 0;
@@ -260,7 +277,13 @@ function renderMonth() {
 
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `day day-${status}${cell.inCurrentMonth ? '' : ' day-outside'}${cell.date === today ? ' day-today' : ''}`;
+    button.className = `day day-${status}${loading ? ' day-loading' : ''}${cell.inCurrentMonth ? '' : ' day-outside'}${cell.date === today ? ' day-today' : ''}`;
+    if (loading) {
+      // 대각선으로 훑고 지나가게 지연을 준다. 칸이 42개라 전부 같이 뛰면
+      // 화면이 통째로 깜빡여서 오히려 고장난 것처럼 보인다.
+      const row = Math.floor(index / 7);
+      button.style.setProperty('--pulse-delay', `${(row + (index % 7)) * 45}ms`);
+    }
     button.dataset.date = cell.date;
     button.setAttribute(
       'aria-label',
@@ -312,19 +335,23 @@ function renderDayDetail() {
   }
   const slots = { ...emptySlots(), ...(day.slots ?? {}) };
   const totals = calcDayTotals(slots);
+  const unknown = Object.fromEntries(['carbG', 'proteinG', 'fatG'].map((field) => [
+    field,
+    Object.values(slots).some((entries) => entries.some((entry) => entry[field] === null)),
+  ]));
   const target = targetKcal();
 
   el.detailDate.textContent = state.openDate;
   el.totalKcal.textContent = `${Math.round(totals.kcal)} kcal`;
   el.kcalTarget.textContent = `목표 ${target} kcal`;
   el.calorieGauge.style.setProperty('--gauge-progress', progressPercent(totals.kcal, target));
-  el.carbMetric.textContent = state.goal
+  el.carbMetric.textContent = unknown.carbG ? '?g' : state.goal
     ? `${Math.round(totals.carbG)}/${state.goal.carbG}g`
     : `${Math.round(totals.carbG)}g`;
-  el.proteinMetric.textContent = state.goal
+  el.proteinMetric.textContent = unknown.proteinG ? '?g' : state.goal
     ? `${Math.round(totals.proteinG)}/${state.goal.proteinG}g`
     : `${Math.round(totals.proteinG)}g`;
-  el.fatMetric.textContent = state.goal
+  el.fatMetric.textContent = unknown.fatG ? '?g' : state.goal
     ? `${Math.round(totals.fatG)}/${state.goal.fatG}g`
     : `${Math.round(totals.fatG)}g`;
 
@@ -391,7 +418,28 @@ function renderDayDetail() {
         remove.textContent = '×';
         remove.addEventListener('click', () => removeEntry(key, index));
 
-        line.append(name, kcal, remove);
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'entry-del';
+        edit.setAttribute('aria-label', `${entry.name} 수정`);
+        edit.textContent = '수정';
+        edit.addEventListener('click', () => editEntry(key, index));
+
+        const actions = document.createElement('span');
+        actions.className = 'entry-actions';
+        actions.appendChild(edit);
+
+        if (Array.isArray(entry.revisions) && entry.revisions.length > 0) {
+          const history = document.createElement('button');
+          history.type = 'button';
+          history.className = 'entry-del';
+          history.setAttribute('aria-label', `${entry.name} 수정 이력`);
+          history.textContent = '이력';
+          history.addEventListener('click', () => showRevisionHistory(entry));
+          actions.appendChild(history);
+        }
+        actions.appendChild(remove);
+        line.append(name, kcal, actions);
         list.appendChild(line);
       });
     }
@@ -706,6 +754,64 @@ async function removeEntry(slotKey, index) {
   await persistDay(slots);
 }
 
+async function editEntry(slotKey, index) {
+  const day = currentDay();
+  const original = day.slots?.[slotKey]?.[index];
+  if (!original) return;
+  const nameText = await askText('음식 이름', String(original.name));
+  if (nameText === null) return;
+  const amountText = await askText('양 (g)', String(original.amountG));
+  if (amountText === null) return;
+  const kcalText = await askText('칼로리 (kcal)', String(original.kcal));
+  if (kcalText === null) return;
+  const carbText = await askText('탄수화물 (g) · 모르면 비움', original.carbG ?? '');
+  if (carbText === null) return;
+  const proteinText = await askText('단백질 (g) · 모르면 비움', original.proteinG ?? '');
+  if (proteinText === null) return;
+  const fatText = await askText('지방 (g) · 모르면 비움', original.fatG ?? '');
+  if (fatText === null) return;
+  const optionalNumber = (text) => text.trim() === '' ? null : Number(text);
+  const amountG = Number(amountText);
+  const kcal = Number(kcalText);
+  const next = {
+    ...original,
+    name: nameText.trim(), amountG, kcal,
+    carbG: optionalNumber(carbText),
+    proteinG: optionalNumber(proteinText),
+    fatG: optionalNumber(fatText),
+  };
+  if (!next.name || !Number.isFinite(amountG) || amountG <= 0 || !Number.isFinite(kcal) || kcal < 0
+    || ['carbG', 'proteinG', 'fatG'].some((field) => next[field] !== null && (!Number.isFinite(next[field]) || next[field] < 0))) {
+    setSaveState('failed', '수정값을 확인해 주세요.');
+    return;
+  }
+  const reason = revisionReason(original, next);
+  if (reason === null) return;
+  const patch = Object.fromEntries(['name', 'amountG', 'kcal', 'carbG', 'proteinG', 'fatG'].map((field) => [field, next[field]]));
+  const slots = { ...emptySlots(), ...(day.slots ?? {}) };
+  slots[slotKey] = slots[slotKey].map((entry, entryIndex) => {
+    if (entryIndex !== index) return entry;
+    const revised = reviseEntry(entry, patch, { reason, changedAt: new Date().toISOString() });
+    if (reason === 'amount' && revised.estimate) delete revised.estimate;
+    return revised;
+  });
+  await persistDay(slots);
+}
+
+function showRevisionHistory(entry) {
+  el.revisionHistoryContent.innerHTML = '';
+  for (const revision of [...(entry.revisions ?? [])].reverse()) {
+    const row = document.createElement('div');
+    row.textContent = `${new Date(revision.changedAt).toLocaleString('ko-KR')} · ${revision.reason} · 이전 ${revision.before.amountG ?? '?'}g / ${revision.before.kcal ?? '?'}kcal`;
+    el.revisionHistoryContent.appendChild(row);
+  }
+  el.revisionHistory.hidden = false;
+}
+
+document.getElementById('closeRevisionHistory').addEventListener('click', () => {
+  el.revisionHistory.hidden = true;
+});
+
 /**
  * 앱 내 텍스트 입력 시트. 확인하면 문자열, 취소하면 null 로 resolve 한다.
  * window.prompt 대체 — 그건 iOS standalone PWA 에서 신뢰할 수 없다.
@@ -751,12 +857,10 @@ async function saveMealAsPreset(slotLabel, entries) {
 
   // 저장용으로 필요한 필드만 남긴다. at/foodKey 같은 그때만 유효한 값은 빼고,
   // 불러올 때 buildEntry 가 새로 만든다
-  const payload = entries.map(({ name: n, amountG, kcal, carbG, proteinG, fatG }) => ({
-    name: n, amountG, kcal, carbG, proteinG, fatG,
-  }));
-
   try {
-    await db.savePreset(name.trim(), payload);
+    const slotKey = SLOT_LABELS.find(([, label]) => label === slotLabel)?.[0];
+    const preset = createMealPreset(name.trim(), slotKey, entries, { createdAt: new Date().toISOString() });
+    await db.saveStructuredPreset(preset);
     setSaveState('pending', `즐겨찾기 「${name.trim()}」 저장됨`);
     setTimeout(() => setSaveState(null), 2500);
   } catch (err) {
@@ -852,10 +956,21 @@ async function renderQuickPicks() {
         variant: entries.length > 1 ? 'meal-preset' : '',
         onAdd: async () => {
           el.entrySheet.hidden = true;
-          await addEntriesToSlot(
-            state.pendingSlot,
-            entries.map((e) => buildEntry({ ...e, addedBy: 'preset' })),
-          );
+          if (preset.schemaVersion === 2) {
+            const normalized = normalizePreset(preset);
+            const current = currentDay().slots ?? emptySlots();
+            const plan = planPresetApply(normalized, current, {
+              targetSlot: state.pendingSlot,
+              at: new Date().toISOString(),
+            });
+            const accepted = window.confirm(`${state.openDate}에 ${plan.addedCount}개를 추가합니다.`);
+            if (accepted) await persistDay(plan.slots);
+          } else {
+            await addEntriesToSlot(
+              state.pendingSlot,
+              entries.map((e) => buildEntry({ ...e, addedBy: 'preset' })),
+            );
+          }
         },
         onDelete: async () => {
           await db.deletePreset(preset.id);
@@ -901,6 +1016,30 @@ function openEntryForm(slotKey, slotLabel) {
   showPortionPrompt(false);
   renderQuickPicks();
 }
+
+el.nutritionLabelFile.addEventListener('change', async () => {
+  const [file] = el.nutritionLabelFile.files ?? [];
+  if (!file) return;
+  el.nutritionLabelStatus.hidden = false;
+  el.nutritionLabelStatus.textContent = '영양성분표를 기기에서 읽는 중…';
+  try {
+    const parsed = parseNutritionLabel(await recognizeNutritionLabel(file));
+    el.entryForm.name.value = '';
+    el.entryForm.amountG.value = parsed.amount ?? '';
+    el.entryForm.kcal.value = parsed.kcal ?? '';
+    el.entryForm.carbG.value = parsed.carbG ?? '';
+    el.entryForm.proteinG.value = parsed.proteinG ?? '';
+    el.entryForm.fatG.value = parsed.fatG ?? '';
+    manualEntryContext = { source: 'nutrition-label', addedBy: 'label-scan', numericFields: {} };
+    el.nutritionLabelStatus.textContent = '읽은 값을 포장지와 대조한 뒤 이름·양·열량을 확인해 주세요.';
+    el.entryForm.name.focus();
+  } catch (error) {
+    console.error('[meal-calendar] 영양성분표 OCR 실패', error);
+    el.nutritionLabelStatus.textContent = '사진을 읽지 못했습니다. 아래 칸에 직접 입력해 주세요.';
+  } finally {
+    el.nutritionLabelFile.value = '';
+  }
+});
 
 document.getElementById('closeEntry').addEventListener('click', () => {
   stopBarcodeScanner();
@@ -1019,12 +1158,24 @@ async function resolveBarcodeProduct(barcode, session) {
       const parsed = parseOffProduct(await response.json());
       return parsed === null ? null : toBarcodeFood(parsed);
     },
+    lookupIdentity: (code) => db.lookupBarcodeIdentity(code),
   });
   if (session !== barcodeSession) return;
+  if (result.identity) {
+    stopBarcodeScanner();
+    const query = [result.identity.brand, result.identity.name].filter(Boolean).join(' ');
+    showEntryPanel('chooser');
+    el.searchInput.value = query;
+    el.searchStatus.className = 'search-status search-status-warning';
+    el.searchStatus.textContent = '제품명은 확인했지만 영양값은 확인되지 않았습니다. 식약처 결과를 확인해 주세요.';
+    el.searchStatus.hidden = false;
+    el.searchForm.requestSubmit();
+    return;
+  }
   if (result.food === null) {
-    const message = result.sharedUnavailable && result.offUnavailable
+    const message = result.sharedUnavailable && result.offUnavailable && result.upcUnavailable
       ? '제품 조회 서비스에 연결하지 못했습니다. 직접 입력해 주세요.'
-      : '공용 바코드 DB와 Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.';
+      : '공용 바코드 DB, Open Food Facts, UPCitemdb에서 제품을 찾지 못했습니다. 직접 입력해 주세요.';
     showBarcodeManual(message);
     return;
   }
@@ -1297,6 +1448,7 @@ el.searchForm.addEventListener('submit', async (event) => {
   el.searchStatus.className = 'search-status';
   el.searchStatus.hidden = false;
   el.searchStatus.textContent = parsed.ok ? '대표 중량으로 계산 중…' : '검색 중…';
+  showSearchSkeleton();
 
   try {
     await runSingleSearchConsumer({
@@ -1309,10 +1461,40 @@ el.searchForm.addEventListener('submit', async (event) => {
   } catch (err) {
     console.error('[meal-calendar] 검색 실패', err);
     el.searchStatus.textContent = `검색 실패 — ${err.message}`;
+  } finally {
+    // 성공·실패·중간에 바로 기록된 경로까지 전부 여기를 지난다. 자리표시만
+    // 골라 지우므로 이미 그려진 결과는 건드리지 않는다.
+    clearSearchSkeleton();
   }
 });
 
+//: 검색은 실측 4.46초가 걸린다. 그 사이 결과 자리를 비워두면 멈춘 것처럼 보인다.
+//: **일부러 늦추지 않는다** — 응답이 빠르면 이건 스쳐 지나가고 끝이다.
+const SEARCH_SKELETON_ROWS = 4;
+
+function showSearchSkeleton() {
+  for (let i = 0; i < SEARCH_SKELETON_ROWS; i += 1) {
+    const row = document.createElement('div');
+    row.className = 'search-skeleton';
+    // 결과가 아니라 대기 표시다. 스크린리더가 빈 줄을 읽지 않게 감춘다 —
+    // 「검색 중…」은 이미 상태 문구가 말하고 있다.
+    row.setAttribute('aria-hidden', 'true');
+    row.style.setProperty('--pulse-delay', `${i * 110}ms`);
+    row.append(document.createElement('span'), document.createElement('span'));
+    el.searchResults.appendChild(row);
+  }
+}
+
+function clearSearchSkeleton() {
+  for (const row of el.searchResults.querySelectorAll('.search-skeleton')) {
+    row.remove();
+  }
+}
+
 async function continueSingleSearch({ items, hasMore, parsed, q }) {
+  // 결과를 그리기 전에 자리표시를 걷는다. 안 걷으면 실제 결과가 자리표시
+  // *아래에* 잠깐 붙었다가 위로 튄다.
+  clearSearchSkeleton();
   if (items.length === 0) {
     // 식약처 DB 는 브랜드 메뉴를 거의 안 담는다 — `서브웨이`·`서가원 김밥` 은 이름·제조사
     // 어느 쪽으로 찾아도 0건이다(2026-08-14 실측). 그건 검색으로 못 푼다.
@@ -1704,9 +1886,17 @@ el.entryForm.addEventListener('submit', async (event) => {
     fatG: formNumber(data, 'fatG'),
   };
 
+  const isLabelScan = manualEntryContext?.addedBy === 'label-scan';
+  if (isLabelScan) {
+    for (const field of ['carbG', 'proteinG', 'fatG']) {
+      if (Number.isNaN(fields[field])) fields[field] = null;
+    }
+  }
+
   const invalid = ['amountG', 'kcal', 'carbG', 'proteinG', 'fatG']
-    .find((field) => !Number.isFinite(fields[field]) || fields[field] < 0);
-  if (!fields.name || invalid) {
+    .find((field) => fields[field] !== null && (!Number.isFinite(fields[field]) || fields[field] < 0));
+  const missingRequired = !Number.isFinite(fields.amountG) || !Number.isFinite(fields.kcal);
+  if (!fields.name || invalid || missingRequired) {
     el.entryError.hidden = false;
     el.entryError.textContent = invalid
       ? `${invalid} 값이 올바르지 않다. 0 이상의 숫자를 넣어라.`
@@ -1728,7 +1918,7 @@ el.entryForm.addEventListener('submit', async (event) => {
 
   await addEntryToSlot(slotKey, buildEntry({
     ...fields,
-    addedBy: 'manual',
+    addedBy: manualEntryContext?.addedBy ?? 'manual',
     source: manualEntryContext?.source,
     nutritionProvenance,
   }));
@@ -1768,6 +1958,46 @@ el.copyYesterday.addEventListener('click', async () => {
   }
 
   await persistDay(slots);
+});
+
+document.getElementById('saveDayPreset').addEventListener('click', async () => {
+  const day = currentDay();
+  const count = SLOT_LABELS.reduce((sum, [slot]) => sum + (day.slots?.[slot]?.length ?? 0), 0);
+  if (count === 0) return;
+  const label = await askText('하루 프리셋 이름', `${state.openDate} 하루`);
+  if (label === null || !label.trim()) return;
+  try {
+    await db.saveStructuredPreset(createDayPreset(label.trim(), day.slots, { createdAt: new Date().toISOString() }));
+    setSaveState('pending', `하루 프리셋 「${label.trim()}」 저장됨`);
+  } catch (error) {
+    console.error('[meal-calendar] 하루 프리셋 저장 실패', error);
+    setSaveState('failed', '하루 프리셋을 저장하지 못했습니다.');
+  }
+});
+
+document.getElementById('openWeeklySummary').addEventListener('click', async () => {
+  el.weeklySummary.hidden = false;
+  el.weeklySummaryContent.textContent = '불러오는 중…';
+  try {
+    const summary = summarizeSevenDays(
+      await db.loadDaysByKeys(sevenDayKeys(state.openDate)),
+      state.openDate,
+    );
+    const averageText = summary.averages === null
+      ? '기록 없음'
+      : `평균 ${summary.averages.kcal}kcal · 탄 ${summary.averages.carbG}g · 단 ${summary.averages.proteinG}g · 지 ${summary.averages.fatG}g`;
+    const weightText = summary.weight.count < 2
+      ? `체중 ${summary.weight.count}회 · 변화를 보려면 다른 날짜에도 기록이 필요합니다.`
+      : `체중 ${summary.weight.firstKg}kg → ${summary.weight.lastKg}kg · ${summary.weight.changeKg > 0 ? '+' : ''}${summary.weight.changeKg}kg`;
+    el.weeklySummaryContent.innerHTML = `<div>${summary.startDate} ~ ${summary.endDate}</div><div>기록 ${summary.recordedDays}일 · ${averageText}</div><div>${weightText}</div>`;
+  } catch (error) {
+    console.error('[meal-calendar] 최근 7일 조회 실패', error);
+    el.weeklySummaryContent.textContent = '최근 7일 기록을 불러오지 못했습니다. 기록 없음으로 처리하지 않았습니다.';
+  }
+});
+
+document.getElementById('closeWeeklySummary').addEventListener('click', () => {
+  el.weeklySummary.hidden = true;
 });
 
 // ── 달 이동 ───────────────────────────────────────────────────────────
@@ -1844,6 +2074,70 @@ document.getElementById('openSettings').addEventListener('click', () => {
   el.settings.hidden = false;
   fillFormFromProfile();
   renderManualRatio();
+});
+
+function downloadText(filename, type, text) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+async function loadCurrentExportEnvelope() {
+  await dbReady;
+  return buildExportEnvelope(await db.loadExportData(), { exportedAt: new Date().toISOString() });
+}
+
+document.getElementById('exportJson').addEventListener('click', async () => {
+  try {
+    downloadText(`meal-calendar-${todayLocalDate()}.json`, 'application/json', serializeExportJson(await loadCurrentExportEnvelope()));
+    el.importStatus.hidden = false;
+    el.importStatus.textContent = 'JSON 파일을 만들었습니다.';
+  } catch (error) {
+    console.error('[meal-calendar] JSON 내보내기 실패', error);
+    el.importStatus.hidden = false;
+    el.importStatus.textContent = 'JSON 파일을 만들지 못했습니다.';
+  }
+});
+
+document.getElementById('exportCsv').addEventListener('click', async () => {
+  try {
+    const envelope = await loadCurrentExportEnvelope();
+    downloadText(`meal-calendar-${todayLocalDate()}.csv`, 'text/csv;charset=utf-8', serializeDaysCsv(envelope.days));
+    el.importStatus.hidden = false;
+    el.importStatus.textContent = 'CSV 파일을 만들었습니다. CSV는 복구에 사용하지 않습니다.';
+  } catch (error) {
+    console.error('[meal-calendar] CSV 내보내기 실패', error);
+    el.importStatus.hidden = false;
+    el.importStatus.textContent = 'CSV 파일을 만들지 못했습니다.';
+  }
+});
+
+document.getElementById('importJsonFile').addEventListener('change', async (event) => {
+  const [file] = event.currentTarget.files ?? [];
+  if (!file) return;
+  el.importStatus.hidden = false;
+  try {
+    const envelope = validateExportEnvelope(JSON.parse(await file.text()));
+    const current = await db.loadExportData();
+    const incomingDays = envelope.days.filter((day) => !current.days.some((value) => value.date === day.date)).length;
+    const incomingPresets = envelope.presets.filter((preset) => !current.presets.some((value) => value.id === preset.id)).length;
+    const accepted = window.confirm(`새 날짜 ${incomingDays}개와 새 프리셋 ${incomingPresets}개를 복구합니다. 기존 항목은 덮어쓰지 않습니다.`);
+    if (!accepted) {
+      el.importStatus.textContent = '복구를 취소했습니다. 쓰기는 없었습니다.';
+      return;
+    }
+    const result = await db.restoreExportData(envelope);
+    el.importStatus.textContent = `${result.written}개를 복구했습니다. 날짜 충돌 ${result.dayConflicts.length}개, 프리셋 충돌 ${result.presetConflicts.length}개는 건너뛰었습니다.`;
+    await loadMonthData();
+  } catch (error) {
+    console.error('[meal-calendar] JSON 복구 실패', error);
+    el.importStatus.textContent = `복구하지 못했습니다. ${error.message}`;
+  } finally {
+    event.currentTarget.value = '';
+  }
 });
 
 let armTimer = null; // 2단계 확인의 '무장' 상태를 자동으로 풀기 위한 타이머 (I3)
@@ -2294,6 +2588,8 @@ const closeEntryBtn = document.getElementById('closeEntry');
 const closeSettingsBtn = document.getElementById('closeSettings');
 
 function swipeGoBack() {
+  if (!el.revisionHistory.hidden) { document.getElementById('closeRevisionHistory').click(); return; }
+  if (!el.weeklySummary.hidden) { document.getElementById('closeWeeklySummary').click(); return; }
   if (!el.portionPrompt.hidden) { el.cancelPortion.click(); return; }
   if (!el.askPrompt.hidden) { el.askCancel.click(); return; }
   if (!el.entrySheet.hidden) { closeEntryBtn.click(); return; }

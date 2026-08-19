@@ -6,6 +6,24 @@
 
 ## 지금 상태
 
+## ✅ 입력 신뢰도·반복 기록 6기능 로컬 구현 완료 — Codex (2026-08-19)
+
+사용자 승인 범위는 영양성분표 촬영 입력, UPCitemdb를 포함한 통합 바코드 조회, 음식 기록
+수정 이력, 최근 7일 요약, JSON/CSV 내보내기·merge-only 복구, 한 끼/하루 프리셋 강화다.
+통합 설계를 `docs/superpowers/specs/2026-08-19-meal-calendar-reliability-and-reuse-design.md`에
+고정해 사용자 승인을 받았고, 기능별 실행 계획을 `docs/superpowers/plans/2026-08-19-*.md`로
+분리해 TDD로 구현했다. 영양성분표 OCR 확인 입력, 국내 카탈로그→OFF→UPCitemdb 식별 순서,
+항목 수정 이력, 최근 7일 요약, 엄격 검증 JSON/열람용 CSV와 merge-only 복구, 한 끼·하루
+프리셋을 앱 셸과 Firestore 경계에 연결했다. 복구는 하위 record의 예상 밖 필드와 비정상 숫자를
+쓰기 전에 거부하며, UPCitemdb 식별값은 영양값으로 자동 승격하지 않는다.
+
+집중 테스트 57/57, 보강 후 관련 테스트 11/11, 전체 `npm test` 545개 중 544 pass·0 fail·
+에뮬레이터 전용 1 skip이다. 변경 JS 문법·서비스워커 셸 경로/bytes digest·diff whitespace도
+검증했다. 390×844 로컬 브라우저에서 첫 화면 레이아웃을 확인했으나 인증 뒤 여섯 흐름과 카메라·
+OCR·다운로드는 실제 iPhone에서 확인하지 않았고, 운영 배포도 하지 않았다. 기존
+`public/app.js`, `public/index.html`, `public/sw.js`의 로딩 스켈레톤 미커밋 변경은 다른 작업
+소유이므로 그대로 보존했다.
+
 ## ✅ 공용 국내 바코드 카탈로그 1차 운영 반영 (2026-08-19)
 
 개인 스캔 이력을 학습하거나 저장하지 않고, 식약처 FoodQR 전체 공개 데이터에서 검증된

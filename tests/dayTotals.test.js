@@ -76,11 +76,10 @@ test('sumEntries rejects null array elements with their index', () => {
   );
 });
 
-test('sumEntries rejects undefined, null, NaN, and string nutrient fields', () => {
+test('sumEntries rejects undefined, NaN, and string nutrient fields', () => {
   const fields = ['kcal', 'carbG', 'proteinG', 'fatG'];
   const invalidValues = [
     [undefined, 'undefined'],
-    [null, 'null'],
     [NaN, 'NaN'],
     ['1', '"1"'],
   ];
@@ -99,6 +98,13 @@ test('sumEntries rejects undefined, null, NaN, and string nutrient fields', () =
       );
     }
   }
+});
+
+test('sumEntries keeps nullable label nutrients out of known totals without mutating the entry', () => {
+  const partial = entry(100, null, 8, null);
+  assert.deepEqual(sumEntries([partial]), { kcal: 100, carbG: 0, proteinG: 8, fatG: 0 });
+  assert.equal(partial.carbG, null);
+  assert.equal(partial.fatG, null);
 });
 
 test('sumEntries rejects negative nutrient fields instead of clamping them', () => {

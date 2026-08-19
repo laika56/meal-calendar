@@ -148,6 +148,21 @@
   .day-unknown .day-badge { color: var(--none-fg); opacity: 0.5; }
   .day-unknown .day-num { opacity: 0.45; }
 
+  /* 불러오는 중. 「비어 있음」과 「채워지는 중」을 눈으로 가른다.
+     지금까지 이 구분은 위의 안내문 한 줄에만 있었는데, 외부 호스트 체인 때문에
+     2.6초(사파리에서는 더)를 빈 칸을 보며 기다리는 구간이라 기록이 날아간 걸로
+     오해하기 쉽다(app.js `monthState` 주석). 칸마다 지연을 줘서 왼쪽 위에서
+     오른쪽 아래로 훑고 지나가게 한다. 멈춘 게 아니라 오는 중이라는 신호다. */
+  .day-loading .day-ring {
+    animation: day-pulse 1.5s ease-in-out infinite;
+    animation-delay: var(--pulse-delay, 0ms);
+  }
+  .day-loading .day-num { opacity: .3; }
+  @keyframes day-pulse {
+    0%, 100% { opacity: .35; }
+    50%      { opacity: 1; }
+  }
+
   .month-notice {
     background: var(--card); border: 1px solid var(--line); border-radius: 10px;
     padding: 8px 12px; margin: 0 0 8px; font-size: 12px; color: var(--muted);
@@ -250,6 +265,9 @@
     align-items: baseline; column-gap: 10px;
     padding: 9px 0; border-top: 1px solid var(--line); color: var(--fg);
   }
+  .entry-actions { display: flex; align-items: center; gap: 3px; }
+  .entry-actions .entry-del { font-size: 10px; }
+  .entry-actions .entry-del:last-child { font-size: 16px; }
   .entry-line:first-child { border-top: 0; }
   .entry-name { font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .entry-kcal { font-size: 13px; font-weight: 600; text-align: right; white-space: nowrap; }
@@ -506,6 +524,43 @@
     margin: -2px 0 10px;
   }
   .search-results { display: flex; flex-direction: column; gap: 6px; }
+
+  .feature-actions {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 16px;
+  }
+  .feature-actions button, .feature-actions label {
+    appearance: none; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card); color: var(--muted); padding: 9px 12px;
+    font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .feature-actions input[type="file"] { display: none; }
+  .summary-list, .revision-list {
+    display: grid; gap: 8px;
+  }
+  .summary-list > div, .revision-list > div {
+    border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+    padding: 12px; color: var(--muted);
+  }
+
+  /* 검색은 실측 4.46초가 걸린다. 그동안 결과 자리가 완전히 비어 있으면
+     「검색 중…」 글자 하나만 남아서 멈춘 것처럼 보인다. 들어올 결과와 같은
+     크기의 자리를 미리 깔아두면 기다림이 「채워지는 중」으로 읽힌다.
+     결과 개수를 아는 척하지 않으려고 4줄만 깐다. */
+  .search-skeleton {
+    border: 1px solid var(--line); border-radius: 10px; background: var(--card);
+    padding: 12px; display: flex; flex-direction: column; gap: 7px;
+  }
+  .search-skeleton span {
+    display: block; height: 9px; border-radius: 5px; background: var(--line);
+    animation: skeleton-breathe 1.5s ease-in-out infinite;
+    animation-delay: var(--pulse-delay, 0ms);
+  }
+  .search-skeleton span:first-child { width: 62%; height: 11px; }
+  .search-skeleton span:last-child { width: 38%; }
+  @keyframes skeleton-breathe {
+    0%, 100% { opacity: .35; }
+    50%      { opacity: .9; }
+  }
   .search-result {
     width: 100%;
     border: 1px solid var(--line); background: var(--card); border-radius: 10px;
@@ -636,6 +691,12 @@
   @media (prefers-reduced-motion: reduce) {
     .sheet { animation: none; }
     .barcode-sweep { animation: none; top: 50%; }
+    /* 아래 전역 규칙이 애니메이션을 0에 가깝게 얼린다. 얼어붙은 자리가 어느
+       프레임인지는 보장이 없으므로, 움직임 없이도 읽히는 상태로 못박는다.
+       로딩 표시는 정보라서 지우지 않는다. */
+    .day-loading .day-ring, .search-skeleton span {
+      animation: none; opacity: .6;
+    }
     *, *::before, *::after {
       transition-duration: .01ms !important;
       animation-duration: .01ms !important;
@@ -766,6 +827,10 @@
         </label>
       </div>
     </div>
+    <div class="feature-actions">
+      <button id="openWeeklySummary" type="button">최근 7일</button>
+      <button id="saveDayPreset" type="button">하루 프리셋 저장</button>
+    </div>
     <div class="slots" id="slots"></div>
     <div id="saveState" class="save-state" hidden></div>
   </div>
@@ -791,6 +856,12 @@
     </div>
 
     <button id="barcodeOpen" class="barcode-open" type="button">바코드 스캔</button>
+    <div class="feature-actions">
+      <label for="nutritionLabelFile" id="nutritionLabelOpen">영양성분표 촬영
+        <input id="nutritionLabelFile" type="file" accept="image/*" capture="environment">
+      </label>
+    </div>
+    <div id="nutritionLabelStatus" class="search-status" aria-live="polite" hidden></div>
 
     <div id="quickPresets" class="quick-section" hidden>
       <h3>자주 먹는 것</h3>
@@ -822,13 +893,13 @@
         <input name="kcal" type="number" inputmode="decimal" min="0" step="0.1" required>
       </label>
       <label>탄수화물 (g)
-        <input name="carbG" type="number" inputmode="decimal" min="0" step="0.1" required>
+        <input name="carbG" type="number" inputmode="decimal" min="0" step="0.1">
       </label>
       <label>단백질 (g)
-        <input name="proteinG" type="number" inputmode="decimal" min="0" step="0.1" required>
+        <input name="proteinG" type="number" inputmode="decimal" min="0" step="0.1">
       </label>
       <label>지방 (g)
-        <input name="fatG" type="number" inputmode="decimal" min="0" step="0.1" required>
+        <input name="fatG" type="number" inputmode="decimal" min="0" step="0.1">
       </label>
       <label class="checkbox-row">
         <input name="saveAsPreset" type="checkbox" checked>
@@ -1004,6 +1075,18 @@
       </div>
     </section>
     <div id="manualRatio" class="manual-ratio" hidden></div>
+    <section class="account-box">
+      <h3>데이터</h3>
+      <p class="calc-note">파일은 이 기기에서 만들고 읽습니다. 기존 날짜와 프리셋은 복구할 때 덮어쓰지 않습니다.</p>
+      <div class="feature-actions">
+        <button id="exportJson" type="button">JSON 내보내기</button>
+        <button id="exportCsv" type="button">CSV 내보내기</button>
+        <label for="importJsonFile">JSON 복구
+          <input id="importJsonFile" type="file" accept="application/json,.json">
+        </label>
+      </div>
+      <div id="importStatus" class="form-result" aria-live="polite" hidden></div>
+    </section>
     <form id="profileForm" class="profile-form">
       <label>성별
         <select name="sex" required>
@@ -1046,6 +1129,26 @@
 
       <button type="submit">계산하고 저장</button>
     </form>
+  </div>
+</div>
+
+<div id="weeklySummary" class="sheet" hidden>
+  <div class="sheet-inner">
+    <div class="sheet-header">
+      <button id="closeWeeklySummary" type="button">‹ 돌아가기</button>
+      <h2>최근 7일</h2>
+    </div>
+    <div id="weeklySummaryContent" class="summary-list" aria-live="polite"></div>
+  </div>
+</div>
+
+<div id="revisionHistory" class="sheet" hidden>
+  <div class="sheet-inner">
+    <div class="sheet-header">
+      <button id="closeRevisionHistory" type="button">‹ 돌아가기</button>
+      <h2>수정 이력</h2>
+    </div>
+    <div id="revisionHistoryContent" class="revision-list"></div>
   </div>
 </div>
 

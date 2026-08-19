@@ -11,6 +11,12 @@ function request(code = '036000291452', authorization = 'Bearer test-token') {
   };
 }
 
+function identityRequest(code = '036000291452') {
+  const req = request(code);
+  req.query.includeIdentity = '1';
+  return req;
+}
+
 function response() {
   const finishListeners = [];
   return {
@@ -67,6 +73,30 @@ test('authenticates before parsing or querying and classifies 400 and 503', asyn
   await unavailable(request(), unavailableResponse);
   assert.equal(unavailableResponse.statusCode, 503);
   assert.deepEqual(unavailableResponse.body, { error: '바코드 카탈로그를 확인하지 못했다' });
+});
+
+test('queries UPC identity only when explicitly requested after a shared miss', async () => {
+  let identityCalls = 0;
+  const handler = createBarcodeFood({
+    authenticate: async () => {},
+    queryBarcodeCatalog: async () => null,
+    lookupUpcIdentity: async (code) => {
+      identityCalls += 1;
+      return { barcode: `0${code}`, name: '제품명', provider: 'upcitemdb' };
+    },
+  });
+
+  const basic = response();
+  await handler(request(), basic);
+  assert.deepEqual(basic.body, { item: null });
+  assert.equal(identityCalls, 0);
+
+  const enriched = response();
+  await handler(identityRequest(), enriched);
+  assert.equal(identityCalls, 1);
+  assert.equal(enriched.body.item, null);
+  assert.equal(enriched.body.identity.provider, 'upcitemdb');
+  assert.deepEqual(enriched.body.providers, { shared: 'miss', upcitemdb: 'hit' });
 });
 
 test('hosting routes the exact barcode API without changing food search routing', async () => {

@@ -19,6 +19,7 @@ import {
 
 import { firebaseConfig } from '/src/firebaseConfig.js';
 import { normalizeSearchFoodsResponse } from '/src/lib/searchFoodsResponse.js';
+import { planMergeRestore, validateExportEnvelope } from '/src/lib/dataTransfer.js';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -249,6 +250,12 @@ export async function loadMonth(year, month) {
   return byDate;
 }
 
+export async function loadDaysByKeys(keys) {
+  if (!Array.isArray(keys)) throw new TypeError('keys must be an array');
+  const loaded = await Promise.all(keys.map((key) => loadDay(key)));
+  return loaded.filter(Boolean);
+}
+
 /**
  * 하루 문서를 통째로 쓴다. totals 는 호출부가 계산해서 넘긴다 —
  * 여기서 계산하면 순수 로직(dayTotals.js)이 네트워크 계층에 섞인다.
@@ -273,6 +280,10 @@ export async function saveDay(dateStr, { slots, totals, weightKg }) {
  * 구형(`entry` 하나)과 신형(`entries` 배열)이 섞여 있는 게 정상이다 — 마이그레이션을 안 했다.
  */
 export function presetEntries(preset) {
+  if (preset?.schemaVersion === 2 && preset?.slots) {
+    if (preset.kind === 'meal') return preset.slots[preset.sourceSlot] ?? [];
+    return Object.values(preset.slots).flatMap((entries) => Array.isArray(entries) ? entries : []);
+  }
   if (Array.isArray(preset?.entries)) return preset.entries;
   return preset?.entry ? [preset.entry] : [];
 }
@@ -298,6 +309,12 @@ export async function savePreset(label, entries) {
     entries,
     createdAt: serverTimestamp(),
   });
+  return presetId;
+}
+
+export async function saveStructuredPreset(preset) {
+  const presetId = crypto.randomUUID();
+  await setDoc(doc(db, 'users', requireUid(), 'presets', presetId), preset);
   return presetId;
 }
 
@@ -415,4 +432,76 @@ export async function lookupBarcode(code) {
     throw new Error('바코드 조회 응답을 이해할 수 없습니다.');
   }
   return body.item;
+}
+
+export async function lookupBarcodeIdentity(code) {
+  requireUid();
+  const token = await auth.currentUser.getIdToken();
+  const res = await fetch(`/api/foods/barcode?code=${encodeURIComponent(code)}&includeIdentity=1`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `바코드 식별 조회 실패 (${res.status})`);
+  if (!body || typeof body !== 'object' || Array.isArray(body)
+    || !Object.hasOwn(body, 'identity')
+    || (body.identity !== null && typeof body.identity !== 'object')) {
+    throw new Error('바코드 식별 응답을 이해할 수 없습니다.');
+  }
+  return body.identity;
+}
+
+export async function loadExportData() {
+  const uid = requireUid();
+  const [userSnapshot, goalsSnapshot, daysSnapshot, presetsSnapshot] = await Promise.all([
+    getDoc(doc(db, 'users', uid)),
+    getDocs(collection(db, 'users', uid, 'goals')),
+    getDocs(collection(db, 'users', uid, 'days')),
+    getDocs(collection(db, 'users', uid, 'presets')),
+  ]);
+  const user = userSnapshot.exists() ? userSnapshot.data() : {};
+  const portableTimestamp = (value) => {
+    if (typeof value === 'string') return value;
+    if (value && typeof value.toDate === 'function') return value.toDate().toISOString();
+    return null;
+  };
+  return {
+    profile: user.profile ?? null,
+    goals: goalsSnapshot.docs.map((entry) => {
+      const { createdAt: ignored, ...payload } = entry.data();
+      return { ...payload, effectiveFrom: entry.id };
+    }),
+    days: daysSnapshot.docs.map((entry) => {
+      const { updatedAt: ignored, ...payload } = entry.data();
+      return { ...payload, date: entry.id };
+    }),
+    presets: presetsSnapshot.docs.map((entry) => {
+      const { createdAt, ...payload } = entry.data();
+      return { id: entry.id, ...payload, ...(createdAt ? { createdAt: portableTimestamp(createdAt) } : {}) };
+    }),
+    dislikes: user.dislikes ?? [],
+    recentEntries: user.recentEntries ?? [],
+  };
+}
+
+export async function restoreExportData(rawEnvelope) {
+  const envelope = validateExportEnvelope(rawEnvelope);
+  const current = await loadExportData();
+  const plan = planMergeRestore(current, envelope);
+  const uid = requireUid();
+  const dayById = new Map(envelope.days.map((day) => [day.date, day]));
+  const presetById = new Map(envelope.presets.map((preset) => [preset.id, preset]));
+  const writes = [
+    ...plan.daysToWrite.map((id) => {
+      const { date, ...payload } = dayById.get(id);
+      return setDoc(doc(db, 'users', uid, 'days', id), { ...payload, date });
+    }),
+    ...plan.presetsToWrite.map((id) => {
+      const { id: ignored, ...payload } = presetById.get(id);
+      return setDoc(doc(db, 'users', uid, 'presets', id), payload);
+    }),
+  ];
+  const results = await Promise.allSettled(writes);
+  const failures = results.filter((result) => result.status === 'rejected');
+  if (failures.length > 0) throw new AggregateError(failures.map((result) => result.reason), '일부 복구 쓰기에 실패했습니다.');
+  return { ...plan, written: writes.length };
 }

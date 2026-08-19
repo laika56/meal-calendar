@@ -3,7 +3,7 @@
 // 이 값은 tests/shellFiles.test.js 가 SHELL_FILES 의 실제 bytes 전체와 대조한다.
 // 셸 파일을 바꾸고 이 digest를 갱신하지 않으면 테스트가 실패한다. 서비스워커 자체가
 // 바뀌어야 새 install이 실행되므로, 검색 UI 같은 새 배포가 구형 cache에 가리는 일을 막는다.
-const SHELL_REVISION = '97924d98733bf2c7c5ebeb930372d6ffa7ab47f1fdcb84e0e499c1afa55db258';
+const SHELL_REVISION = 'fb2ef1cda4f0a421ee779d034e49c662a7722cfa85014c7586b8050e18bd08a1';
 const CACHE_NAME = `meal-calendar-shell-${SHELL_REVISION}`;
 
 // app.js / db.js 가 실제로 import 하는 것을 전부 적는다.
@@ -18,6 +18,7 @@ const SHELL_FILES = [
   '/public/index.html',
   '/public/app.js',
   '/public/barcodeLookupFlow.js',
+  '/public/nutritionLabelOcr.js',
   '/public/db.js',
   '/public/partialNutritionEntry.js',
   '/public/searchResult.js',
@@ -31,17 +32,22 @@ const SHELL_FILES = [
   '/src/lib/authValidation.js',
   '/src/lib/calendarGrid.js',
   '/src/lib/dayTotals.js',
+  '/src/lib/dataTransfer.js',
+  '/src/lib/entryRevision.js',
   '/src/lib/metabolism.js',
+  '/src/lib/nutritionLabel.js',
   '/src/lib/mfdsParser.js',
   '/src/lib/offParser.js',
   '/src/lib/barcodeProduct.js',
   '/src/lib/quickFoodInput.js',
+  '/src/lib/presetV2.js',
   '/src/lib/searchFoodsResponse.js',
   '/src/lib/uiDashboard.js',
   '/src/lib/roulette.js',
   '/src/lib/servingEstimate.js',
   '/src/lib/units.js',
   '/src/lib/weightTrend.js',
+  '/src/lib/weeklySummary.js',
   // 1인분 참고표. 필요할 때만 fetch 하지만 오프라인에서도 참고값이 떠야 한다
   '/src/data/servingByCategory.json',
 ];

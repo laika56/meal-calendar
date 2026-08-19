@@ -31,6 +31,9 @@ export function sumEntries(entries) {
 
     for (const field of NUTRIENT_KEYS) {
       const value = entry[field];
+      // 영양성분표에 없는 탄·단·지는 entry에서 null로 보존한다. 합계에는 알려진
+      // 값만 더하고, 화면이 해당 날짜의 null 존재를 따로 표시한다.
+      if (value === null) continue;
       if (typeof value !== 'number' || Number.isNaN(value)) {
         throw new TypeError(
           `sumEntries: entries[${index}].${field} must be a number, got ${formatValue(value)}`,

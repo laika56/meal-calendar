@@ -46,7 +46,8 @@ users/{uid}/days/{YYYY-MM-DD}            ← 로컬(Asia/Seoul) 날짜. UTC 금�
   rouletteSeed     재현 가능한 룰렛을 위한 시드
 
 users/{uid}/presets/{presetId}           1-Click 고정 식품
-  { label, entry }
+  구형 { label, entry | entries }
+  신형 { schemaVersion:2, label, kind:"meal"|"day", sourceSlot, slots, createdAt }
 
 foods/{source}_{code}                    공용 캐시. 외부 API 쿼터 절약
   { source, code, name, per100g:{...}, servingG, fetchedAt }
@@ -67,6 +68,7 @@ foods/{source}_{code}                    공용 캐시. 외부 API 쿼터 절약
     matchedFoodName              // 실제 식약처 검색에서 고른 항목
   },
   at:       serverTimestamp
+  revisions?: [{ changedAt, reason, before }] // 수정 전 닫힌 snapshot. 최신값은 최상위
 }
 ```
 
@@ -131,6 +133,10 @@ transaction에서 `barcodeCatalogState/current`가 가리키게 한다. 브라�
 rules로 닫고 `barcodeFood`만 Admin SDK로 읽는다. 앱은 이 공용 조회가 miss/장애일 때만 OFF를
 호출하며, 스캔 결과를 공용 DB에 쓰거나 개인 학습 데이터로 축적하지 않는다.
 
+바코드 조회 순서는 공용 국내 카탈로그 → Open Food Facts → UPCitemdb 식별 조회다.
+UPCitemdb는 이름·브랜드 같은 식별 후보만 반환하며 영양값을 만들지 않는다. 식별 후보를 받으면
+기존 음식 검색을 다시 실행하고, 검증된 영양 결과가 없으면 사용자가 영양성분표를 확인해 입력한다.
+
 ### `searchFoods` 구현 메모
 
 - `functions/index.js`, 리전 `asia-northeast3` (Firestore와 동일 — 레이턴시), **Blaze 요금제 필요**
@@ -150,6 +156,20 @@ rules로 닫고 `barcodeFood`만 Admin SDK로 읽는다. 앱은 이 공용 조�
   TS 빌드 산출물로 이미 막아뒀었다 — 이름 충돌 피하려고 옮겼다)
 - Hosting rewrite에도 `region: asia-northeast3`를 명시한다. 생략하면 로컬 Hosting 서버가 배포된
   함수를 `us-central1`로 잘못 찾아 404를 반환했다. 운영·로컬 모두 함수 리전은 한 곳에서 일치시킨다
+
+## 입력 신뢰도·반복 기록 확장 (2026-08-19, 로컬 구현)
+
+- 영양성분표 사진은 브라우저의 고정 버전 Tesseract에서만 처리한다. 사진·OCR 원문은 저장하거나
+  내보내지 않으며, 이름·양·열량과 선택적 탄단지는 사용자 확인 뒤에만 entry가 된다.
+- entry 수정은 `foodKey`, 최초 `addedBy`, 최초 `at`을 유지하고 이전값을 `revisions`에 추가한다.
+  변경된 slots와 재계산한 totals는 기존 하루 문서 쓰기 한 번으로 함께 저장한다.
+- 최근 7일 요약은 선택 날짜를 포함한 Asia/Seoul 날짜 키 7개만 읽으며, 미기록일을 0kcal로
+  평균내지 않는다.
+- JSON 내보내기는 profile/goals/days/presets/dislikes/recentEntries의 versioned envelope다.
+  복구는 하위 record까지 닫힌 shape·날짜·숫자·중복을 메모리에서 검증한 뒤 새 day/preset만 쓰고
+  충돌은 건너뛴다. CSV는 열람 전용이다.
+- 신형 프리셋은 한 끼 또는 하루의 네 슬롯 snapshot을 보존하고 revision은 복사하지 않는다.
+  적용할 때 새 `at`과 `addedBy: "preset"`을 부여하고 대상 하루를 한 번 저장한다.
 
 ## 오프라인
 

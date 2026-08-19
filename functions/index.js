@@ -17,6 +17,7 @@ import {
   canonicalBarcode as canonicalCatalogBarcode,
   queryBarcodeCatalog as queryBarcodeCatalogFromFirestore,
 } from './shared/barcodeCatalogLookup.js';
+import { lookupUpcItemIdentity } from './upcItemDb.js';
 
 initializeApp();
 
@@ -297,15 +298,26 @@ function requireBarcodeDependencies(dependencies) {
   return dependencies;
 }
 
-export async function runBarcodeLookup(code, dependencies) {
+export async function runBarcodeLookup(code, dependencies, { includeIdentity = false } = {}) {
   const { queryBarcodeCatalog } = requireBarcodeDependencies(dependencies);
   const item = await queryBarcodeCatalog(code);
-  return item === null ? { item: null } : { item, source: 'shared-catalog' };
+  if (item !== null) return { item, source: 'shared-catalog' };
+  if (!includeIdentity) return { item: null };
+  if (typeof dependencies.lookupUpcIdentity !== 'function') {
+    throw new TypeError('barcode dependencies.lookupUpcIdentity must be a function');
+  }
+  const identity = await dependencies.lookupUpcIdentity(code);
+  return {
+    item: null,
+    identity,
+    providers: { shared: 'miss', upcitemdb: identity === null ? 'miss' : 'hit' },
+  };
 }
 
 export function createBarcodeFood({
   authenticate = requireAuth,
   queryBarcodeCatalog = (code) => queryBarcodeCatalogFromFirestore(getFirestore(), code),
+  lookupUpcIdentity = lookupUpcItemIdentity,
 } = {}) {
   return onRequest(
     { region: 'asia-northeast3', cors: false },
@@ -322,7 +334,12 @@ export function createBarcodeFood({
         return;
       }
       try {
-        res.status(200).json(await runBarcodeLookup(code, { queryBarcodeCatalog }));
+        const includeIdentity = req.query.includeIdentity === '1';
+        res.status(200).json(await runBarcodeLookup(
+          code,
+          { queryBarcodeCatalog, lookupUpcIdentity },
+          { includeIdentity },
+        ));
       } catch (error) {
         logger.error('[barcode-catalog] 조회 실패', error);
         res.status(503).json({ error: '바코드 카탈로그를 확인하지 못했다' });
