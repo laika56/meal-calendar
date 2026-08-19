@@ -53,6 +53,9 @@ export function toBarcodeFood(parsed) {
     barcode,
     per100g: { ...parsed.per100 },
     basis: parsed.unit,
-    serving: null,
+    // OFF 가 1회분을 주면 그대로 쓴다. 포장 제품은 중량이 포장에 찍혀 있으므로
+    // 사용자에게 그램을 묻지 않는 게 맞다. 파서가 검증에 실패하면 null 이 오고,
+    // 그때는 기존대로 「1인분 정보 없음」 경로를 탄다.
+    serving: parsed.serving ?? null,
   };
 }
