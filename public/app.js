@@ -2296,10 +2296,43 @@ document.addEventListener('touchend', (event) => {
   swipeGoBack();
 }, { passive: true });
 
+// 서비스워커 등록 + **새 배포를 실제로 집어오는 것까지.**
+//
+// 등록만 해두면 부족하다. sw.js 는 skipWaiting/clients.claim 이라 새 워커가 제어권은
+// 가져가지만, **이미 로드된 페이지는 옛 JS 모듈을 메모리에 들고 그대로 돈다.** 아무도
+// 새로고침을 시키지 않는다. 게다가 iOS 홈화면 PWA 를 백그라운드에서 복귀시키면 load
+// 이벤트가 다시 안 뛰어서 새 sw.js 를 확인조차 안 한다.
+//
+// 그래서 배포할 때마다 사용자가 앱을 완전히 죽여야 했다. 2026-08-19 하루에만 세 번
+// 「고쳤는데 폰에서 안 보인다」가 반복됐고, 그때마다 코드를 의심하느라 시간을 썼다.
+// (2026-08-14 「라멘 89kcal」도 뿌리는 같은 문제였다.)
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => {
+  // 최초 설치 때는 controller 가 없다가 생긴다. 그때 새로고침하면 무한 루프가 된다 —
+  // 「원래 있던 워커가 새 워커로 바뀐 경우」에만 새로고침한다.
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloading || !hadController) return;
+    reloading = true;
+    window.location.reload();
+  });
+
+  window.addEventListener('load', async () => {
+    let registration;
+    try {
+      registration = await navigator.serviceWorker.register('/sw.js');
+    } catch (err) {
       console.error('[meal-calendar] SW 등록 실패', err);
+      return;
+    }
+    // 포그라운드로 돌아올 때마다 새 배포가 있는지 물어본다. 이게 없으면 홈화면 PWA 는
+    // 앱을 죽였다 켜기 전까지 영원히 옛 코드를 돈다.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      registration.update().catch((err) => {
+        console.error('[meal-calendar] SW 갱신 확인 실패', err);
+      });
     });
   });
 }

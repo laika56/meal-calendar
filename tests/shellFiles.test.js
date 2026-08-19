@@ -79,3 +79,33 @@ test('서비스워커 캐시 identity가 현재 앱 셸 bytes 전체에 결속�
     '앱 셸이 바뀌었는데 SHELL_REVISION 이 갱신되지 않아 이전 캐시가 계속 제공된다',
   );
 });
+
+test('새 서비스워커가 잡으면 페이지를 새로고침한다', () => {
+  // 등록만 해두면 새 워커가 제어권을 가져가도 **이미 로드된 페이지는 옛 JS 를 계속 돈다.**
+  // 2026-08-19 하루에 세 번 「고쳤는데 폰에서 안 보인다」가 반복된 원인이 이것이다.
+  const source = read('public/app.js');
+
+  assert.match(
+    source,
+    /addEventListener\('controllerchange'/,
+    'controllerchange 를 안 듣는다 — 새 워커가 잡아도 페이지가 옛 코드를 계속 돈다',
+  );
+  assert.match(
+    source,
+    /window\.location\.reload\(\)/,
+    'controllerchange 때 새로고침하지 않는다',
+  );
+  // 최초 설치 때 새로고침하면 무한 루프가 된다. 그 방어가 있어야 한다.
+  assert.match(
+    source,
+    /navigator\.serviceWorker\.controller/,
+    '최초 설치와 갱신을 구분하지 않는다 — 새로고침 무한 루프가 난다',
+  );
+});
+
+test('포그라운드로 돌아올 때 새 배포를 확인한다', () => {
+  // iOS 홈화면 PWA 는 백그라운드 복귀 시 load 가 다시 안 뛴다. update() 를 직접
+  // 부르지 않으면 앱을 죽였다 켜기 전까지 영원히 옛 코드를 돈다.
+  const source = read('public/app.js');
+  assert.match(source, /registration\.update\(\)/, '복귀 시 SW 갱신을 확인하지 않는다');
+});
