@@ -13,6 +13,17 @@
      파일 수는 그대로지만 왕복이 순차→병렬이라 체감 로딩이 줄어든다.
      db.js/Firebase SDK는 일부러 안 넣는다 — 동적 import로 늦게 부르는 게
      의도된 최적화다(app.js 주석 참고), 여기서 미리 당기면 그 의도가 깨진다. -->
+<!-- 첫 화면 뒤의 지연은 앱 코드가 아니라 **외부 호스트 4곳과의 연결 수립**이다.
+     2026-08-19 배포본 실측: 앱 리소스 24개는 서비스워커 캐시에서 13~35ms 에 끝나는데,
+     그 뒤 gstatic(SDK) → securetoken(토큰) → identitytoolkit(계정) → firestore(데이터)가
+     **앞뒤로 물려 직렬로** 돌아 2.6초가 걸렸다. 각 호스트마다 DNS+TCP+TLS 를 처음부터
+     맺는다. 미리 연결해두면 그 왕복이 첫 요청에서 빠진다.
+     crossorigin 이 필요하다 — 이 요청들은 CORS 모드로 나간다. 빠뜨리면 연결이 재사용되지
+     않고 preconnect 가 헛돈다. -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
 <link rel="modulepreload" href="/public/app.js">
 <link rel="modulepreload" href="/src/lib/calendarGrid.js">
 <link rel="modulepreload" href="/src/lib/metabolism.js">
