@@ -433,7 +433,7 @@ async function persistDay(slots) {
     setSaveState(null);
   } catch (err) {
     console.error('[meal-calendar] 저장 실패', err);
-    setSaveState('failed', '저장하지 못했습니다. 화면에는 보이지만 서버에 올라가지 않았습니다 — 네트워크를 확인한 뒤 다시 시도해 주세요.');
+    setSaveState('failed', '저장하지 못했습니다. 화면에는 보이지만 서버에 올라가지 않았습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.');
   }
 }
 
@@ -1925,7 +1925,7 @@ el.profileForm.addEventListener('submit', async (event) => {
   } catch (err) {
     el.formError.hidden = false;
     el.formError.textContent = err instanceof ImpossibleTargetError
-      ? '이 조합으로는 목표를 계산할 수 없습니다. 단백질·지방이 칼로리를 넘어서 탄수화물이 음수가 됩니다 — 목적이나 체중을 다시 확인해 주세요.'
+      ? '이 조합으로는 목표를 계산할 수 없습니다. 단백질·지방이 칼로리를 넘어서 탄수화물이 음수가 됩니다. 목적이나 체중을 다시 확인해 주세요.'
       : err.message;
     el.formResult.hidden = true;
     return;

@@ -444,13 +444,50 @@
     margin: 0 0 14px; border: 1px solid var(--info-line); border-radius: 10px;
     background: var(--info-bg); color: var(--info); font: inherit; font-weight: 650;
   }
+  /* 스캐너 무대. 전에는 비디오가 그냥 둥근 상자였고 **어디에 바코드를 대야 하는지
+     알려주는 게 아무것도 없었다.** 조준창이 그 일을 한다 — 장식이 아니라 안내다. */
+  .barcode-stage {
+    position: relative; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 14px; background: #000;
+  }
   .barcode-scanner video {
     display: block; width: 100%; max-height: 54vh; object-fit: cover;
-    border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  }
+  /* 바코드는 가로로 길다. 창도 가로로 길게 둬서 **모양 자체가 방향을 알려준다.** */
+  .barcode-reticle {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 76%; aspect-ratio: 5 / 2; border-radius: 10px;
+    /* 창 밖을 어둡게. 별도 오버레이 엘리먼트 없이 그림자 하나로 처리한다. */
+    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .55);
+  }
+  /* 네 모서리 브래킷. 테두리를 다 두르면 상자가 하나 더 생겨서 답답하다 —
+     모서리만 집어서 「범위」만 말한다. */
+  .barcode-reticle::before, .barcode-reticle::after {
+    content: ''; position: absolute; width: 26px; height: 26px;
+    border: 2px solid var(--ok-bright); border-radius: 4px;
+  }
+  .barcode-reticle::before {
+    top: -1px; left: -1px; border-right: 0; border-bottom: 0;
+    border-top-right-radius: 0; border-bottom-left-radius: 0;
+  }
+  .barcode-reticle::after {
+    right: -1px; bottom: -1px; border-left: 0; border-top: 0;
+    border-bottom-left-radius: 0; border-top-right-radius: 0;
+  }
+  /* 훑는 선. 카메라가 살아서 보고 있다는 신호다. */
+  .barcode-sweep {
+    position: absolute; left: 8%; right: 8%; top: 0; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--ok-bright), transparent);
+    animation: barcode-sweep 2.2s ease-in-out infinite;
+  }
+  @keyframes barcode-sweep {
+    0%, 100% { top: 12%; opacity: .35; }
+    50%      { top: 86%; opacity: 1; }
   }
   .barcode-scanner canvas { display: none; }
   .barcode-status {
     min-height: 1.5em; margin: 12px 0; color: var(--muted); font-size: 13px; line-height: 1.55;
+    text-align: center;
   }
   .barcode-copy-bank { display: none; }
   .quick-hint {
@@ -587,6 +624,7 @@
      정보라서 남긴다 — 접근성은 피드백을 없애는 게 아니다. */
   @media (prefers-reduced-motion: reduce) {
     .sheet { animation: none; }
+    .barcode-sweep { animation: none; top: 50%; }
     *, *::before, *::after {
       transition-duration: .01ms !important;
       animation-duration: .01ms !important;
@@ -795,7 +833,14 @@
         <button id="barcodeCancel" type="button">취소</button>
         <h2>바코드를 비춰주세요</h2>
       </div>
-      <video id="barcodeVideo" playsinline muted autoplay></video>
+      <div class="barcode-stage">
+        <video id="barcodeVideo" playsinline muted autoplay></video>
+        <!-- 조준창. 바코드는 가로로 길어서 창도 가로로 길다 — 어디에 대야 하는지를
+             모양 자체가 말해준다. aria-hidden: 스크린리더에는 위 제목이 이미 있다. -->
+        <div class="barcode-reticle" aria-hidden="true">
+          <span class="barcode-sweep"></span>
+        </div>
+      </div>
       <canvas id="barcodeCanvas"></canvas>
       <div id="barcodeStatus" class="barcode-status"></div>
       <div class="barcode-copy-bank" aria-hidden="true">
