@@ -27,7 +27,8 @@
 
 | | 발주서 | 워크트리 | 잡는 파일 | 의존 |
 |---|---|---|---|---|
-| | **(비어 있음)** | | | |
+| ☐ | `31-multi-candidate-extract.md` | `adhoc-1` | `public/app.js`, `src/lib/multiCandidate.js` | 없음 |
+| ☐ | `32-shared-sync-guard.md` | `adhoc-2` | `src/lib/sharedSync.js`, `tests/sharedSync.test.js` | 없음 |
 
 **워크트리가 다르면 같은 파일을 잡지 않게 「잡는 파일」을 미리 가른다.**
 겹치면 머지할 때 Claude 가 충돌을 푸느라 비싸진다.
