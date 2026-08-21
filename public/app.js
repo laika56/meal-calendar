@@ -428,16 +428,16 @@ function renderDayDetail() {
 
         const remove = document.createElement('button');
         remove.type = 'button';
-        remove.className = 'entry-del';
+        remove.className = 'entry-action entry-action-remove';
         remove.setAttribute('aria-label', `${entry.name} 삭제`);
-        remove.textContent = '×';
+        remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h10l-1 11H8L7 9Zm3 2v7m4-7v7"/></svg>';
         remove.addEventListener('click', () => removeEntry(key, index));
 
         const edit = document.createElement('button');
         edit.type = 'button';
-        edit.className = 'entry-del';
+        edit.className = 'entry-action entry-action-edit';
         edit.setAttribute('aria-label', `${entry.name} 수정`);
-        edit.textContent = '수정';
+        edit.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 11-11 4 4L8 20H4v-4Zm9-9 4 4M4 20h16"/></svg>';
         edit.addEventListener('click', () => editEntry(key, index));
 
         const actions = document.createElement('span');
@@ -447,9 +447,9 @@ function renderDayDetail() {
         if (Array.isArray(entry.revisions) && entry.revisions.length > 0) {
           const history = document.createElement('button');
           history.type = 'button';
-          history.className = 'entry-del';
+          history.className = 'entry-action entry-action-history';
           history.setAttribute('aria-label', `${entry.name} 수정 이력`);
-          history.textContent = '이력';
+          history.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M5 5v4h4M5.5 8.5A8 8 0 1 1 4 14"/></svg>';
           history.addEventListener('click', () => showRevisionHistory(entry));
           actions.appendChild(history);
         }
@@ -1442,7 +1442,7 @@ async function recognizeBarcodeDigits(session) {
   let recognizer = barcodeRecognizer;
   if (!recognizer) {
     // 이 입력은 전체 사진이 아니라 이미 잘라낸 EAN/UPC 숫자 한 줄이다.
-    recognizer = await createBarcodeRecognizer({ pageSegMode: '7' });
+    recognizer = await createBarcodeRecognizer({ pageSegMode: '11' });
     if (session !== barcodeSession) {
       await recognizer.close();
       return null;

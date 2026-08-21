@@ -14,7 +14,7 @@ test('configures an English digit-only worker and reuses it until close', async 
     async terminate() { calls.push(['terminate']); },
   };
   const recognizer = await createBarcodeRecognizer({
-    pageSegMode: '7',
+    pageSegMode: '11',
     loadTesseract: async () => ({
       async createWorker(language) {
         calls.push(['createWorker', language]);
@@ -31,7 +31,7 @@ test('configures an English digit-only worker and reuses it until close', async 
     ['createWorker', 'eng'],
     ['setParameters', {
       tessedit_char_whitelist: '0123456789',
-      tessedit_pageseg_mode: '7',
+      tessedit_pageseg_mode: '11',
     }],
     ['recognize', 'frame-1'],
     ['recognize', 'frame-2'],

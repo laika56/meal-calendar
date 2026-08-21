@@ -73,16 +73,30 @@ test('calendar rendering exposes a per-day ring progress value', () => {
   );
 });
 
-test('day detail entries keep calories in one right-aligned column', () => {
+test('day detail entries keep calories aligned and actions in a touch-sized capsule', () => {
   const html = read('public/index.html');
   const lineRule = html.match(/\.entry-line\s*\{([^}]*)\}/s);
   const kcalRule = html.match(/\.entry-kcal\s*\{([^}]*)\}/s);
+  const actionsRule = html.match(/\.entry-actions\s*\{([^}]*)\}/s);
+  const actionRule = html.match(/\.entry-action\s*\{([^}]*)\}/s);
 
   assert.ok(lineRule, 'entry line CSS rule is missing');
   assert.match(lineRule[1], /display:\s*grid/);
-  assert.match(lineRule[1], /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+24px/);
+  assert.match(lineRule[1], /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+auto/);
   assert.ok(kcalRule, 'entry kcal CSS rule is missing');
   assert.match(kcalRule[1], /text-align:\s*right/);
+  assert.ok(actionsRule, 'entry action capsule CSS rule is missing');
+  assert.match(actionsRule[1], /border-radius/);
+  assert.match(actionsRule[1], /background:\s*var\(--card\)/);
+  assert.ok(actionRule, 'entry icon action CSS rule is missing');
+  assert.match(actionRule[1], /width:\s*36px/);
+  assert.match(actionRule[1], /height:\s*36px/);
+
+  const app = read('public/app.js');
+  assert.match(app, /entry-action-edit/);
+  assert.match(app, /entry-action-remove/);
+  assert.match(app, /<svg/);
+  assert.doesNotMatch(app, /remove\.textContent\s*=\s*'×'/);
 });
 
 test('day weight input stays at 16px or larger so iOS does not zoom on focus', () => {
@@ -152,6 +166,7 @@ test('barcode flow lazy-loads the pinned reader and closes camera tracks at life
   assert.match(app, /barcodeDigitCropPlan/);
   assert.match(app, /getImageData/);
   assert.match(app, /putImageData/);
+  assert.match(app, /createBarcodeRecognizer\(\{\s*pageSegMode:\s*'11'\s*\}\)/);
   assert.match(app, /recognizeBarcodePhoto/);
   assert.match(app, /barcodePhoto\.addEventListener\('change'/);
   assert.match(app, /barcodeManualForm\.addEventListener\('submit'/);
