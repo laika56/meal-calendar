@@ -118,7 +118,7 @@ test('entry shell includes the static barcode scanner controls and exact fallbac
 
   for (const copy of [
     '바코드 스캔',
-    '바코드를 비춰주세요',
+    '20~30cm 떨어져 바코드 선이 선명하게 비춰주세요',
     '취소',
     '제품 정보를 확인하고 있습니다.',
     'Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.',
@@ -141,6 +141,7 @@ test('barcode flow lazy-loads the pinned reader and closes camera tracks at life
   assert.match(app, /facingMode:\s*\{\s*ideal:\s*'environment'\s*\}/);
   assert.match(app, /formats:\s*BARCODE_FORMATS/);
   assert.match(app, /maxNumberOfSymbols:\s*1/);
+  assert.match(app, /await configureBarcodeTrack\(videoTrack\)/);
   assert.match(app, /for \(const track of barcodeStream\?\.getTracks\?\.\(\) \?\? \[\]\) track\.stop\(\)/);
   assert.match(app, /visibilitychange/);
   assert.match(app, /document\.getElementById\('closeEntry'\)[\s\S]*?stopBarcodeScanner\(\)/);

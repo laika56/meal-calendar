@@ -29,6 +29,46 @@ export function barcodeVideoConstraints() {
   };
 }
 
+export async function configureBarcodeTrack(track) {
+  if (typeof track?.getCapabilities !== 'function'
+    || typeof track?.applyConstraints !== 'function') return false;
+
+  let capabilities;
+  try {
+    capabilities = track.getCapabilities();
+  } catch {
+    return false;
+  }
+
+  const preferred = {};
+  if (Array.isArray(capabilities?.focusMode)
+    && capabilities.focusMode.includes('continuous')) {
+    preferred.focusMode = 'continuous';
+  }
+
+  const minZoom = capabilities?.zoom?.min;
+  const maxZoom = capabilities?.zoom?.max;
+  if (Number.isFinite(minZoom) && Number.isFinite(maxZoom) && maxZoom > minZoom) {
+    const zoom = Math.max(minZoom, Math.min(2, maxZoom));
+    if (zoom > minZoom) preferred.zoom = zoom;
+  }
+
+  if (Object.keys(preferred).length === 0) return false;
+  const attempts = [preferred];
+  if ('focusMode' in preferred && 'zoom' in preferred) {
+    attempts.push({ focusMode: preferred.focusMode });
+  }
+  for (const attempt of attempts) {
+    try {
+      await track.applyConstraints({ advanced: [attempt] });
+      return true;
+    } catch {
+      // 줌을 거부하는 기기에서도 연속 초점은 한 번 더 독립 시도한다.
+    }
+  }
+  return false;
+}
+
 export function normalizeRetailBarcode(results) {
   if (!Array.isArray(results)) {
     throw new TypeError('normalizeRetailBarcode: results must be an array');

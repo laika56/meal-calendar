@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   barcodeCapturePlan,
+  configureBarcodeTrack,
   barcodeVideoConstraints,
   buildOpenFoodFactsUrl,
   normalizeRetailBarcode,
@@ -48,6 +49,65 @@ test('asks the rear camera for enough detail to decode retail bars', () => {
     width: { ideal: 1920 },
     height: { ideal: 1080 },
   });
+});
+
+test('enables continuous focus and a bounded 2x zoom when the camera exposes them', async () => {
+  const applied = [];
+  const track = {
+    getCapabilities() {
+      return {
+        focusMode: ['manual', 'continuous'],
+        zoom: { min: 1, max: 8, step: 0.1 },
+      };
+    },
+    async applyConstraints(constraints) {
+      applied.push(constraints);
+    },
+  };
+
+  assert.equal(await configureBarcodeTrack(track), true);
+  assert.deepEqual(applied, [{
+    advanced: [{ focusMode: 'continuous', zoom: 2 }],
+  }]);
+});
+
+test('uses only supported focus controls and treats camera constraint rejection as optional', async () => {
+  const focusOnly = [];
+  assert.equal(await configureBarcodeTrack({
+    getCapabilities: () => ({ focusMode: ['single-shot', 'continuous'] }),
+    async applyConstraints(constraints) { focusOnly.push(constraints); },
+  }), true);
+  assert.deepEqual(focusOnly, [{ advanced: [{ focusMode: 'continuous' }] }]);
+
+  assert.equal(await configureBarcodeTrack({
+    getCapabilities: () => ({ zoom: { min: 1, max: 1, step: 0 } }),
+    async applyConstraints() { throw new Error('must not run'); },
+  }), false);
+  assert.equal(await configureBarcodeTrack({
+    getCapabilities: () => ({ focusMode: ['continuous'] }),
+    async applyConstraints() { throw new Error('unsupported on this iPhone'); },
+  }), false);
+  assert.equal(await configureBarcodeTrack({}), false);
+});
+
+test('falls back to continuous focus when a camera rejects the combined zoom request', async () => {
+  const applied = [];
+  const track = {
+    getCapabilities: () => ({
+      focusMode: ['continuous'],
+      zoom: { min: 1, max: 4, step: 0.1 },
+    }),
+    async applyConstraints(constraints) {
+      applied.push(constraints);
+      if (applied.length === 1) throw new Error('zoom rejected');
+    },
+  };
+
+  assert.equal(await configureBarcodeTrack(track), true);
+  assert.deepEqual(applied, [
+    { advanced: [{ focusMode: 'continuous', zoom: 2 }] },
+    { advanced: [{ focusMode: 'continuous' }] },
+  ]);
 });
 
 test('returns a valid EAN-13 unchanged and trims scanner text', () => {

@@ -13,7 +13,8 @@ import {
 import { monthDashboardSummary, progressPercent, servingChoiceOptions } from '/src/lib/uiDashboard.js';
 import { parseOffProduct } from '/src/lib/offParser.js';
 import {
-  barcodeCapturePlan, barcodeVideoConstraints, buildOpenFoodFactsUrl, normalizeRetailBarcode,
+  barcodeCapturePlan, barcodeVideoConstraints, buildOpenFoodFactsUrl, configureBarcodeTrack,
+  normalizeRetailBarcode,
   sharedCatalogRecordToFood, toBarcodeFood,
 } from '/src/lib/barcodeProduct.js';
 import { resolveBarcodeSources } from '/public/barcodeLookupFlow.js';
@@ -1439,6 +1440,9 @@ async function startBarcodeScanner() {
       }
       barcodeStream = stream;
     }
+    const [videoTrack] = barcodeStream.getVideoTracks();
+    await configureBarcodeTrack(videoTrack);
+    if (session !== barcodeSession) return;
     el.barcodeVideo.srcObject = barcodeStream;
     await el.barcodeVideo.play();
     await scanBarcodeFrame(zxing, session);
