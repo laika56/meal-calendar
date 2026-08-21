@@ -2,11 +2,53 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  barcodeCapturePlan,
+  barcodeVideoConstraints,
   buildOpenFoodFactsUrl,
   normalizeRetailBarcode,
   sharedCatalogRecordToFood,
   toBarcodeFood,
 } from '../src/lib/barcodeProduct.js';
+
+test('crops a landscape camera frame to the centered 5:2 barcode reticle before decoding', () => {
+  assert.deepEqual(barcodeCapturePlan(1920, 1080), {
+    sourceX: 230,
+    sourceY: 248,
+    sourceWidth: 1459,
+    sourceHeight: 584,
+    outputWidth: 1280,
+    outputHeight: 512,
+  });
+});
+
+test('keeps the centered barcode crop inside portrait video and rejects missing dimensions', () => {
+  assert.deepEqual(barcodeCapturePlan(1080, 1920), {
+    sourceX: 130,
+    sourceY: 796,
+    sourceWidth: 820,
+    sourceHeight: 328,
+    outputWidth: 820,
+    outputHeight: 328,
+  });
+  assert.deepEqual(barcodeCapturePlan(1, 1), {
+    sourceX: 0,
+    sourceY: 0,
+    sourceWidth: 1,
+    sourceHeight: 1,
+    outputWidth: 1,
+    outputHeight: 1,
+  });
+  assert.equal(barcodeCapturePlan(0, 1080), null);
+  assert.equal(barcodeCapturePlan(1920, Number.NaN), null);
+});
+
+test('asks the rear camera for enough detail to decode retail bars', () => {
+  assert.deepEqual(barcodeVideoConstraints(), {
+    facingMode: { ideal: 'environment' },
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  });
+});
 
 test('returns a valid EAN-13 unchanged and trims scanner text', () => {
   assert.equal(

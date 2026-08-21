@@ -3,6 +3,32 @@ import { isValidBarcode, toEan13, upcEToUpcA } from './barcode.js';
 const RETAIL_FORMATS = new Set(['EAN13', 'EAN8', 'UPCA', 'UPCE']);
 const CORE_NUTRIENTS = ['kcal', 'proteinG', 'fatG', 'carbG'];
 
+export function barcodeCapturePlan(videoWidth, videoHeight) {
+  if (!Number.isFinite(videoWidth) || videoWidth <= 0
+    || !Number.isFinite(videoHeight) || videoHeight <= 0) return null;
+
+  const sourceWidth = Math.max(1, Math.floor(Math.min(videoWidth * 0.76, videoHeight * 2.5)));
+  const sourceHeight = Math.max(1, Math.round(sourceWidth / 2.5));
+  const outputWidth = Math.min(sourceWidth, 1280);
+  const outputHeight = Math.round(sourceHeight * outputWidth / sourceWidth);
+  return {
+    sourceX: Math.floor((videoWidth - sourceWidth) / 2),
+    sourceY: Math.floor((videoHeight - sourceHeight) / 2),
+    sourceWidth,
+    sourceHeight,
+    outputWidth,
+    outputHeight,
+  };
+}
+
+export function barcodeVideoConstraints() {
+  return {
+    facingMode: { ideal: 'environment' },
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  };
+}
+
 export function normalizeRetailBarcode(results) {
   if (!Array.isArray(results)) {
     throw new TypeError('normalizeRetailBarcode: results must be an array');

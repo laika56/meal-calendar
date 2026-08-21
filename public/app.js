@@ -13,7 +13,8 @@ import {
 import { monthDashboardSummary, progressPercent, servingChoiceOptions } from '/src/lib/uiDashboard.js';
 import { parseOffProduct } from '/src/lib/offParser.js';
 import {
-  buildOpenFoodFactsUrl, normalizeRetailBarcode, sharedCatalogRecordToFood, toBarcodeFood,
+  barcodeCapturePlan, barcodeVideoConstraints, buildOpenFoodFactsUrl, normalizeRetailBarcode,
+  sharedCatalogRecordToFood, toBarcodeFood,
 } from '/src/lib/barcodeProduct.js';
 import { resolveBarcodeSources } from '/public/barcodeLookupFlow.js';
 import { createSearchResult } from '/public/searchResult.js';
@@ -1370,14 +1371,23 @@ async function resolveBarcodeProduct(barcode, session) {
 async function scanBarcodeFrame(zxing, session) {
   if (session !== barcodeSession || !barcodeStream) return;
   const { videoWidth, videoHeight } = el.barcodeVideo;
-  if (videoWidth > 0 && videoHeight > 0) {
-    const width = Math.min(videoWidth, 960);
-    const height = Math.round(videoHeight * width / videoWidth);
-    el.barcodeCanvas.width = width;
-    el.barcodeCanvas.height = height;
+  const capture = barcodeCapturePlan(videoWidth, videoHeight);
+  if (capture !== null) {
+    el.barcodeCanvas.width = capture.outputWidth;
+    el.barcodeCanvas.height = capture.outputHeight;
     const context = el.barcodeCanvas.getContext('2d', { willReadFrequently: true });
-    context.drawImage(el.barcodeVideo, 0, 0, width, height);
-    const image = context.getImageData(0, 0, width, height);
+    context.drawImage(
+      el.barcodeVideo,
+      capture.sourceX,
+      capture.sourceY,
+      capture.sourceWidth,
+      capture.sourceHeight,
+      0,
+      0,
+      capture.outputWidth,
+      capture.outputHeight,
+    );
+    const image = context.getImageData(0, 0, capture.outputWidth, capture.outputHeight);
     const results = await zxing.readBarcodes(image, {
       formats: BARCODE_FORMATS,
       maxNumberOfSymbols: 1,
@@ -1420,7 +1430,7 @@ async function startBarcodeScanner() {
       for (const track of barcodeStream.getTracks()) track.enabled = true;
     } else {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: barcodeVideoConstraints(),
         audio: false,
       });
       if (session !== barcodeSession) {
