@@ -129,8 +129,14 @@ resolveMultiCandidate(piece, items) -> Result
 
 5. git diff --stat
    → public/app.js · src/lib/multiCandidate.js · tests/multiCandidate.test.js
-     (quickFoodInput.js 의 export 추가가 필요했으면 그것까지 4개. 그 외 파일이 있으면 실패)
+     · docs/NEXT.md
+     (quickFoodInput.js 의 export 추가가 필요했으면 그것까지 5개. 그 외 파일이 있으면 실패)
 ```
+
+> `docs/NEXT.md` 는 `AGENTS.md:150`(「작업 시작 전과 끝난 후 '작업 분담 현황' 을
+> 갱신한다」)이 요구하는 것이라 허용 목록에 들어간다. 처음 발주 때 이걸 빠뜨려서
+> **두 규칙이 서로를 부쉈고, Codex 가 옳게 지적하고 멈췄다**(2026-08-21).
+> 갱신 범위는 「작업 분담 현황」 표의 이 발주 행뿐이다 — 다른 절을 고치면 실패.
 
 ## 안 하는 것
 
