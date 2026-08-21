@@ -2964,10 +2964,16 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     let registration;
     try {
-      registration = await navigator.serviceWorker.register('/sw.js');
+      registration = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
     } catch (err) {
       console.error('[meal-calendar] SW 등록 실패', err);
       return;
+    }
+    try {
+      await registration.update();
+    } catch (err) {
+      // 오프라인에서는 기존 셸을 계속 쓴다. 갱신 확인 실패로 앱을 막지 않는다.
+      console.error('[meal-calendar] SW 초기 갱신 확인 실패', err);
     }
     // 포그라운드로 돌아올 때마다 새 배포가 있는지 물어본다. 이게 없으면 홈화면 PWA 는
     // 앱을 죽였다 켜기 전까지 영원히 옛 코드를 돈다.
