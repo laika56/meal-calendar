@@ -21,6 +21,29 @@ export function barcodeCapturePlan(videoWidth, videoHeight) {
   };
 }
 
+/** 조준창 전체가 아니라 EAN/UPC 막대 아래의 숫자 한 줄만 OCR하기 위한 확대 영역. */
+export function barcodeDigitCropPlan(width, height) {
+  if (!Number.isFinite(width) || width <= 0
+    || !Number.isFinite(height) || height <= 0) return null;
+
+  const sourceX = Math.round(width * 0.04);
+  const sourceY = Math.min(height - 1, Math.round(height * 0.52));
+  const sourceWidth = Math.max(1, width - (sourceX * 2));
+  const sourceHeight = Math.max(1, Math.min(
+    height - sourceY,
+    Math.round(height * 0.44),
+  ));
+  const scale = Math.min(2, 1600 / sourceWidth);
+  return {
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    outputWidth: Math.round(sourceWidth * scale),
+    outputHeight: Math.round(sourceHeight * scale),
+  };
+}
+
 export function barcodeVideoConstraints() {
   return {
     facingMode: { ideal: 'environment' },

@@ -14,6 +14,7 @@ test('configures an English digit-only worker and reuses it until close', async 
     async terminate() { calls.push(['terminate']); },
   };
   const recognizer = await createBarcodeRecognizer({
+    pageSegMode: '7',
     loadTesseract: async () => ({
       async createWorker(language) {
         calls.push(['createWorker', language]);
@@ -30,12 +31,27 @@ test('configures an English digit-only worker and reuses it until close', async 
     ['createWorker', 'eng'],
     ['setParameters', {
       tessedit_char_whitelist: '0123456789',
-      tessedit_pageseg_mode: '6',
+      tessedit_pageseg_mode: '7',
     }],
     ['recognize', 'frame-1'],
     ['recognize', 'frame-2'],
     ['terminate'],
   ]);
+});
+
+test('keeps full-photo OCR in block mode unless a digit strip requests one line', async () => {
+  let parameters;
+  const recognizer = await createBarcodeRecognizer({
+    loadTesseract: async () => ({
+      createWorker: async () => ({
+        async setParameters(value) { parameters = value; },
+        async recognize() { return { data: { text: '' } }; },
+        async terminate() {},
+      }),
+    }),
+  });
+  assert.equal(parameters.tessedit_pageseg_mode, '6');
+  await recognizer.close();
 });
 
 test('rejects missing images, malformed OCR results, and use after close', async () => {

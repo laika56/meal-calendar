@@ -148,7 +148,10 @@ test('barcode flow lazy-loads the pinned reader and closes camera tracks at life
   assert.match(app, /createBarcodeRecognizer/);
   assert.match(app, /extractRetailBarcodeFromOcr/);
   assert.match(app, /BARCODE_OCR_MISS_THRESHOLD/);
-  assert.match(app, /barcodeCanvas\.toBlob/);
+  assert.match(app, /canvas\.toBlob/);
+  assert.match(app, /barcodeDigitCropPlan/);
+  assert.match(app, /getImageData/);
+  assert.match(app, /putImageData/);
   assert.match(app, /recognizeBarcodePhoto/);
   assert.match(app, /barcodePhoto\.addEventListener\('change'/);
   assert.match(app, /barcodeManualForm\.addEventListener\('submit'/);

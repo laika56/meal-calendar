@@ -13,7 +13,8 @@ import {
 import { monthDashboardSummary, progressPercent, servingChoiceOptions } from '/src/lib/uiDashboard.js';
 import { parseOffProduct } from '/src/lib/offParser.js';
 import {
-  barcodeCapturePlan, barcodeVideoConstraints, buildOpenFoodFactsUrl, configureBarcodeTrack,
+  barcodeCapturePlan, barcodeDigitCropPlan, barcodeVideoConstraints, buildOpenFoodFactsUrl,
+  configureBarcodeTrack,
   extractRetailBarcodeFromOcr, normalizeRetailBarcode,
   sharedCatalogRecordToFood, toBarcodeFood,
 } from '/src/lib/barcodeProduct.js';
@@ -1390,21 +1391,58 @@ async function resolveBarcodeProduct(barcode, session) {
   openPortionPrompt(result.food);
 }
 
-function barcodeCanvasBlob() {
+function barcodeCanvasBlob(canvas = el.barcodeCanvas) {
   return new Promise((resolve, reject) => {
-    el.barcodeCanvas.toBlob((blob) => {
+    canvas.toBlob((blob) => {
       if (blob) resolve(blob);
       else reject(new Error('barcode frame is unavailable'));
     }, 'image/jpeg', 0.95);
   });
 }
 
+function barcodeDigitCanvas() {
+  const crop = barcodeDigitCropPlan(el.barcodeCanvas.width, el.barcodeCanvas.height);
+  if (crop === null) throw new Error('barcode digit frame is unavailable');
+
+  const canvas = document.createElement('canvas');
+  canvas.width = crop.outputWidth;
+  canvas.height = crop.outputHeight;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(
+    el.barcodeCanvas,
+    crop.sourceX,
+    crop.sourceY,
+    crop.sourceWidth,
+    crop.sourceHeight,
+    0,
+    0,
+    crop.outputWidth,
+    crop.outputHeight,
+  );
+
+  // 흐린 회색 포장지에서도 숫자 획을 살린다. 이진화는 조명에 너무 민감하므로
+  // 회색조+명암 강화만 하고 Tesseract가 획 경계를 결정하게 둔다.
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let index = 0; index < image.data.length; index += 4) {
+    const gray = (image.data[index] * 0.299)
+      + (image.data[index + 1] * 0.587)
+      + (image.data[index + 2] * 0.114);
+    const contrasted = Math.max(0, Math.min(255, Math.round(((gray - 128) * 1.8) + 128)));
+    image.data[index] = contrasted;
+    image.data[index + 1] = contrasted;
+    image.data[index + 2] = contrasted;
+  }
+  context.putImageData(image, 0, 0);
+  return canvas;
+}
+
 async function recognizeBarcodeDigits(session) {
-  const blob = await barcodeCanvasBlob();
+  const blob = await barcodeCanvasBlob(barcodeDigitCanvas());
   if (session !== barcodeSession) return null;
   let recognizer = barcodeRecognizer;
   if (!recognizer) {
-    recognizer = await createBarcodeRecognizer();
+    // 이 입력은 전체 사진이 아니라 이미 잘라낸 EAN/UPC 숫자 한 줄이다.
+    recognizer = await createBarcodeRecognizer({ pageSegMode: '7' });
     if (session !== barcodeSession) {
       await recognizer.close();
       return null;

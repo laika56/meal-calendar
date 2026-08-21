@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   barcodeCapturePlan,
+  barcodeDigitCropPlan,
   configureBarcodeTrack,
   barcodeVideoConstraints,
   buildOpenFoodFactsUrl,
@@ -11,6 +12,35 @@ import {
   sharedCatalogRecordToFood,
   toBarcodeFood,
 } from '../src/lib/barcodeProduct.js';
+
+test('isolates and enlarges the lower digit line instead of OCRing the whole reticle', () => {
+  assert.deepEqual(barcodeDigitCropPlan(1280, 512), {
+    sourceX: 51,
+    sourceY: 266,
+    sourceWidth: 1178,
+    sourceHeight: 225,
+    outputWidth: 1600,
+    outputHeight: 306,
+  });
+  assert.deepEqual(barcodeDigitCropPlan(820, 328), {
+    sourceX: 33,
+    sourceY: 171,
+    sourceWidth: 754,
+    sourceHeight: 144,
+    outputWidth: 1508,
+    outputHeight: 288,
+  });
+  assert.deepEqual(barcodeDigitCropPlan(1, 1), {
+    sourceX: 0,
+    sourceY: 0,
+    sourceWidth: 1,
+    sourceHeight: 1,
+    outputWidth: 2,
+    outputHeight: 2,
+  });
+  assert.equal(barcodeDigitCropPlan(0, 512), null);
+  assert.equal(barcodeDigitCropPlan(1280, Number.NaN), null);
+});
 
 test('crops a landscape camera frame to the centered 5:2 barcode reticle before decoding', () => {
   assert.deepEqual(barcodeCapturePlan(1920, 1080), {

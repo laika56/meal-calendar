@@ -4,7 +4,10 @@ function defaultLoader() {
   return import(TESSERACT_MODULE);
 }
 
-export async function createBarcodeRecognizer({ loadTesseract = defaultLoader } = {}) {
+export async function createBarcodeRecognizer({
+  loadTesseract = defaultLoader,
+  pageSegMode = '6',
+} = {}) {
   const tesseract = await loadTesseract();
   if (typeof tesseract?.createWorker !== 'function') {
     throw new TypeError('Tesseract createWorker is unavailable');
@@ -16,7 +19,7 @@ export async function createBarcodeRecognizer({ loadTesseract = defaultLoader } 
     }
     await worker.setParameters({
       tessedit_char_whitelist: '0123456789',
-      tessedit_pageseg_mode: '6',
+      tessedit_pageseg_mode: pageSegMode,
     });
   } catch (error) {
     await worker?.terminate?.();
