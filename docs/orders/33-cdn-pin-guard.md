@@ -7,16 +7,25 @@
 
 ## 왜
 
-`tesseract.js@7.0.0` CDN URL 이 **두 파일에 복제**돼 있다:
+**⚠️ 이 절은 2026-08-21 에 고쳐졌다.** 초판은 `public/barcodeOcr.js` 가 이 브랜치에
+있다고 전제했는데 **없다** — 그 파일은 아직 머지 안 된 `codex/barcode-wiring` 에만 있다.
+Codex 가 그걸 잡아내고 반려했다(수용 기준의 변조 시험이 원리적으로 성립 불가였다).
+**master 기준으로 다시 쓴 것이 아래다.**
+
+지금 이 브랜치에 있는 tesseract URL 은 **하나뿐**이다:
 
 ```
-public/barcodeOcr.js:1        const TESSERACT_MODULE = 'https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.esm.min.js';
 public/nutritionLabelOcr.js:1 const TESSERACT_MODULE = 'https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.esm.min.js';
 ```
 
-**대조하는 테스트가 없다.** 한쪽만 올리면 두 OCR 경로가 다른 빌드를 받는데
-온라인에선 둘 다 동작해서 아무도 모른다. 발주32(공용 모듈 드리프트 검증)가
-잡으려던 것과 **정확히 같은 형태**다.
+**그런데 곧 둘이 된다.** `codex/barcode-wiring` 이 머지되면 `public/barcodeOcr.js` 가
+같은 URL 을 **자기 파일에 따로** 들고 들어온다. 한쪽만 올리면 두 OCR 경로가 다른
+빌드를 받는데 온라인에선 둘 다 동작해서 아무도 모른다 — 발주32(공용 모듈 드리프트
+검증)가 잡으려던 것과 **정확히 같은 형태**다.
+
+**그래서 가드를 먼저 세운다.** 머지되는 순간 중복이 자동으로 걸리게 한다.
+지금은 파일이 하나뿐이라 `version-mismatch` 를 실제로 만들 수 없으므로,
+아래 수용 기준의 변조 시험은 **`unpinned` 경로로 한다**(단일 파일에서도 성립한다).
 
 두 번째 위험은 **느슨한 핀**이다. `@7` 이나 `@latest` 로 쓰면 우리가 아무것도
 안 해도 앱이 어느 날 깨진다. `zxing-wasm` 은 `uiRedesignShell.test.js` 가
@@ -118,9 +127,11 @@ S      = 'https://unpkg.com/@scope/pkg@1.2.3/x.js'
    → 전부 통과, fail 0
 
 2. 일부러 깨뜨려서 잡히는지 확인한다 (이게 이 발주의 핵심이다)
-   sed -i '' 's/tesseract.js@7.0.0/tesseract.js@8.0.0/' public/nutritionLabelOcr.js
+   이 브랜치엔 tesseract URL 이 하나뿐이라 version-mismatch 는 만들 수 없다.
+   느슨한 핀으로 깨뜨린다:
+   sed -i '' 's|tesseract.js@7.0.0|tesseract.js@7|' public/nutritionLabelOcr.js
    node --test tests/pinnedDeps.test.js
-   → **실패해야 한다.** 실패 메시지에 version-mismatch 와 두 버전이 보여야 한다
+   → **실패해야 한다.** 실패 메시지에 unpinned 와 "version":"7" 이 보여야 한다
    git checkout public/nutritionLabelOcr.js
    node --test tests/pinnedDeps.test.js
    → 다시 통과
