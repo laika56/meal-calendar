@@ -14,9 +14,10 @@ import { monthDashboardSummary, progressPercent, servingChoiceOptions } from '/s
 import { parseOffProduct } from '/src/lib/offParser.js';
 import {
   barcodeCapturePlan, barcodeVideoConstraints, buildOpenFoodFactsUrl, configureBarcodeTrack,
-  normalizeRetailBarcode,
+  extractRetailBarcodeFromOcr, normalizeRetailBarcode,
   sharedCatalogRecordToFood, toBarcodeFood,
 } from '/src/lib/barcodeProduct.js';
+import { createBarcodeRecognizer } from '/public/barcodeOcr.js';
 import { resolveBarcodeSources } from '/public/barcodeLookupFlow.js';
 import { createSearchResult } from '/public/searchResult.js';
 import {
@@ -1251,10 +1252,16 @@ el.nutritionLabelFile.addEventListener('change', async () => {
 
 const ZXING_READER_URL = 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.3/dist/iife/reader/index.js';
 const BARCODE_FORMATS = ['EAN13', 'EAN8', 'UPCA', 'UPCE'];
+const BARCODE_OCR_MISS_THRESHOLD = 12;
+const BARCODE_OCR_RETRY_MS = 2000;
 let zxingReaderPromise = null;
 let barcodeStream = null;
 let barcodeFrame = null;
 let barcodeSession = 0;
+let barcodeRecognizer = null;
+let barcodeOcrBusy = false;
+let barcodeMisses = 0;
+let barcodeLastOcrAt = 0;
 
 function loadZxingReader() {
   if (globalThis.ZXingWASM?.readBarcodes) return Promise.resolve(globalThis.ZXingWASM);
@@ -1301,9 +1308,19 @@ function pauseCameraFrames() {
   // srcObject 는 비우지 않는다 — 다시 열 때 같은 스트림을 그대로 쓴다.
 }
 
+function releaseBarcodeRecognizer() {
+  const recognizer = barcodeRecognizer;
+  barcodeRecognizer = null;
+  recognizer?.close().catch((error) => console.error('[meal-calendar] 바코드 OCR 종료 실패', error));
+}
+
 function stopBarcodeScanner() {
   barcodeSession += 1;
   pauseCameraFrames();
+  releaseBarcodeRecognizer();
+  barcodeOcrBusy = false;
+  barcodeMisses = 0;
+  barcodeLastOcrAt = 0;
 }
 
 /** 카메라를 실제로 놓아준다. 다음에 열면 권한을 다시 묻는다. */
@@ -1369,6 +1386,32 @@ async function resolveBarcodeProduct(barcode, session) {
   openPortionPrompt(result.food);
 }
 
+function barcodeCanvasBlob() {
+  return new Promise((resolve, reject) => {
+    el.barcodeCanvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('barcode frame is unavailable'));
+    }, 'image/jpeg', 0.95);
+  });
+}
+
+async function recognizeBarcodeDigits(session) {
+  const blob = await barcodeCanvasBlob();
+  if (session !== barcodeSession) return null;
+  let recognizer = barcodeRecognizer;
+  if (!recognizer) {
+    recognizer = await createBarcodeRecognizer();
+    if (session !== barcodeSession) {
+      await recognizer.close();
+      return null;
+    }
+    barcodeRecognizer = recognizer;
+  }
+  const text = await recognizer.recognize(blob);
+  if (session !== barcodeSession) return null;
+  return extractRetailBarcodeFromOcr(text);
+}
+
 async function scanBarcodeFrame(zxing, session) {
   if (session !== barcodeSession || !barcodeStream) return;
   const { videoWidth, videoHeight } = el.barcodeVideo;
@@ -1402,6 +1445,33 @@ async function scanBarcodeFrame(zxing, session) {
       pauseCameraFrames();
       await resolveBarcodeProduct(barcode, session);
       return;
+    }
+    barcodeMisses += 1;
+    const now = Date.now();
+    if (!barcodeOcrBusy
+      && barcodeMisses >= BARCODE_OCR_MISS_THRESHOLD
+      && now - barcodeLastOcrAt >= BARCODE_OCR_RETRY_MS) {
+      barcodeOcrBusy = true;
+      barcodeMisses = 0;
+      barcodeLastOcrAt = now;
+      el.barcodeStatus.textContent = '막대 인식이 어려워 아래 숫자를 확인하고 있습니다.';
+      try {
+        const ocrBarcode = await recognizeBarcodeDigits(session);
+        if (session !== barcodeSession || !barcodeStream) return;
+        if (ocrBarcode) {
+          pauseCameraFrames();
+          await resolveBarcodeProduct(ocrBarcode, session);
+          return;
+        }
+        el.barcodeStatus.textContent = '바코드 아래 숫자가 선명하게 보이도록 잠시 멈춰주세요.';
+      } catch (error) {
+        console.error('[meal-calendar] 바코드 숫자 판독 실패', error);
+        if (session === barcodeSession) {
+          el.barcodeStatus.textContent = '막대를 읽지 못했습니다. 바코드를 선명하게 비춰주세요.';
+        }
+      } finally {
+        barcodeOcrBusy = false;
+      }
     }
   }
   if (session === barcodeSession && barcodeStream) {

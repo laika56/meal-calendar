@@ -142,6 +142,10 @@ test('barcode flow lazy-loads the pinned reader and closes camera tracks at life
   assert.match(app, /formats:\s*BARCODE_FORMATS/);
   assert.match(app, /maxNumberOfSymbols:\s*1/);
   assert.match(app, /await configureBarcodeTrack\(videoTrack\)/);
+  assert.match(app, /createBarcodeRecognizer/);
+  assert.match(app, /extractRetailBarcodeFromOcr/);
+  assert.match(app, /BARCODE_OCR_MISS_THRESHOLD/);
+  assert.match(app, /barcodeCanvas\.toBlob/);
   assert.match(app, /for \(const track of barcodeStream\?\.getTracks\?\.\(\) \?\? \[\]\) track\.stop\(\)/);
   assert.match(app, /visibilitychange/);
   assert.match(app, /document\.getElementById\('closeEntry'\)[\s\S]*?stopBarcodeScanner\(\)/);

@@ -69,6 +69,24 @@ export async function configureBarcodeTrack(track) {
   return false;
 }
 
+export function extractRetailBarcodeFromOcr(text) {
+  if (typeof text !== 'string') throw new TypeError('barcode OCR text must be a string');
+
+  const candidates = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    const digits = line.replace(/\D/g, '');
+    if (digits.length === 8) {
+      if (isValidBarcode(digits)) candidates.add(digits);
+      continue;
+    }
+    if (digits.length === 12 || digits.length === 13) {
+      const ean13 = toEan13(digits);
+      if (ean13 !== null) candidates.add(ean13);
+    }
+  }
+  return candidates.size === 1 ? [...candidates][0] : null;
+}
+
 export function normalizeRetailBarcode(results) {
   if (!Array.isArray(results)) {
     throw new TypeError('normalizeRetailBarcode: results must be an array');

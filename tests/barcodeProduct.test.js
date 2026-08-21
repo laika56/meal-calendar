@@ -6,6 +6,7 @@ import {
   configureBarcodeTrack,
   barcodeVideoConstraints,
   buildOpenFoodFactsUrl,
+  extractRetailBarcodeFromOcr,
   normalizeRetailBarcode,
   sharedCatalogRecordToFood,
   toBarcodeFood,
@@ -108,6 +109,23 @@ test('falls back to continuous focus when a camera rejects the combined zoom req
     { advanced: [{ focusMode: 'continuous', zoom: 2 }] },
     { advanced: [{ focusMode: 'continuous' }] },
   ]);
+});
+
+test('extracts one check-digit-valid retail code from noisy OCR lines', () => {
+  assert.equal(extractRetailBarcodeFromOcr([
+    '2026년 09월 07일 23시 F2',
+    '||| |||| |||',
+    '8809 0368 14054',
+  ].join('\n')), '8809036814054');
+  assert.equal(extractRetailBarcodeFromOcr('UPC 036000291452'), '0036000291452');
+  assert.equal(extractRetailBarcodeFromOcr('9638-5074'), '96385074');
+});
+
+test('rejects invalid, absent, or ambiguous OCR barcode candidates', () => {
+  assert.equal(extractRetailBarcodeFromOcr('8809036814053'), null);
+  assert.equal(extractRetailBarcodeFromOcr('2026-09-07 23:00'), null);
+  assert.equal(extractRetailBarcodeFromOcr('96385074\n8809036814054'), null);
+  assert.throws(() => extractRetailBarcodeFromOcr(null), /OCR text must be a string/);
 });
 
 test('returns a valid EAN-13 unchanged and trims scanner text', () => {
