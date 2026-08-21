@@ -119,7 +119,12 @@ resolveMultiCandidate(piece, items) -> Result
    → 전부 통과, fail 0
 
 2. npm test
-   → pass 548 이상, fail 0  (기존 회귀 없음. skip 1 은 에뮬레이터 전용이라 정상)
+   → pass 554 이상, fail 정확히 2 (아래 두 건만이어야 한다. skip 1 은 에뮬레이터 전용)
+     ✖ sw.js SHELL_FILES 에 빠진 import: /src/lib/multiCandidate.js
+     ✖ 앱 셸이 바뀌었는데 SHELL_REVISION 이 갱신되지 않아 이전 캐시가 계속 제공된다
+   **이 2건은 기대된 실패다 — 고치지 마라.** `public/sw.js`는 이 발주 범위 밖이다
+   (`AGENTS.md`가 PWA 셸/서비스워커를 Claude 전용으로 못박아 둠). Claude가 리뷰 후
+   별도로 sw.js를 갱신한다. 이 2건 외의 실패가 있으면 그건 진짜 회귀다
 
 3. grep -c "function resolveMultiCandidates" public/app.js
    → 0   (원본이 남아 있으면 안 된다)
