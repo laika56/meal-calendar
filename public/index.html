@@ -957,6 +957,16 @@
       </div>
       <canvas id="barcodeCanvas"></canvas>
       <div id="barcodeStatus" class="barcode-status"></div>
+      <div class="feature-actions">
+        <label for="barcodePhoto">사진으로 인식
+          <input id="barcodePhoto" type="file" accept="image/*" capture="environment">
+        </label>
+      </div>
+      <form id="barcodeManualForm" class="search-row">
+        <input id="barcodeManualInput" type="text" inputmode="numeric" autocomplete="off"
+               placeholder="바코드 번호 8·12·13자리" aria-label="바코드 번호">
+        <button type="submit">번호로 찾기</button>
+      </form>
       <div class="barcode-copy-bank" aria-hidden="true">
         <span>제품 정보를 확인하고 있습니다.</span>
         <span>Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.</span>

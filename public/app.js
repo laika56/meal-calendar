@@ -18,6 +18,7 @@ import {
   sharedCatalogRecordToFood, toBarcodeFood,
 } from '/src/lib/barcodeProduct.js';
 import { createBarcodeRecognizer } from '/public/barcodeOcr.js';
+import { recognizeBarcodePhoto } from '/public/barcodePhoto.js';
 import { resolveBarcodeSources } from '/public/barcodeLookupFlow.js';
 import { createSearchResult } from '/public/searchResult.js';
 import {
@@ -162,6 +163,9 @@ const el = {
   barcodeCanvas: document.getElementById('barcodeCanvas'),
   barcodeStatus: document.getElementById('barcodeStatus'),
   barcodeCancel: document.getElementById('barcodeCancel'),
+  barcodePhoto: document.getElementById('barcodePhoto'),
+  barcodeManualForm: document.getElementById('barcodeManualForm'),
+  barcodeManualInput: document.getElementById('barcodeManualInput'),
   nutritionLabelOpen: document.getElementById('nutritionLabelOpen'),
   nutritionLabelScanner: document.getElementById('nutritionLabelScanner'),
   nutritionLabelVideo: document.getElementById('nutritionLabelVideo'),
@@ -1525,6 +1529,53 @@ async function startBarcodeScanner() {
 }
 
 el.barcodeOpen.addEventListener('click', startBarcodeScanner);
+
+el.barcodePhoto.addEventListener('change', async () => {
+  const [file] = el.barcodePhoto.files ?? [];
+  if (!file) return;
+  stopBarcodeScanner();
+  const session = barcodeSession;
+  el.barcodeStatus.textContent = '고해상도 사진에서 바코드를 읽고 있습니다.';
+  try {
+    const zxing = await loadZxingReader();
+    const barcode = await recognizeBarcodePhoto(file, {
+      readBarcodes: (image, options) => zxing.readBarcodes(image, options),
+      normalize: normalizeRetailBarcode,
+      createRecognizer: createBarcodeRecognizer,
+      extract: extractRetailBarcodeFromOcr,
+    });
+    if (session !== barcodeSession) return;
+    if (barcode === null) {
+      el.barcodeStatus.textContent = '사진에서 바코드를 읽지 못했습니다. 번호로 찾기를 이용해 주세요.';
+      return;
+    }
+    await resolveBarcodeProduct(barcode, session);
+  } catch (error) {
+    console.error('[meal-calendar] 바코드 사진 판독 실패', error);
+    if (session === barcodeSession) {
+      el.barcodeStatus.textContent = '사진을 읽지 못했습니다. 번호로 찾기를 이용해 주세요.';
+    }
+  } finally {
+    el.barcodePhoto.value = '';
+  }
+});
+
+el.barcodeManualForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const barcode = extractRetailBarcodeFromOcr(el.barcodeManualInput.value);
+  if (barcode === null) {
+    el.barcodeStatus.textContent = '체크디지트가 맞는 8·12·13자리 바코드 번호를 입력해 주세요.';
+    return;
+  }
+  stopBarcodeScanner();
+  const session = barcodeSession;
+  try {
+    await resolveBarcodeProduct(barcode, session);
+  } catch (error) {
+    console.error('[meal-calendar] 바코드 번호 조회 실패', error);
+    if (session === barcodeSession) showBarcodeManual('제품 조회 서비스에 연결하지 못했습니다. 직접 입력해 주세요.');
+  }
+});
 
 // 앱이 백그라운드로 가면 카메라를 놓아준다. 스캔 사이에는 스트림을 살려두지만
 // (권한을 다시 안 묻게 하려고) **안 쓰는 동안 카메라를 잡고 있지는 않는다.**

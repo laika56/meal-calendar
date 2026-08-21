@@ -112,6 +112,7 @@ test('entry shell includes the static barcode scanner controls and exact fallbac
 
   for (const id of [
     'barcodeOpen', 'barcodeScanner', 'barcodeVideo', 'barcodeCanvas', 'barcodeStatus', 'barcodeCancel',
+    'barcodePhoto', 'barcodeManualForm', 'barcodeManualInput',
   ]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
@@ -119,6 +120,8 @@ test('entry shell includes the static barcode scanner controls and exact fallbac
   for (const copy of [
     '바코드 스캔',
     '20~30cm 떨어져 바코드 선이 선명하게 비춰주세요',
+    '사진으로 인식',
+    '번호로 찾기',
     '취소',
     '제품 정보를 확인하고 있습니다.',
     'Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.',
@@ -146,6 +149,9 @@ test('barcode flow lazy-loads the pinned reader and closes camera tracks at life
   assert.match(app, /extractRetailBarcodeFromOcr/);
   assert.match(app, /BARCODE_OCR_MISS_THRESHOLD/);
   assert.match(app, /barcodeCanvas\.toBlob/);
+  assert.match(app, /recognizeBarcodePhoto/);
+  assert.match(app, /barcodePhoto\.addEventListener\('change'/);
+  assert.match(app, /barcodeManualForm\.addEventListener\('submit'/);
   assert.match(app, /for \(const track of barcodeStream\?\.getTracks\?\.\(\) \?\? \[\]\) track\.stop\(\)/);
   assert.match(app, /visibilitychange/);
   assert.match(app, /document\.getElementById\('closeEntry'\)[\s\S]*?stopBarcodeScanner\(\)/);
