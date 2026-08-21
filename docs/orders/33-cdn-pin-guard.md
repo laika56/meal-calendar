@@ -3,7 +3,13 @@
 - **등급**: 자동 (순수 함수 + 수용 기준 전부 실행 가능)
 - **워크트리**: `/Users/jh/desktop/claude/.worktrees/meal-calendar/cdn-pin` (브랜치 `codex/cdn-pin`)
 - **잡는 파일**: `src/lib/pinnedDeps.js`(신규) · `tests/pinnedDeps.test.js`(신규)
-  **다른 파일을 건드리지 않는다.** `public/*.js` 도 고치지 않는다 — 이번 발주는 **검사만** 만든다
+  · `docs/NEXT.md`(「작업 분담 현황」 갱신)
+  **그 셋 말고는 건드리지 않는다.** `public/*.js` 도 고치지 않는다 — 이번 발주는 **검사만** 만든다
+
+> `docs/NEXT.md` 는 `AGENTS.md:151`(「작업 시작 전과 끝난 후 '작업 분담 현황' 을
+> 갱신한다」)이 **요구**하는 것이다. 초판은 그걸 빼놓고 「두 파일만」이라 적어서
+> 계약과 정면 충돌했고, Codex 가 옳게 반려했다. 발주31 도 같은 충돌로 반려된
+> 적이 있다(`74be1ac`) — 두 번째다.
 
 ## 왜
 
@@ -144,8 +150,9 @@ S      = 'https://unpkg.com/@scope/pkg@1.2.3/x.js'
 4. git status --porcelain
    → 2번에서 되돌린 게 남아 있지 않은지 확인. public/ 에 변경이 있으면 실패
 
-5. git diff --stat
-   → src/lib/pinnedDeps.js · tests/pinnedDeps.test.js 두 개만
+5. git diff --stat master..HEAD
+   → src/lib/pinnedDeps.js · tests/pinnedDeps.test.js · docs/NEXT.md 세 개만
+     (docs/NEXT.md 는 AGENTS.md:151 이 요구하는 갱신이다)
 ```
 
 ## 하지 않을 것
