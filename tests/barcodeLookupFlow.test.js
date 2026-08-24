@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveBarcodeSources } from '../public/barcodeLookupFlow.js';
+import { barcodeLookupFailureMessage, resolveBarcodeSources } from '../public/barcodeLookupFlow.js';
 
 test('uses a shared hit without calling Open Food Facts', async () => {
   let offCalls = 0;
@@ -63,4 +63,35 @@ test('does not call UPC identity after a shared or OFF nutrition hit', async () 
     lookupIdentity: async () => { identityCalls += 1; return null; },
   });
   assert.equal(identityCalls, 0);
+});
+
+test('keeps an OFF identity and skips the later identity provider when nutrition is absent', async () => {
+  let identityCalls = 0;
+  const identity = {
+    barcode: '8801492391995', name: '마늘 후랑크', brand: '하림', provider: 'off',
+  };
+  assert.deepEqual(await resolveBarcodeSources('8801492391995', {
+    lookupShared: async () => null,
+    lookupOff: async () => ({ food: null, identity }),
+    lookupIdentity: async () => { identityCalls += 1; return null; },
+  }), {
+    food: null, identity, source: 'off-identity',
+    sharedUnavailable: false, offUnavailable: false, upcUnavailable: false,
+  });
+  assert.equal(identityCalls, 0);
+});
+
+test('tells a valid recognized code apart from a camera recognition failure', () => {
+  assert.equal(
+    barcodeLookupFailureMessage('8801056249052', {
+      sharedUnavailable: false, offUnavailable: false, upcUnavailable: false,
+    }),
+    '바코드 8801056249052는 읽었지만 제품 정보를 찾지 못했습니다. 제품명이나 영양성분표로 입력해 주세요.',
+  );
+  assert.equal(
+    barcodeLookupFailureMessage('8801056249052', {
+      sharedUnavailable: true, offUnavailable: true, upcUnavailable: true,
+    }),
+    '바코드 8801056249052는 읽었지만 제품 조회 서비스에 연결하지 못했습니다. 직접 입력해 주세요.',
+  );
 });

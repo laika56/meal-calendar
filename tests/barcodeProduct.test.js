@@ -11,6 +11,8 @@ import {
   normalizeRetailBarcode,
   sharedCatalogRecordToFood,
   toBarcodeFood,
+  toBarcodeIdentity,
+  reviewedBarcodeIdentity,
 } from '../src/lib/barcodeProduct.js';
 
 test('isolates and enlarges the lower digit line instead of OCRing the whole reticle', () => {
@@ -149,6 +151,11 @@ test('extracts one check-digit-valid retail code from noisy OCR lines', () => {
   ].join('\n')), '8809036814054');
   assert.equal(extractRetailBarcodeFromOcr('UPC 036000291452'), '0036000291452');
   assert.equal(extractRetailBarcodeFromOcr('9638-5074'), '96385074');
+});
+
+test('recognizes the two reported EAN-13 numbers instead of treating them as camera misses', () => {
+  assert.equal(extractRetailBarcodeFromOcr('8801056249052'), '8801056249052');
+  assert.equal(extractRetailBarcodeFromOcr('8801492391995'), '8801492391995');
 });
 
 test('rejects invalid, absent, or ambiguous OCR barcode candidates', () => {
@@ -306,6 +313,33 @@ test('maps a complete parsed OFF product to the existing food shape', () => {
     basis: 'g',
     serving: null,
   });
+});
+
+test('keeps an OFF product identity when nutrition is missing', () => {
+  assert.deepEqual(toBarcodeIdentity({
+    code: '8801492391995',
+    name: '마늘 후랑크',
+    brand: '하림',
+    unit: null,
+    per100: null,
+  }), {
+    barcode: '8801492391995',
+    name: '마늘 후랑크',
+    brand: '하림',
+    provider: 'off',
+  });
+});
+
+test('uses a reviewed identity for the valid code absent from public barcode APIs', () => {
+  assert.deepEqual(reviewedBarcodeIdentity('8801056249052'), {
+    barcode: '8801056249052',
+    name: '오트몬드 프로틴 고소한맛 250ML',
+    brand: '롯데',
+    provider: 'reviewed-retailer',
+    sourceUrl: 'https://lottemartzetta.com/products/OS8801056249052/details',
+  });
+  assert.equal(reviewedBarcodeIdentity('8801492391995'), null);
+  assert.equal(reviewedBarcodeIdentity('8801056249053'), null);
 });
 
 test('preserves missing macros as null when verified kcal and identity are present', () => {

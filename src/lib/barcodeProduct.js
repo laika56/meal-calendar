@@ -2,6 +2,17 @@ import { isValidBarcode, toEan13, upcEToUpcA } from './barcode.js';
 
 const RETAIL_FORMATS = new Set(['EAN13', 'EAN8', 'UPCA', 'UPCE']);
 const CORE_NUTRIENTS = ['kcal', 'proteinG', 'fatG', 'carbG'];
+const REVIEWED_BARCODE_IDENTITIES = Object.freeze({
+  // 제품명·용량만 보존한다. 영양값은 포장/식약처에서 확인되기 전까지 채우지 않는다.
+  // 2026-08-24 확인: 롯데마트 제타 상품 고시의 상품판매코드와 제품명.
+  '8801056249052': Object.freeze({
+    barcode: '8801056249052',
+    name: '오트몬드 프로틴 고소한맛 250ML',
+    brand: '롯데',
+    provider: 'reviewed-retailer',
+    sourceUrl: 'https://lottemartzetta.com/products/OS8801056249052/details',
+  }),
+});
 
 export function barcodeCapturePlan(videoWidth, videoHeight) {
   if (!Number.isFinite(videoWidth) || videoWidth <= 0
@@ -168,6 +179,22 @@ export function toBarcodeFood(parsed) {
     // 그때는 기존대로 「1인분 정보 없음」 경로를 탄다.
     serving: parsed.serving ?? null,
   };
+}
+
+export function toBarcodeIdentity(parsed) {
+  if (!parsed || typeof parsed.code !== 'string' || !parsed.code.trim()) return null;
+  if (typeof parsed.name !== 'string' || !parsed.name.trim()) return null;
+  return {
+    barcode: parsed.code.trim(),
+    name: parsed.name.trim(),
+    brand: typeof parsed.brand === 'string' && parsed.brand.trim() ? parsed.brand.trim() : null,
+    provider: 'off',
+  };
+}
+
+export function reviewedBarcodeIdentity(barcode) {
+  if (typeof barcode !== 'string') return null;
+  return REVIEWED_BARCODE_IDENTITIES[barcode.trim()] ?? null;
 }
 
 export function sharedCatalogRecordToFood(record) {

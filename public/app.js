@@ -16,11 +16,11 @@ import {
   barcodeCapturePlan, barcodeDigitCropPlan, barcodeVideoConstraints, buildOpenFoodFactsUrl,
   configureBarcodeTrack,
   extractRetailBarcodeFromOcr, normalizeRetailBarcode,
-  sharedCatalogRecordToFood, toBarcodeFood,
+  reviewedBarcodeIdentity, sharedCatalogRecordToFood, toBarcodeFood, toBarcodeIdentity,
 } from '/src/lib/barcodeProduct.js';
 import { createBarcodeRecognizer } from '/public/barcodeOcr.js';
 import { recognizeBarcodePhoto } from '/public/barcodePhoto.js';
-import { resolveBarcodeSources } from '/public/barcodeLookupFlow.js';
+import { barcodeLookupFailureMessage, resolveBarcodeSources } from '/public/barcodeLookupFlow.js';
 import { createSearchResult } from '/public/searchResult.js';
 import {
   buildPartialNutritionProvenance, formNumber, showPartialNutritionEntry,
@@ -1363,9 +1363,14 @@ async function resolveBarcodeProduct(barcode, session) {
       const response = await fetch(buildOpenFoodFactsUrl(code));
       if (!response.ok) throw new Error(`Open Food Facts HTTP ${response.status}`);
       const parsed = parseOffProduct(await response.json());
-      return parsed === null ? null : toBarcodeFood(parsed);
+      return parsed === null ? null : {
+        food: toBarcodeFood(parsed),
+        identity: toBarcodeIdentity(parsed),
+      };
     },
-    lookupIdentity: (code) => db.lookupBarcodeIdentity(code),
+    async lookupIdentity(code) {
+      return await db.lookupBarcodeIdentity(code) ?? reviewedBarcodeIdentity(code);
+    },
   });
   if (session !== barcodeSession) return;
   if (result.identity) {
@@ -1380,10 +1385,7 @@ async function resolveBarcodeProduct(barcode, session) {
     return;
   }
   if (result.food === null) {
-    const message = result.sharedUnavailable && result.offUnavailable && result.upcUnavailable
-      ? '제품 조회 서비스에 연결하지 못했습니다. 직접 입력해 주세요.'
-      : '공용 바코드 DB, Open Food Facts, UPCitemdb에서 제품을 찾지 못했습니다. 직접 입력해 주세요.';
-    showBarcodeManual(message);
+    showBarcodeManual(barcodeLookupFailureMessage(barcode, result));
     return;
   }
 
