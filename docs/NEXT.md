@@ -415,7 +415,7 @@ standalone에서 실제 포장 바코드 판독 속도·초점·권한 재요청
 
 | 대상 | 잡은 쪽 | 상태 |
 |---|---|---|
-| `src/lib/barcodeProduct.js`, `public/barcodeLookupFlow.js`, `public/app.js`, 바코드 테스트 | **Codex** | **완료·Claude 검수대기 (2026-08-24)** — `8801056249052`, `8801492391995` 번호 인식 회귀 잠금. 전자는 롯데마트 상품고시로 확인한 제품명 fallback, 후자는 OFF의 영양값 없는 제품명을 보존해 둘 다 식약처 검색으로 연결. 영양값 추정 0건. 타깃 36/36, 전체 569 pass·0 fail·1 emulator skip. 실제 아이폰 광학 판독은 미확인 |
+| `src/lib/barcodeProduct.js`, `public/barcodeLookupFlow.js`, `public/app.js`, 바코드 테스트 | **Codex** | **완료·Hosting 배포·Claude 검수대기 (2026-08-24)** — `8801056249052`, `8801492391995` 번호 인식 회귀 잠금. 전자는 롯데마트 상품고시로 확인한 제품명 fallback, 후자는 OFF의 영양값 없는 제품명을 보존해 둘 다 식약처 검색으로 연결. 영양값 추정 0건. 타깃 36/36, 전체 569 pass·0 fail·1 emulator skip. 운영 정적 파일 4/4 로컬 byte 일치. 실제 아이폰 광학 판독은 미확인 |
 | 공용 국내 바코드 카탈로그(C005/I2570·식품이력추적·FoodQR) | **Codex** | **설계 명세 작성·사용자 검토 대기 (2026-08-19)** — 개인 학습 DB 없이 벌크 공용 카탈로그 우선 + OFF fallback. 인증키 비저장, 실데이터 분포·license gate 후 TDD |
 | `src/lib/barcodeProduct.js`, `tests/barcodeProduct.test.js` 체크디지트 검증 배선 | **Codex** | **완료·Claude 검수통과 (2026-08-19)** — 타깃 14/14, Claude 독립 검산 15/15. Codex 가 `SHELL_REVISION` 갱신 필요를 정확히 짚고 `public/` 금지를 지켜 멈췄다(계약대로 동작). 발주서가 그 항목을 빠뜨린 게 원인이라 **Claude 가 `public/sw.js` 의 `SHELL_REVISION` 을 재계산해 갱신**했고 전체 453 중 452 pass·0 fail·1 skip(에뮬레이터) |
 | `scripts/build-mfds-franchise-data.mjs`, `tests/franchiseCatalogData.test.js`, Task 3 report | **Codex** | **완료 (2026-08-18)** — Task 3 review-fix round 4/5, 실패 시 독립 old/new 복구본 무조건 보존·경로 보고. focused 22/22, 전체 373/373, validator 통과 |
