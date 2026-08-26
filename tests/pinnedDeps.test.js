@@ -143,9 +143,11 @@ test('comparePinnedDeps rejects non-array entries', () => {
 });
 
 test('all public JavaScript CDN dependencies are pinned consistently', () => {
+  // `.html` 도 읽는다 — index.html 의 modulepreload 가 db.js 의 import 와 어긋나면
+  // 브라우저가 Firebase SDK 를 두 버전 받는다. .js 만 보면 그 짝을 놓친다.
   const publicDir = join(projectRoot, 'public');
   const entries = readdirSync(publicDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.js'))
+    .filter((entry) => entry.isFile() && /\.(js|html)$/.test(entry.name))
     .map((entry) => ({
       name: entry.name,
       source: readFileSync(join(publicDir, entry.name), 'utf8'),
