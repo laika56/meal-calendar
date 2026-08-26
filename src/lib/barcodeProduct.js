@@ -2,6 +2,124 @@ import { isValidBarcode, toEan13, upcEToUpcA } from './barcode.js';
 
 const RETAIL_FORMATS = new Set(['EAN13', 'EAN8', 'UPCA', 'UPCE']);
 const CORE_NUTRIENTS = ['kcal', 'proteinG', 'fatG', 'carbG'];
+const REVIEWED_BARCODE_IDENTITIES = Object.freeze({
+  // 제품명·용량만 보존한다. 영양값은 포장/식약처에서 확인되기 전까지 채우지 않는다.
+  // 2026-08-24 확인: 롯데마트 제타 상품 고시의 상품판매코드와 제품명.
+  '8801056249052': Object.freeze({
+    barcode: '8801056249052',
+    name: '오트몬드 프로틴 고소한맛 250ML',
+    brand: '롯데',
+    provider: 'reviewed-retailer',
+    sourceUrl: 'https://lottemartzetta.com/products/OS8801056249052/details',
+  }),
+});
+
+export function barcodeCapturePlan(videoWidth, videoHeight) {
+  if (!Number.isFinite(videoWidth) || videoWidth <= 0
+    || !Number.isFinite(videoHeight) || videoHeight <= 0) return null;
+
+  const sourceWidth = Math.max(1, Math.floor(Math.min(videoWidth * 0.76, videoHeight * 2.5)));
+  const sourceHeight = Math.max(1, Math.round(sourceWidth / 2.5));
+  const outputWidth = Math.min(sourceWidth, 1280);
+  const outputHeight = Math.round(sourceHeight * outputWidth / sourceWidth);
+  return {
+    sourceX: Math.floor((videoWidth - sourceWidth) / 2),
+    sourceY: Math.floor((videoHeight - sourceHeight) / 2),
+    sourceWidth,
+    sourceHeight,
+    outputWidth,
+    outputHeight,
+  };
+}
+
+/** 조준창 전체가 아니라 EAN/UPC 막대 아래의 숫자 한 줄만 OCR하기 위한 확대 영역. */
+export function barcodeDigitCropPlan(width, height) {
+  if (!Number.isFinite(width) || width <= 0
+    || !Number.isFinite(height) || height <= 0) return null;
+
+  const sourceX = Math.round(width * 0.04);
+  const sourceY = Math.min(height - 1, Math.round(height * 0.52));
+  const sourceWidth = Math.max(1, width - (sourceX * 2));
+  const sourceHeight = Math.max(1, Math.min(
+    height - sourceY,
+    Math.round(height * 0.44),
+  ));
+  const scale = Math.min(2, 1600 / sourceWidth);
+  return {
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    outputWidth: Math.round(sourceWidth * scale),
+    outputHeight: Math.round(sourceHeight * scale),
+  };
+}
+
+export function barcodeVideoConstraints() {
+  return {
+    facingMode: { ideal: 'environment' },
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  };
+}
+
+export async function configureBarcodeTrack(track) {
+  if (typeof track?.getCapabilities !== 'function'
+    || typeof track?.applyConstraints !== 'function') return false;
+
+  let capabilities;
+  try {
+    capabilities = track.getCapabilities();
+  } catch {
+    return false;
+  }
+
+  const preferred = {};
+  if (Array.isArray(capabilities?.focusMode)
+    && capabilities.focusMode.includes('continuous')) {
+    preferred.focusMode = 'continuous';
+  }
+
+  const minZoom = capabilities?.zoom?.min;
+  const maxZoom = capabilities?.zoom?.max;
+  if (Number.isFinite(minZoom) && Number.isFinite(maxZoom) && maxZoom > minZoom) {
+    const zoom = Math.max(minZoom, Math.min(2, maxZoom));
+    if (zoom > minZoom) preferred.zoom = zoom;
+  }
+
+  if (Object.keys(preferred).length === 0) return false;
+  const attempts = [preferred];
+  if ('focusMode' in preferred && 'zoom' in preferred) {
+    attempts.push({ focusMode: preferred.focusMode });
+  }
+  for (const attempt of attempts) {
+    try {
+      await track.applyConstraints({ advanced: [attempt] });
+      return true;
+    } catch {
+      // 줌을 거부하는 기기에서도 연속 초점은 한 번 더 독립 시도한다.
+    }
+  }
+  return false;
+}
+
+export function extractRetailBarcodeFromOcr(text) {
+  if (typeof text !== 'string') throw new TypeError('barcode OCR text must be a string');
+
+  const candidates = new Set();
+  for (const line of text.split(/\r?\n/)) {
+    const digits = line.replace(/\D/g, '');
+    if (digits.length === 8) {
+      if (isValidBarcode(digits)) candidates.add(digits);
+      continue;
+    }
+    if (digits.length === 12 || digits.length === 13) {
+      const ean13 = toEan13(digits);
+      if (ean13 !== null) candidates.add(ean13);
+    }
+  }
+  return candidates.size === 1 ? [...candidates][0] : null;
+}
 
 export function normalizeRetailBarcode(results) {
   if (!Array.isArray(results)) {
@@ -61,6 +179,22 @@ export function toBarcodeFood(parsed) {
     // 그때는 기존대로 「1인분 정보 없음」 경로를 탄다.
     serving: parsed.serving ?? null,
   };
+}
+
+export function toBarcodeIdentity(parsed) {
+  if (!parsed || typeof parsed.code !== 'string' || !parsed.code.trim()) return null;
+  if (typeof parsed.name !== 'string' || !parsed.name.trim()) return null;
+  return {
+    barcode: parsed.code.trim(),
+    name: parsed.name.trim(),
+    brand: typeof parsed.brand === 'string' && parsed.brand.trim() ? parsed.brand.trim() : null,
+    provider: 'off',
+  };
+}
+
+export function reviewedBarcodeIdentity(barcode) {
+  if (typeof barcode !== 'string') return null;
+  return REVIEWED_BARCODE_IDENTITIES[barcode.trim()] ?? null;
 }
 
 export function sharedCatalogRecordToFood(record) {

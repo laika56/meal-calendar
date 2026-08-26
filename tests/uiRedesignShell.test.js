@@ -73,16 +73,30 @@ test('calendar rendering exposes a per-day ring progress value', () => {
   );
 });
 
-test('day detail entries keep calories in one right-aligned column', () => {
+test('day detail entries keep calories aligned and actions in a touch-sized capsule', () => {
   const html = read('public/index.html');
   const lineRule = html.match(/\.entry-line\s*\{([^}]*)\}/s);
   const kcalRule = html.match(/\.entry-kcal\s*\{([^}]*)\}/s);
+  const actionsRule = html.match(/\.entry-actions\s*\{([^}]*)\}/s);
+  const actionRule = html.match(/\.entry-action\s*\{([^}]*)\}/s);
 
   assert.ok(lineRule, 'entry line CSS rule is missing');
   assert.match(lineRule[1], /display:\s*grid/);
-  assert.match(lineRule[1], /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+24px/);
+  assert.match(lineRule[1], /grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+auto/);
   assert.ok(kcalRule, 'entry kcal CSS rule is missing');
   assert.match(kcalRule[1], /text-align:\s*right/);
+  assert.ok(actionsRule, 'entry action capsule CSS rule is missing');
+  assert.match(actionsRule[1], /border-radius/);
+  assert.match(actionsRule[1], /background:\s*var\(--card\)/);
+  assert.ok(actionRule, 'entry icon action CSS rule is missing');
+  assert.match(actionRule[1], /width:\s*36px/);
+  assert.match(actionRule[1], /height:\s*36px/);
+
+  const app = read('public/app.js');
+  assert.match(app, /entry-action-edit/);
+  assert.match(app, /entry-action-remove/);
+  assert.match(app, /<svg/);
+  assert.doesNotMatch(app, /remove\.textContent\s*=\s*'×'/);
 });
 
 test('day weight input stays at 16px or larger so iOS does not zoom on focus', () => {
@@ -112,13 +126,16 @@ test('entry shell includes the static barcode scanner controls and exact fallbac
 
   for (const id of [
     'barcodeOpen', 'barcodeScanner', 'barcodeVideo', 'barcodeCanvas', 'barcodeStatus', 'barcodeCancel',
+    'barcodePhoto', 'barcodeManualForm', 'barcodeManualInput',
   ]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
 
   for (const copy of [
     '바코드 스캔',
-    '바코드를 비춰주세요',
+    '20~30cm 떨어져 바코드 선이 선명하게 비춰주세요',
+    '사진으로 인식',
+    '번호로 찾기',
     '취소',
     '제품 정보를 확인하고 있습니다.',
     'Open Food Facts에서 제품을 찾지 못했습니다. 직접 입력해 주세요.',
@@ -141,6 +158,18 @@ test('barcode flow lazy-loads the pinned reader and closes camera tracks at life
   assert.match(app, /facingMode:\s*\{\s*ideal:\s*'environment'\s*\}/);
   assert.match(app, /formats:\s*BARCODE_FORMATS/);
   assert.match(app, /maxNumberOfSymbols:\s*1/);
+  assert.match(app, /await configureBarcodeTrack\(videoTrack\)/);
+  assert.match(app, /createBarcodeRecognizer/);
+  assert.match(app, /extractRetailBarcodeFromOcr/);
+  assert.match(app, /BARCODE_OCR_MISS_THRESHOLD/);
+  assert.match(app, /canvas\.toBlob/);
+  assert.match(app, /barcodeDigitCropPlan/);
+  assert.match(app, /getImageData/);
+  assert.match(app, /putImageData/);
+  assert.match(app, /createBarcodeRecognizer\(\{\s*pageSegMode:\s*'11'\s*\}\)/);
+  assert.match(app, /recognizeBarcodePhoto/);
+  assert.match(app, /barcodePhoto\.addEventListener\('change'/);
+  assert.match(app, /barcodeManualForm\.addEventListener\('submit'/);
   assert.match(app, /for \(const track of barcodeStream\?\.getTracks\?\.\(\) \?\? \[\]\) track\.stop\(\)/);
   assert.match(app, /visibilitychange/);
   assert.match(app, /document\.getElementById\('closeEntry'\)[\s\S]*?stopBarcodeScanner\(\)/);

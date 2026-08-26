@@ -110,6 +110,20 @@ test('포그라운드로 돌아올 때 새 배포를 확인한다', () => {
   assert.match(source, /registration\.update\(\)/, '복귀 시 SW 갱신을 확인하지 않는다');
 });
 
+test('앱을 연 즉시 SW 캐시를 우회해 새 배포를 확인한다', () => {
+  const source = read('public/app.js');
+  assert.match(
+    source,
+    /serviceWorker\.register\('\/sw\.js',\s*\{\s*updateViaCache:\s*'none'\s*\}\)/,
+    'SW 스크립트 자체가 브라우저 HTTP 캐시에 묶일 수 있다',
+  );
+  assert.match(
+    source,
+    /registration\s*=\s*await navigator\.serviceWorker\.register[\s\S]{0,240}await registration\.update\(\)/,
+    '포그라운드 복귀까지 기다리지 말고 첫 로드에 갱신을 확인해야 한다',
+  );
+});
+
 test('스캔을 닫아도 카메라 스트림을 버리지 않는다', () => {
   // 닫을 때마다 track.stop() 을 하면 다시 열 때 getUserMedia 가 새로 불리고
   // **iOS 가 매번 카메라 권한을 다시 묻는다**(2026-08-19 사용자 제보).

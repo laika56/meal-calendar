@@ -2,11 +2,168 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  barcodeCapturePlan,
+  barcodeDigitCropPlan,
+  configureBarcodeTrack,
+  barcodeVideoConstraints,
   buildOpenFoodFactsUrl,
+  extractRetailBarcodeFromOcr,
   normalizeRetailBarcode,
   sharedCatalogRecordToFood,
   toBarcodeFood,
+  toBarcodeIdentity,
+  reviewedBarcodeIdentity,
 } from '../src/lib/barcodeProduct.js';
+
+test('isolates and enlarges the lower digit line instead of OCRing the whole reticle', () => {
+  assert.deepEqual(barcodeDigitCropPlan(1280, 512), {
+    sourceX: 51,
+    sourceY: 266,
+    sourceWidth: 1178,
+    sourceHeight: 225,
+    outputWidth: 1600,
+    outputHeight: 306,
+  });
+  assert.deepEqual(barcodeDigitCropPlan(820, 328), {
+    sourceX: 33,
+    sourceY: 171,
+    sourceWidth: 754,
+    sourceHeight: 144,
+    outputWidth: 1508,
+    outputHeight: 288,
+  });
+  assert.deepEqual(barcodeDigitCropPlan(1, 1), {
+    sourceX: 0,
+    sourceY: 0,
+    sourceWidth: 1,
+    sourceHeight: 1,
+    outputWidth: 2,
+    outputHeight: 2,
+  });
+  assert.equal(barcodeDigitCropPlan(0, 512), null);
+  assert.equal(barcodeDigitCropPlan(1280, Number.NaN), null);
+});
+
+test('crops a landscape camera frame to the centered 5:2 barcode reticle before decoding', () => {
+  assert.deepEqual(barcodeCapturePlan(1920, 1080), {
+    sourceX: 230,
+    sourceY: 248,
+    sourceWidth: 1459,
+    sourceHeight: 584,
+    outputWidth: 1280,
+    outputHeight: 512,
+  });
+});
+
+test('keeps the centered barcode crop inside portrait video and rejects missing dimensions', () => {
+  assert.deepEqual(barcodeCapturePlan(1080, 1920), {
+    sourceX: 130,
+    sourceY: 796,
+    sourceWidth: 820,
+    sourceHeight: 328,
+    outputWidth: 820,
+    outputHeight: 328,
+  });
+  assert.deepEqual(barcodeCapturePlan(1, 1), {
+    sourceX: 0,
+    sourceY: 0,
+    sourceWidth: 1,
+    sourceHeight: 1,
+    outputWidth: 1,
+    outputHeight: 1,
+  });
+  assert.equal(barcodeCapturePlan(0, 1080), null);
+  assert.equal(barcodeCapturePlan(1920, Number.NaN), null);
+});
+
+test('asks the rear camera for enough detail to decode retail bars', () => {
+  assert.deepEqual(barcodeVideoConstraints(), {
+    facingMode: { ideal: 'environment' },
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  });
+});
+
+test('enables continuous focus and a bounded 2x zoom when the camera exposes them', async () => {
+  const applied = [];
+  const track = {
+    getCapabilities() {
+      return {
+        focusMode: ['manual', 'continuous'],
+        zoom: { min: 1, max: 8, step: 0.1 },
+      };
+    },
+    async applyConstraints(constraints) {
+      applied.push(constraints);
+    },
+  };
+
+  assert.equal(await configureBarcodeTrack(track), true);
+  assert.deepEqual(applied, [{
+    advanced: [{ focusMode: 'continuous', zoom: 2 }],
+  }]);
+});
+
+test('uses only supported focus controls and treats camera constraint rejection as optional', async () => {
+  const focusOnly = [];
+  assert.equal(await configureBarcodeTrack({
+    getCapabilities: () => ({ focusMode: ['single-shot', 'continuous'] }),
+    async applyConstraints(constraints) { focusOnly.push(constraints); },
+  }), true);
+  assert.deepEqual(focusOnly, [{ advanced: [{ focusMode: 'continuous' }] }]);
+
+  assert.equal(await configureBarcodeTrack({
+    getCapabilities: () => ({ zoom: { min: 1, max: 1, step: 0 } }),
+    async applyConstraints() { throw new Error('must not run'); },
+  }), false);
+  assert.equal(await configureBarcodeTrack({
+    getCapabilities: () => ({ focusMode: ['continuous'] }),
+    async applyConstraints() { throw new Error('unsupported on this iPhone'); },
+  }), false);
+  assert.equal(await configureBarcodeTrack({}), false);
+});
+
+test('falls back to continuous focus when a camera rejects the combined zoom request', async () => {
+  const applied = [];
+  const track = {
+    getCapabilities: () => ({
+      focusMode: ['continuous'],
+      zoom: { min: 1, max: 4, step: 0.1 },
+    }),
+    async applyConstraints(constraints) {
+      applied.push(constraints);
+      if (applied.length === 1) throw new Error('zoom rejected');
+    },
+  };
+
+  assert.equal(await configureBarcodeTrack(track), true);
+  assert.deepEqual(applied, [
+    { advanced: [{ focusMode: 'continuous', zoom: 2 }] },
+    { advanced: [{ focusMode: 'continuous' }] },
+  ]);
+});
+
+test('extracts one check-digit-valid retail code from noisy OCR lines', () => {
+  assert.equal(extractRetailBarcodeFromOcr([
+    '2026년 09월 07일 23시 F2',
+    '||| |||| |||',
+    '8809 0368 14054',
+  ].join('\n')), '8809036814054');
+  assert.equal(extractRetailBarcodeFromOcr('UPC 036000291452'), '0036000291452');
+  assert.equal(extractRetailBarcodeFromOcr('9638-5074'), '96385074');
+});
+
+test('recognizes the two reported EAN-13 numbers instead of treating them as camera misses', () => {
+  assert.equal(extractRetailBarcodeFromOcr('8801056249052'), '8801056249052');
+  assert.equal(extractRetailBarcodeFromOcr('8801492391995'), '8801492391995');
+});
+
+test('rejects invalid, absent, or ambiguous OCR barcode candidates', () => {
+  assert.equal(extractRetailBarcodeFromOcr('8809036814053'), null);
+  assert.equal(extractRetailBarcodeFromOcr('2026-09-07 23:00'), null);
+  assert.equal(extractRetailBarcodeFromOcr('96385074\n8809036814054'), null);
+  assert.throws(() => extractRetailBarcodeFromOcr(null), /OCR text must be a string/);
+});
 
 test('returns a valid EAN-13 unchanged and trims scanner text', () => {
   assert.equal(
@@ -156,6 +313,33 @@ test('maps a complete parsed OFF product to the existing food shape', () => {
     basis: 'g',
     serving: null,
   });
+});
+
+test('keeps an OFF product identity when nutrition is missing', () => {
+  assert.deepEqual(toBarcodeIdentity({
+    code: '8801492391995',
+    name: '마늘 후랑크',
+    brand: '하림',
+    unit: null,
+    per100: null,
+  }), {
+    barcode: '8801492391995',
+    name: '마늘 후랑크',
+    brand: '하림',
+    provider: 'off',
+  });
+});
+
+test('uses a reviewed identity for the valid code absent from public barcode APIs', () => {
+  assert.deepEqual(reviewedBarcodeIdentity('8801056249052'), {
+    barcode: '8801056249052',
+    name: '오트몬드 프로틴 고소한맛 250ML',
+    brand: '롯데',
+    provider: 'reviewed-retailer',
+    sourceUrl: 'https://lottemartzetta.com/products/OS8801056249052/details',
+  });
+  assert.equal(reviewedBarcodeIdentity('8801492391995'), null);
+  assert.equal(reviewedBarcodeIdentity('8801056249053'), null);
 });
 
 test('preserves missing macros as null when verified kcal and identity are present', () => {

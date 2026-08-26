@@ -13,9 +13,14 @@ import {
 import { monthDashboardSummary, progressPercent, servingChoiceOptions } from '/src/lib/uiDashboard.js';
 import { parseOffProduct } from '/src/lib/offParser.js';
 import {
-  buildOpenFoodFactsUrl, normalizeRetailBarcode, sharedCatalogRecordToFood, toBarcodeFood,
+  barcodeCapturePlan, barcodeDigitCropPlan, barcodeVideoConstraints, buildOpenFoodFactsUrl,
+  configureBarcodeTrack,
+  extractRetailBarcodeFromOcr, normalizeRetailBarcode,
+  reviewedBarcodeIdentity, sharedCatalogRecordToFood, toBarcodeFood, toBarcodeIdentity,
 } from '/src/lib/barcodeProduct.js';
-import { resolveBarcodeSources } from '/public/barcodeLookupFlow.js';
+import { createBarcodeRecognizer } from '/public/barcodeOcr.js';
+import { recognizeBarcodePhoto } from '/public/barcodePhoto.js';
+import { barcodeLookupFailureMessage, resolveBarcodeSources } from '/public/barcodeLookupFlow.js';
 import { createSearchResult } from '/public/searchResult.js';
 import {
   buildPartialNutritionProvenance, formNumber, showPartialNutritionEntry,
@@ -159,6 +164,9 @@ const el = {
   barcodeCanvas: document.getElementById('barcodeCanvas'),
   barcodeStatus: document.getElementById('barcodeStatus'),
   barcodeCancel: document.getElementById('barcodeCancel'),
+  barcodePhoto: document.getElementById('barcodePhoto'),
+  barcodeManualForm: document.getElementById('barcodeManualForm'),
+  barcodeManualInput: document.getElementById('barcodeManualInput'),
   nutritionLabelOpen: document.getElementById('nutritionLabelOpen'),
   nutritionLabelScanner: document.getElementById('nutritionLabelScanner'),
   nutritionLabelVideo: document.getElementById('nutritionLabelVideo'),
@@ -420,16 +428,16 @@ function renderDayDetail() {
 
         const remove = document.createElement('button');
         remove.type = 'button';
-        remove.className = 'entry-del';
+        remove.className = 'entry-action entry-action-remove';
         remove.setAttribute('aria-label', `${entry.name} 삭제`);
-        remove.textContent = '×';
+        remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-2 6h10l-1 11H8L7 9Zm3 2v7m4-7v7"/></svg>';
         remove.addEventListener('click', () => removeEntry(key, index));
 
         const edit = document.createElement('button');
         edit.type = 'button';
-        edit.className = 'entry-del';
+        edit.className = 'entry-action entry-action-edit';
         edit.setAttribute('aria-label', `${entry.name} 수정`);
-        edit.textContent = '수정';
+        edit.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 16 11-11 4 4L8 20H4v-4Zm9-9 4 4M4 20h16"/></svg>';
         edit.addEventListener('click', () => editEntry(key, index));
 
         const actions = document.createElement('span');
@@ -439,9 +447,9 @@ function renderDayDetail() {
         if (Array.isArray(entry.revisions) && entry.revisions.length > 0) {
           const history = document.createElement('button');
           history.type = 'button';
-          history.className = 'entry-del';
+          history.className = 'entry-action entry-action-history';
           history.setAttribute('aria-label', `${entry.name} 수정 이력`);
-          history.textContent = '이력';
+          history.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M5 5v4h4M5.5 8.5A8 8 0 1 1 4 14"/></svg>';
           history.addEventListener('click', () => showRevisionHistory(entry));
           actions.appendChild(history);
         }
@@ -1249,10 +1257,16 @@ el.nutritionLabelFile.addEventListener('change', async () => {
 
 const ZXING_READER_URL = 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.3/dist/iife/reader/index.js';
 const BARCODE_FORMATS = ['EAN13', 'EAN8', 'UPCA', 'UPCE'];
+const BARCODE_OCR_MISS_THRESHOLD = 12;
+const BARCODE_OCR_RETRY_MS = 2000;
 let zxingReaderPromise = null;
 let barcodeStream = null;
 let barcodeFrame = null;
 let barcodeSession = 0;
+let barcodeRecognizer = null;
+let barcodeOcrBusy = false;
+let barcodeMisses = 0;
+let barcodeLastOcrAt = 0;
 
 function loadZxingReader() {
   if (globalThis.ZXingWASM?.readBarcodes) return Promise.resolve(globalThis.ZXingWASM);
@@ -1299,9 +1313,19 @@ function pauseCameraFrames() {
   // srcObject 는 비우지 않는다 — 다시 열 때 같은 스트림을 그대로 쓴다.
 }
 
+function releaseBarcodeRecognizer() {
+  const recognizer = barcodeRecognizer;
+  barcodeRecognizer = null;
+  recognizer?.close().catch((error) => console.error('[meal-calendar] 바코드 OCR 종료 실패', error));
+}
+
 function stopBarcodeScanner() {
   barcodeSession += 1;
   pauseCameraFrames();
+  releaseBarcodeRecognizer();
+  barcodeOcrBusy = false;
+  barcodeMisses = 0;
+  barcodeLastOcrAt = 0;
 }
 
 /** 카메라를 실제로 놓아준다. 다음에 열면 권한을 다시 묻는다. */
@@ -1339,9 +1363,14 @@ async function resolveBarcodeProduct(barcode, session) {
       const response = await fetch(buildOpenFoodFactsUrl(code));
       if (!response.ok) throw new Error(`Open Food Facts HTTP ${response.status}`);
       const parsed = parseOffProduct(await response.json());
-      return parsed === null ? null : toBarcodeFood(parsed);
+      return parsed === null ? null : {
+        food: toBarcodeFood(parsed),
+        identity: toBarcodeIdentity(parsed),
+      };
     },
-    lookupIdentity: (code) => db.lookupBarcodeIdentity(code),
+    async lookupIdentity(code) {
+      return await db.lookupBarcodeIdentity(code) ?? reviewedBarcodeIdentity(code);
+    },
   });
   if (session !== barcodeSession) return;
   if (result.identity) {
@@ -1356,10 +1385,7 @@ async function resolveBarcodeProduct(barcode, session) {
     return;
   }
   if (result.food === null) {
-    const message = result.sharedUnavailable && result.offUnavailable && result.upcUnavailable
-      ? '제품 조회 서비스에 연결하지 못했습니다. 직접 입력해 주세요.'
-      : '공용 바코드 DB, Open Food Facts, UPCitemdb에서 제품을 찾지 못했습니다. 직접 입력해 주세요.';
-    showBarcodeManual(message);
+    showBarcodeManual(barcodeLookupFailureMessage(barcode, result));
     return;
   }
 
@@ -1367,17 +1393,89 @@ async function resolveBarcodeProduct(barcode, session) {
   openPortionPrompt(result.food);
 }
 
+function barcodeCanvasBlob(canvas = el.barcodeCanvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error('barcode frame is unavailable'));
+    }, 'image/jpeg', 0.95);
+  });
+}
+
+function barcodeDigitCanvas() {
+  const crop = barcodeDigitCropPlan(el.barcodeCanvas.width, el.barcodeCanvas.height);
+  if (crop === null) throw new Error('barcode digit frame is unavailable');
+
+  const canvas = document.createElement('canvas');
+  canvas.width = crop.outputWidth;
+  canvas.height = crop.outputHeight;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(
+    el.barcodeCanvas,
+    crop.sourceX,
+    crop.sourceY,
+    crop.sourceWidth,
+    crop.sourceHeight,
+    0,
+    0,
+    crop.outputWidth,
+    crop.outputHeight,
+  );
+
+  // 흐린 회색 포장지에서도 숫자 획을 살린다. 이진화는 조명에 너무 민감하므로
+  // 회색조+명암 강화만 하고 Tesseract가 획 경계를 결정하게 둔다.
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  for (let index = 0; index < image.data.length; index += 4) {
+    const gray = (image.data[index] * 0.299)
+      + (image.data[index + 1] * 0.587)
+      + (image.data[index + 2] * 0.114);
+    const contrasted = Math.max(0, Math.min(255, Math.round(((gray - 128) * 1.8) + 128)));
+    image.data[index] = contrasted;
+    image.data[index + 1] = contrasted;
+    image.data[index + 2] = contrasted;
+  }
+  context.putImageData(image, 0, 0);
+  return canvas;
+}
+
+async function recognizeBarcodeDigits(session) {
+  const blob = await barcodeCanvasBlob(barcodeDigitCanvas());
+  if (session !== barcodeSession) return null;
+  let recognizer = barcodeRecognizer;
+  if (!recognizer) {
+    // 이 입력은 전체 사진이 아니라 이미 잘라낸 EAN/UPC 숫자 한 줄이다.
+    recognizer = await createBarcodeRecognizer({ pageSegMode: '11' });
+    if (session !== barcodeSession) {
+      await recognizer.close();
+      return null;
+    }
+    barcodeRecognizer = recognizer;
+  }
+  const text = await recognizer.recognize(blob);
+  if (session !== barcodeSession) return null;
+  return extractRetailBarcodeFromOcr(text);
+}
+
 async function scanBarcodeFrame(zxing, session) {
   if (session !== barcodeSession || !barcodeStream) return;
   const { videoWidth, videoHeight } = el.barcodeVideo;
-  if (videoWidth > 0 && videoHeight > 0) {
-    const width = Math.min(videoWidth, 960);
-    const height = Math.round(videoHeight * width / videoWidth);
-    el.barcodeCanvas.width = width;
-    el.barcodeCanvas.height = height;
+  const capture = barcodeCapturePlan(videoWidth, videoHeight);
+  if (capture !== null) {
+    el.barcodeCanvas.width = capture.outputWidth;
+    el.barcodeCanvas.height = capture.outputHeight;
     const context = el.barcodeCanvas.getContext('2d', { willReadFrequently: true });
-    context.drawImage(el.barcodeVideo, 0, 0, width, height);
-    const image = context.getImageData(0, 0, width, height);
+    context.drawImage(
+      el.barcodeVideo,
+      capture.sourceX,
+      capture.sourceY,
+      capture.sourceWidth,
+      capture.sourceHeight,
+      0,
+      0,
+      capture.outputWidth,
+      capture.outputHeight,
+    );
+    const image = context.getImageData(0, 0, capture.outputWidth, capture.outputHeight);
     const results = await zxing.readBarcodes(image, {
       formats: BARCODE_FORMATS,
       maxNumberOfSymbols: 1,
@@ -1391,6 +1489,33 @@ async function scanBarcodeFrame(zxing, session) {
       pauseCameraFrames();
       await resolveBarcodeProduct(barcode, session);
       return;
+    }
+    barcodeMisses += 1;
+    const now = Date.now();
+    if (!barcodeOcrBusy
+      && barcodeMisses >= BARCODE_OCR_MISS_THRESHOLD
+      && now - barcodeLastOcrAt >= BARCODE_OCR_RETRY_MS) {
+      barcodeOcrBusy = true;
+      barcodeMisses = 0;
+      barcodeLastOcrAt = now;
+      el.barcodeStatus.textContent = '막대 인식이 어려워 아래 숫자를 확인하고 있습니다.';
+      try {
+        const ocrBarcode = await recognizeBarcodeDigits(session);
+        if (session !== barcodeSession || !barcodeStream) return;
+        if (ocrBarcode) {
+          pauseCameraFrames();
+          await resolveBarcodeProduct(ocrBarcode, session);
+          return;
+        }
+        el.barcodeStatus.textContent = '바코드 아래 숫자가 선명하게 보이도록 잠시 멈춰주세요.';
+      } catch (error) {
+        console.error('[meal-calendar] 바코드 숫자 판독 실패', error);
+        if (session === barcodeSession) {
+          el.barcodeStatus.textContent = '막대를 읽지 못했습니다. 바코드를 선명하게 비춰주세요.';
+        }
+      } finally {
+        barcodeOcrBusy = false;
+      }
     }
   }
   if (session === barcodeSession && barcodeStream) {
@@ -1420,7 +1545,7 @@ async function startBarcodeScanner() {
       for (const track of barcodeStream.getTracks()) track.enabled = true;
     } else {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+        video: barcodeVideoConstraints(),
         audio: false,
       });
       if (session !== barcodeSession) {
@@ -1429,6 +1554,9 @@ async function startBarcodeScanner() {
       }
       barcodeStream = stream;
     }
+    const [videoTrack] = barcodeStream.getVideoTracks();
+    await configureBarcodeTrack(videoTrack);
+    if (session !== barcodeSession) return;
     el.barcodeVideo.srcObject = barcodeStream;
     await el.barcodeVideo.play();
     await scanBarcodeFrame(zxing, session);
@@ -1441,6 +1569,53 @@ async function startBarcodeScanner() {
 }
 
 el.barcodeOpen.addEventListener('click', startBarcodeScanner);
+
+el.barcodePhoto.addEventListener('change', async () => {
+  const [file] = el.barcodePhoto.files ?? [];
+  if (!file) return;
+  stopBarcodeScanner();
+  const session = barcodeSession;
+  el.barcodeStatus.textContent = '고해상도 사진에서 바코드를 읽고 있습니다.';
+  try {
+    const zxing = await loadZxingReader();
+    const barcode = await recognizeBarcodePhoto(file, {
+      readBarcodes: (image, options) => zxing.readBarcodes(image, options),
+      normalize: normalizeRetailBarcode,
+      createRecognizer: createBarcodeRecognizer,
+      extract: extractRetailBarcodeFromOcr,
+    });
+    if (session !== barcodeSession) return;
+    if (barcode === null) {
+      el.barcodeStatus.textContent = '사진에서 바코드를 읽지 못했습니다. 번호로 찾기를 이용해 주세요.';
+      return;
+    }
+    await resolveBarcodeProduct(barcode, session);
+  } catch (error) {
+    console.error('[meal-calendar] 바코드 사진 판독 실패', error);
+    if (session === barcodeSession) {
+      el.barcodeStatus.textContent = '사진을 읽지 못했습니다. 번호로 찾기를 이용해 주세요.';
+    }
+  } finally {
+    el.barcodePhoto.value = '';
+  }
+});
+
+el.barcodeManualForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const barcode = extractRetailBarcodeFromOcr(el.barcodeManualInput.value);
+  if (barcode === null) {
+    el.barcodeStatus.textContent = '체크디지트가 맞는 8·12·13자리 바코드 번호를 입력해 주세요.';
+    return;
+  }
+  stopBarcodeScanner();
+  const session = barcodeSession;
+  try {
+    await resolveBarcodeProduct(barcode, session);
+  } catch (error) {
+    console.error('[meal-calendar] 바코드 번호 조회 실패', error);
+    if (session === barcodeSession) showBarcodeManual('제품 조회 서비스에 연결하지 못했습니다. 직접 입력해 주세요.');
+  }
+});
 
 // 앱이 백그라운드로 가면 카메라를 놓아준다. 스캔 사이에는 스트림을 살려두지만
 // (권한을 다시 안 묻게 하려고) **안 쓰는 동안 카메라를 잡고 있지는 않는다.**
@@ -2829,10 +3004,16 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     let registration;
     try {
-      registration = await navigator.serviceWorker.register('/sw.js');
+      registration = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
     } catch (err) {
       console.error('[meal-calendar] SW 등록 실패', err);
       return;
+    }
+    try {
+      await registration.update();
+    } catch (err) {
+      // 오프라인에서는 기존 셸을 계속 쓴다. 갱신 확인 실패로 앱을 막지 않는다.
+      console.error('[meal-calendar] SW 초기 갱신 확인 실패', err);
     }
     // 포그라운드로 돌아올 때마다 새 배포가 있는지 물어본다. 이게 없으면 홈화면 PWA 는
     // 앱을 죽였다 켜기 전까지 영원히 옛 코드를 돈다.
