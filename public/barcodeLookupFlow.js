@@ -1,10 +1,29 @@
-export async function resolveBarcodeSources(barcode, { lookupShared, lookupOff, lookupIdentity }) {
+export async function resolveBarcodeSources(barcode, { lookupMine, lookupShared, lookupOff, lookupIdentity }) {
   if (typeof barcode !== 'string' || !barcode) {
     throw new TypeError('resolveBarcodeSources: barcode must be a non-empty string');
   }
   if (typeof lookupShared !== 'function' || typeof lookupOff !== 'function') {
     throw new TypeError('resolveBarcodeSources: lookup dependencies must be functions');
   }
+
+  // 내가 전에 영양성분표를 찍어 확인한 제품이 가장 신뢰도 높다. 그래서 공용보다 먼저 본다.
+  // 국내 바코드 커버리지가 낮아(2026-08-26 실측: 공용 카탈로그 2,109개) 같은 제품을
+  // 매번 다시 찍는 일이 실제로 일어난다.
+  //
+  // 선택 의존성이다 — 안 넘기면 아래 3단계가 그대로 돈다.
+  // 실패는 삼킨다: 오프라인이거나 규칙이 막았다고 공용·OFF 까지 포기하면
+  // 되던 조회도 안 되게 만든다.
+  if (typeof lookupMine === 'function') {
+    try {
+      const mine = await lookupMine(barcode);
+      if (mine !== null && mine !== undefined) {
+        return { food: mine, source: 'mine', sharedUnavailable: false, offUnavailable: false };
+      }
+    } catch {
+      // 다음 단계로 계속한다
+    }
+  }
+
   let sharedUnavailable = false;
   try {
     const food = await lookupShared(barcode);

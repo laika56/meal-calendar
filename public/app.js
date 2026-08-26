@@ -1356,6 +1356,10 @@ function showBarcodeManual(message, name = '') {
 async function resolveBarcodeProduct(barcode, session) {
   el.barcodeStatus.textContent = '제품 정보를 확인하고 있습니다.';
   const result = await resolveBarcodeSources(barcode, {
+    // 내가 전에 확인한 제품이 가장 신뢰도 높고 가장 빠르다. 그래서 공용보다 먼저 본다.
+    async lookupMine(code) {
+      return await db.loadMyBarcodeFood(code);
+    },
     async lookupShared(code) {
       const record = await db.lookupBarcode(code);
       return record === null ? null : sharedCatalogRecordToFood(record);
@@ -1388,6 +1392,16 @@ async function resolveBarcodeProduct(barcode, session) {
   if (result.food === null) {
     showBarcodeManual(barcodeLookupFailureMessage(barcode, result));
     return;
+  }
+
+  // 찾은 제품을 내 영역에 남긴다. 다음에 같은 걸 스캔하면 외부 조회 없이 바로 뜬다.
+  // OFF 는 브라우저가 직접 부르는 외부 호출이라, 그쪽이 느리거나 죽어도 이게 살아남는다.
+  // 이미 내 기록에서 온 것(source: 'mine')은 다시 쓸 이유가 없다.
+  // 실패해도 스캔 흐름을 막지 않는다 — 캐시는 있으면 좋은 것이지 필수가 아니다.
+  if (result.source !== 'mine') {
+    db.saveMyBarcodeFood(result.food).catch((err) => {
+      console.error('[meal-calendar] 바코드 캐시 저장 실패 (조회 자체는 성공했다)', err);
+    });
   }
 
   stopBarcodeScanner();

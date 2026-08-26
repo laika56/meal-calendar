@@ -20,6 +20,7 @@ import {
 import { firebaseConfig } from '/src/firebaseConfig.js';
 import { normalizeSearchFoodsResponse } from '/src/lib/searchFoodsResponse.js';
 import { planMergeRestore, validateExportEnvelope } from '/src/lib/dataTransfer.js';
+import { toMyBarcodeRecord, fromMyBarcodeRecord, myBarcodeDocId } from '/src/lib/myBarcodeCache.js';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -417,6 +418,29 @@ export async function searchFoods(q) {
     throw new Error(body.error ?? `검색 실패 (${res.status})`);
   }
   return normalizeSearchFoodsResponse(await res.json());
+}
+
+// ── 내가 확인한 바코드 (users/{uid}/barcodes/{code}) ──────────────────
+// 공용 캐시 `foods/` 가 아니라 내 영역이다. 개인 스캔 이력을 공용에 올리지 않는다.
+// 국내 커버리지가 낮아(2026-08-26 실측: 공용 카탈로그 2,109개) 영양성분표를 직접
+// 찍어 넣은 제품을 다음에 또 못 찾는 일이 실제로 난다. 그걸 막는다.
+
+export async function loadMyBarcodeFood(code) {
+  const uid = requireUid();
+  const docId = myBarcodeDocId(code);
+  if (docId === null) return null;
+  const snapshot = await getDoc(doc(db, 'users', uid, 'barcodes', docId));
+  return snapshot.exists() ? fromMyBarcodeRecord(snapshot.data()) : null;
+}
+
+export async function saveMyBarcodeFood(food) {
+  const uid = requireUid();
+  const record = toMyBarcodeRecord(food, new Date().toISOString());
+  if (record === null) return false;
+  const docId = myBarcodeDocId(record.barcode);
+  if (docId === null) return false;
+  await setDoc(doc(db, 'users', uid, 'barcodes', docId), record);
+  return true;
 }
 
 export async function lookupBarcode(code) {
