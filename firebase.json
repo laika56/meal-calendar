@@ -12,25 +12,68 @@
     "site": "calorie-43692",
     "public": ".",
     "rewrites": [
-      { "source": "/", "destination": "/public/index.html" },
-      { "source": "/sw.js", "destination": "/public/sw.js" },
+      {
+        "source": "/",
+        "destination": "/public/index.html"
+      },
+      {
+        "source": "/sw.js",
+        "destination": "/public/sw.js"
+      },
       {
         "source": "/api/foods/search",
-        "function": { "functionId": "searchFoods", "region": "asia-northeast3" }
+        "function": {
+          "functionId": "searchFoods",
+          "region": "asia-northeast3"
+        }
       },
       {
         "source": "/api/foods/barcode",
-        "function": { "functionId": "barcodeFood", "region": "asia-northeast3" }
+        "function": {
+          "functionId": "barcodeFood",
+          "region": "asia-northeast3"
+        }
       }
     ],
     "headers": [
       {
         "source": "**/*.@(js|html)",
-        "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, must-revalidate"
+          }
+        ]
       },
       {
         "source": "/",
-        "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "X-Frame-Options",
+            "value": "DENY"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "strict-origin-when-cross-origin"
+          },
+          {
+            "key": "Permissions-Policy",
+            "value": "camera=(self), microphone=(), geolocation=(), payment=(), usb=()"
+          }
+        ]
       }
     ],
     "ignore": [
@@ -48,7 +91,10 @@
       "scripts/**",
       "functions/**",
       "*.md",
-      "*.rules"
+      "*.rules",
+      "package.json",
+      "package-lock.json",
+      "data/**"
     ]
   }
 }
