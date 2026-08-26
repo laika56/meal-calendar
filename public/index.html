@@ -3,11 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- apple- 접두사판은 deprecated 경고가 뜨지만 지우지 않는다. 구형 iOS 는 표준명을
+     아직 모르고, 이 앱은 홈 화면 설치가 전제다. 둘 다 두는 게 유일하게 안전하다. -->
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="식단">
 <link rel="manifest" href="/public/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/public/icon-180.png">
+<!-- 없으면 브라우저가 /favicon.ico 를 찾다가 404 를 콘솔에 남긴다. 실제 에러를
+     묻는 잡음이라 아이콘을 명시한다. -->
+<link rel="icon" href="/public/icon-192.png" type="image/png">
 <title>식단 캘린더</title>
 <!-- app.js가 import를 하나씩 만날 때마다 순차로 받아오던 걸 병렬로 바꾼다.
      파일 수는 그대로지만 왕복이 순차→병렬이라 체감 로딩이 줄어든다.
