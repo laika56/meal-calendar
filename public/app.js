@@ -37,6 +37,7 @@ import { revisionReason, reviseEntry } from '/src/lib/entryRevision.js';
 import { sevenDayKeys, summarizeSevenDays } from '/src/lib/weeklySummary.js';
 import { buildExportEnvelope, serializeDaysCsv, serializeExportJson, validateExportEnvelope } from '/src/lib/dataTransfer.js';
 import { createDayPreset, createMealPreset, normalizePreset, planPresetApply } from '/src/lib/presetV2.js';
+import { resolveMultiCandidate } from '/src/lib/multiCandidate.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
 // 전부 받아질 때까지 이 모듈 전체의 실행이 밀린다. 캘린더 그리드는 네트워크 없이 그릴 수 있는데
@@ -1646,58 +1647,11 @@ async function resolveMultiPieces(pieces) {
     // 'unsupported-serving' 은 「단위는 알아들었는데 대표 중량 표에 없다」는 뜻이다.
     // DB 의 1인분을 확인해 개수로 환산할 기회는 남긴다.
     isUsable: (piece) => piece.parsed.ok || piece.parsed.reason === 'unsupported-serving',
-    resolveCandidates: resolveMultiCandidates,
+    resolveCandidates: resolveMultiCandidate,
     onSearchError(piece, err) {
       console.error('[meal-calendar] 검색 실패', piece.text, err);
     },
   });
-}
-
-function resolveMultiCandidates(piece, items) {
-  // 이름이 실제로 맞아떨어질 때만 자동 기록 후보로 삼는다 — 엉뚱한 식품의 숫자가 들어가면 안 된다
-  if (items.length === 0 || !hasNameMatch(piece.parsed.query, items)) {
-    return { text: piece.text, ok: false };
-  }
-
-  const food = selectBestFood(piece.parsed.query, items);
-
-  let amountG = piece.parsed.amountG;
-  let quickInput = piece.parsed;
-  if (!piece.parsed.ok) {
-    // DB 가 1인분을 모르면 여기서도 포기한다. 개수를 g 으로 바꿀 근거가 없다
-    if (!food.serving) return { text: piece.text, ok: false };
-    // count 는 발주 18 이 붙여준다. 없으면 곱할 수가 없으니 포기한다 —
-    // undefined 를 곱해서 NaN 을 기록하는 것보다 "못 알아들었다"가 낫다
-    const count = piece.parsed.count;
-    if (!Number.isFinite(count) || count <= 0) return { text: piece.text, ok: false };
-    amountG = food.serving.amount * count;
-    quickInput = {
-      ...piece.parsed,
-      ok: true,
-      amountG,
-      displayAmount: `${count}개`,
-      estimated: true,
-      servingSource: 'mfds-serving',
-    };
-  }
-
-  // 미리 보여줄 kcal·완전성 판정. addSearchedFood 가 저장 시점에 똑같은 계산을
-  // 다시 하므로(단일 진실 소스), 여기 값은 화면 표시 전용이고 저장 여부를 좌우하지 않는다.
-  const scaled = scaleNutrients(food.per100g, amountG);
-  const incomplete = Object.values(scaled).some((value) => value === null);
-
-  return {
-    text: piece.text,
-    ok: true,
-    incomplete,
-    food,
-    amountG,
-    quickInput,
-    kcal: scaled.kcal,
-    name: quickInput.query ?? food.name,
-    displayAmount: quickInput.estimated ? quickInput.displayAmount : `${amountG}g`,
-    estimated: Boolean(quickInput.estimated),
-  };
 }
 
 let multiConfirmResolved = [];
