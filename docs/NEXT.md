@@ -2,9 +2,52 @@
 
 **이 파일이 현재 상태의 단일 출처다.** 다른 곳에 진행 목록을 만들지 않는다.
 
-최종 갱신: 2026-08-19
+최종 갱신: 2026-08-26
 
 ## 지금 상태
+
+## ✅ 워크트리 4개 통합 + 배포 정리 — Claude (2026-08-26)
+
+`codex/barcode-wiring`·`adhoc-1`·`adhoc-2`·`cdn-pin` 을 전부 `master` 에 넣었다.
+코드 충돌은 0건이고 `docs/NEXT.md` 문서 충돌만 있었다. 549 → **602 tests, 601 pass,
+0 fail, 에뮬레이터 전용 1 skip.**
+
+**머지해야만 드러나는 버그를 하나 잡았다.** `adhoc-1` 이 `/src/lib/multiCandidate.js` 를
+만들고 `app.js` 가 import 하는데, `sw.js` 와 그 가드 테스트는 `barcode-wiring` 쪽에
+있었다. 각 브랜치 단독으로는 둘 다 통과한다. 그대로 배포했으면 오프라인에서 앱이 안 떴다 —
+2026-08-14 에 세 파일로 같은 사고가 났던 그 경로다. **브랜치별 green 은 통합 green 이 아니다.**
+
+배포본을 실제로 조회해서 잰 것들:
+
+- `hosting.public` 이 `.` 이고 ignore 가 블랙리스트라, 목록에 없는 것이 전부 나가고 있었다.
+  `/data/franchise/public/mfds-franchise.json` **13,039,209B (12.4MB)** 와
+  `/package.json`·`/package-lock.json` 이 200 이었다. 브라우저의 `/data/` 참조는 0건이다
+  (앱이 쓰는 건 `/src/data/` 로 경로가 다르다). 제거 후 프랜차이즈 검색은 그대로 동작한다 —
+  그 데이터는 Firestore 카탈로그에서 오기 때문이다
+- 응답 보안 헤더가 HSTS 하나뿐이었다. 카메라를 쓰는 PWA 인데 `Permissions-Policy` 가 없어
+  임베드 문맥에서 권한이 열린 채였다. `camera=(self)` 로 스캔은 살리고 나머지는 닫았다
+- **CSP 는 일부러 넣지 않았다.** 필요한 출처가 gstatic·jsdelivr·googleapis·openfoodfacts·
+  `blob:`·`wasm-unsafe-eval` 로 넓어서 잘못 쓰면 앱이 통째로 죽는다. Report-Only 부터
+  시작하는 별도 작업이다
+- 발주33 의 CDN 가드에 사각지대가 둘 있었다. jsdelivr·unpkg 만 보고 `.js` 만 읽어서,
+  Firebase SDK 가 오는 `www.gstatic.com/firebasejs/<version>/` 과 `index.html` 의
+  modulepreload 를 못 봤다. `db.js` 의 import 와 `index.html` 의 preload 가 어긋나면
+  브라우저가 SDK 를 두 버전 받는데 화면은 멀쩡하다. 둘 다 가드에 태웠다
+
+**배포본을 브라우저로 직접 눌러 확인했다** (Playwright MCP, 데스크톱):
+비회원 시작 → 8/26 → 점심 `+ 추가` → `닭가슴살` 검색(`/api/foods/search` 200, 결과 8건,
+할리스 프랜차이즈 포함) → 항목 선택 → 30g → 추가. **116 kcal 이 저장되고 하루 합계와
+슬롯에 반영됐다** (388kcal/100g × 30g = 116.4). `serviceWorker.controller` 활성으로
+새 셸이 실제로 잡힌 것도 확인했다. 콘솔은 **0 errors, 0 warnings** 다 —
+`/favicon.ico` 404 와 `apple-mobile-web-app-capable` deprecated 경고를 이번에 없앴다.
+
+**Playwright 를 devDependency 로 넣지는 않았다.** 위 흐름은 MCP 로 실측했고, npm 의존성
+추가는 이 프로젝트의 「의존성 0개」 전제를 바꾸는 결정이라 사용자 판단이 먼저다.
+`public/app.js`·`public/db.js` 의 자동 커버리지가 0인 상태는 그대로 남아 있다.
+
+**실기기 확인은 여전히 남아 있다.** 위는 전부 데스크톱 크롬이다.
+
+
 
 ## ✅ 영양성분표 실시간 카메라 인식 전환 — Codex (2026-08-19)
 
