@@ -352,6 +352,7 @@ standalone에서 실제 포장 바코드 판독 속도·초점·권한 재요청
 | 대상 | 잡은 쪽 | 상태 |
 |---|---|---|
 | `public/app.js`, `src/lib/multiCandidate.js`, `tests/multiCandidate.test.js` 다중입력 후보 판정 추출 | **Codex** | **완료·커밋 (2026-08-21)** — `orders/31`, 기존 동작 그대로 순수 함수 추출. 타깃 14/14, 전체 563개 중 560 pass·예상된 서비스워커 2 fail·에뮬레이터 1 skip |
+| `src/lib/pinnedDeps.js`, `tests/pinnedDeps.test.js` CDN 고정 버전 가드 | **Codex** | **완료 (2026-08-21)** — 발주33. 타깃 12/12, 전체 560 pass·0 fail·1 skip. `tesseract.js@7` 변조 시 `unpinned`/`version: 7`로 실패 후 원복 확인 |
 | 공용 국내 바코드 카탈로그(C005/I2570·식품이력추적·FoodQR) | **Codex** | **설계 명세 작성·사용자 검토 대기 (2026-08-19)** — 개인 학습 DB 없이 벌크 공용 카탈로그 우선 + OFF fallback. 인증키 비저장, 실데이터 분포·license gate 후 TDD |
 | `src/lib/barcodeProduct.js`, `tests/barcodeProduct.test.js` 체크디지트 검증 배선 | **Codex** | **완료·Claude 검수통과 (2026-08-19)** — 타깃 14/14, Claude 독립 검산 15/15. Codex 가 `SHELL_REVISION` 갱신 필요를 정확히 짚고 `public/` 금지를 지켜 멈췄다(계약대로 동작). 발주서가 그 항목을 빠뜨린 게 원인이라 **Claude 가 `public/sw.js` 의 `SHELL_REVISION` 을 재계산해 갱신**했고 전체 453 중 452 pass·0 fail·1 skip(에뮬레이터) |
 | `scripts/build-mfds-franchise-data.mjs`, `tests/franchiseCatalogData.test.js`, Task 3 report | **Codex** | **완료 (2026-08-18)** — Task 3 review-fix round 4/5, 실패 시 독립 old/new 복구본 무조건 보존·경로 보고. focused 22/22, 전체 373/373, validator 통과 |
