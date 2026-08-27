@@ -49,7 +49,8 @@
 
 - 사용자 기능, Firestore 스키마, 카탈로그 형식과 해시 계산 결과는 바뀌지 않는다.
 - `public/db.js` 바이트 변경에 맞춰 `SHELL_REVISION`을 공식 스크립트로 갱신했다.
-- 이 작업에서는 배포, 원격 데이터 변경, 의존성 추가를 하지 않았다.
+- 커밋 `3dfbf83`을 Firebase Hosting에 배포했다. Functions, Firestore 규칙·데이터,
+  의존성은 변경하지 않았다.
 
 ## 최종 검증
 
@@ -65,3 +66,15 @@
 - `canonicalJson` 정확한 함수 정의: 1개
 - 삭제한 DB 함수 정의: 0개
 - 제거한 환경변수 예시: 0개
+
+## 배포 검증
+
+- `firebase deploy --only hosting --project calorie-43692 --non-interactive`: 완료
+- 배포 URL: `https://calorie-43692.web.app`
+- HTTP 상태: 200
+- 아래 5개 경로를 cache-busting query로 다시 받아 로컬 SHA-256과 대조했다.
+  - `/`: 일치
+  - `/public/index.html`: 일치
+  - `/public/db.js`: 일치
+  - `/sw.js`: 일치
+  - `/public/sw.js`: 일치

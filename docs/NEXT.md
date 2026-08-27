@@ -17,7 +17,9 @@ Git 추적 211개 파일·JS/MJS/CJS 120개 정적 감사에서 확인한 범위
 삭제 전에 각 심볼·환경변수의 추적 소스 참조 0건과 스캐폴드 자체 삭제 지시를
 확인했다. 공통 유틸은 RED 3건(`canonicalJson is not a function`)을 먼저 확인한 뒤
 기존 바이트 직렬화·SHA-256 동작을 그대로 옮겼다. 상세 근거와 검증 명령은
-`docs/PATCH-NOTES-2026-08-27-DEAD-CODE.md`에 분리했다. 배포·실행 중 앱 변경은 없다.
+`docs/PATCH-NOTES-2026-08-27-DEAD-CODE.md`에 분리했다. 커밋 `3dfbf83`을
+Firebase Hosting에 배포했고, `/`·`/public/index.html`·`/public/db.js`·`/sw.js`·
+`/public/sw.js`의 배포 바이트가 로컬과 모두 일치했다. Functions·규칙·데이터는 변경하지 않았다.
 
 ## ✅ 바코드 → 진짜 제품명 (코리안넷) — Claude (2026-08-27, 배포됨)
 
