@@ -12,6 +12,7 @@ const shouldFix = process.argv.slice(2).includes('--fix');
 const requiredSharedFiles = [
   'barcodeCatalogLookup.js',
   'franchiseCatalog.js',
+  'koreannetProduct.js',
   'mfdsParser.js',
   'searchPlan.js',
   'searchResults.js',

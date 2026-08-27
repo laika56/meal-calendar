@@ -11,6 +11,7 @@ import {
   normalizeRetailBarcode,
   sharedCatalogRecordToFood,
   toBarcodeFood,
+  barcodeIdentitySearchQuery,
   isTrustedOffIdentity,
   toBarcodeIdentity,
   reviewedBarcodeIdentity,
@@ -422,4 +423,36 @@ test('keeps an OFF identity when the quality signals are acceptable', () => {
     brand: '서울 우유',
     provider: 'off',
   });
+});
+
+// ── identity 로 식약처를 칠 때 쓸 검색어 (2026-08-27) ────────────────────────
+// **제조사를 붙이면 안 된다.** 실측(코리안넷 이름 N=85~86, 식약처 실호출):
+// 제조사를 붙인 질의 8.3% → 뗀 질의 36.0%. 식약처 FOOD_NM_KR 은 제품명만 본다.
+// 코리안넷 identity 의 `name` 은 이미 제조사가 제거된 값이다(koreannetProduct.js).
+
+test('searches a koreannet identity by its product name alone', () => {
+  assert.equal(barcodeIdentitySearchQuery({
+    barcode: '8809396600014',
+    name: '감동란',
+    brand: '(주)마루카네코리아',
+    provider: 'koreannet',
+  }), '감동란');
+});
+
+test('keeps the brand for identities that are not koreannet', () => {
+  // OFF·UPCitemdb 는 이름에 제조사가 안 붙어 있어 브랜드가 검색을 좁혀준다.
+  // 그쪽은 이번에 측정하지 않았으므로 동작을 바꾸지 않는다.
+  assert.equal(barcodeIdentitySearchQuery({
+    barcode: '8801115114031', name: 'Milk (우유)', brand: '서울 우유', provider: 'off',
+  }), '서울 우유 Milk (우유)');
+  assert.equal(barcodeIdentitySearchQuery({
+    barcode: '036000291452', name: '제품명', brand: null, provider: 'upcitemdb',
+  }), '제품명');
+});
+
+test('returns an empty query rather than the string undefined for a broken identity', () => {
+  // 빈 질의로 식약처를 치면 319,060건이 통째로 돌아온다 — 검색이 아니라 덤프다.
+  assert.equal(barcodeIdentitySearchQuery(null), '');
+  assert.equal(barcodeIdentitySearchQuery({}), '');
+  assert.equal(barcodeIdentitySearchQuery({ name: '   ', brand: '   ' }), '');
 });

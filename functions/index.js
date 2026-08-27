@@ -17,6 +17,7 @@ import {
   canonicalBarcode as canonicalCatalogBarcode,
   queryBarcodeCatalog as queryBarcodeCatalogFromFirestore,
 } from './shared/barcodeCatalogLookup.js';
+import { lookupKoreannetIdentity as lookupKoreannetIdentity_ } from './koreannet.js';
 import { lookupUpcItemIdentity } from './upcItemDb.js';
 
 initializeApp();
@@ -306,17 +307,42 @@ export async function runBarcodeLookup(code, dependencies, { includeIdentity = f
   if (typeof dependencies.lookupUpcIdentity !== 'function') {
     throw new TypeError('barcode dependencies.lookupUpcIdentity must be a function');
   }
+
+  // **코리안넷이 UPCitemdb 보다 먼저다.** 국내 바코드의 이름을 아는 곳이 여기다 —
+  // 실측(2026-08-27, 실제 880 바코드 N=300): 이름 있음 93.7%, 에러 0.
+  // UPCitemdb 는 국내 제품을 거의 모른다. 여기서 실패해도 아래가 그대로 돈다.
+  let koreannet = null;
+  if (typeof dependencies.lookupKoreannetIdentity === 'function') {
+    try {
+      koreannet = await dependencies.lookupKoreannetIdentity(code);
+    } catch {
+      // 조회 실패는 「제품 없음」이 아니다 — 다음 출처로 넘어간다.
+    }
+    if (koreannet !== null) {
+      return {
+        item: null,
+        identity: koreannet,
+        providers: { shared: 'miss', koreannet: 'hit' },
+      };
+    }
+  }
+
   const identity = await dependencies.lookupUpcIdentity(code);
   return {
     item: null,
     identity,
-    providers: { shared: 'miss', upcitemdb: identity === null ? 'miss' : 'hit' },
+    providers: {
+      shared: 'miss',
+      ...(typeof dependencies.lookupKoreannetIdentity === 'function' ? { koreannet: 'miss' } : {}),
+      upcitemdb: identity === null ? 'miss' : 'hit',
+    },
   };
 }
 
 export function createBarcodeFood({
   authenticate = requireAuth,
   queryBarcodeCatalog = (code) => queryBarcodeCatalogFromFirestore(getFirestore(), code),
+  lookupKoreannetIdentity = lookupKoreannetIdentity_,
   lookupUpcIdentity = lookupUpcItemIdentity,
 } = {}) {
   return onRequest(
@@ -337,7 +363,7 @@ export function createBarcodeFood({
         const includeIdentity = req.query.includeIdentity === '1';
         res.status(200).json(await runBarcodeLookup(
           code,
-          { queryBarcodeCatalog, lookupUpcIdentity },
+          { queryBarcodeCatalog, lookupKoreannetIdentity, lookupUpcIdentity },
           { includeIdentity },
         ));
       } catch (error) {

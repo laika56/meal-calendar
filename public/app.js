@@ -16,7 +16,8 @@ import {
   barcodeCapturePlan, barcodeDigitCropPlan, barcodeVideoConstraints, buildOpenFoodFactsUrl,
   configureBarcodeTrack,
   extractRetailBarcodeFromOcr, normalizeRetailBarcode,
-  reviewedBarcodeIdentity, sharedCatalogRecordToFood, toBarcodeFood, toBarcodeIdentity,
+  barcodeIdentitySearchQuery, reviewedBarcodeIdentity, sharedCatalogRecordToFood,
+  toBarcodeFood, toBarcodeIdentity,
 } from '/src/lib/barcodeProduct.js';
 import { createBarcodeRecognizer } from '/public/barcodeOcr.js';
 import { recognizeBarcodePhoto } from '/public/barcodePhoto.js';
@@ -1384,13 +1385,16 @@ async function resolveBarcodeProduct(barcode, session) {
   if (session !== barcodeSession) return;
   if (result.identity) {
     stopBarcodeScanner();
-    const query = [result.identity.brand, result.identity.name].filter(Boolean).join(' ');
+    const query = barcodeIdentitySearchQuery(result.identity);
     showEntryPanel('chooser');
     el.searchInput.value = query;
     el.searchStatus.className = 'search-status search-status-warning';
-    el.searchStatus.textContent = '제품명은 확인했지만 영양값은 확인되지 않았습니다. 식약처 결과를 확인해 주세요.';
+    // 어느 제품으로 읽었는지 그대로 보여준다. 코리안넷은 용량까지 붙은 원제목을 주므로
+    // 사용자가 손에 든 포장과 눈으로 대조할 수 있다 — 틀렸으면 바로 안다.
+    const shown = result.identity.fullTitle ?? query;
+    el.searchStatus.textContent = `${shown} 으로 읽었습니다. 영양값은 확인되지 않았으니 식약처 결과에서 골라 주세요.`;
     el.searchStatus.hidden = false;
-    el.searchForm.requestSubmit();
+    if (query !== '') el.searchForm.requestSubmit();
     return;
   }
   if (result.food === null) {

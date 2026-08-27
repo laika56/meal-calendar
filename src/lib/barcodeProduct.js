@@ -264,3 +264,22 @@ export function sharedCatalogRecordToFood(record) {
     nutritionProvenance,
   };
 }
+
+/**
+ * identity 를 식약처 검색어로 바꾼다.
+ *
+ * **코리안넷 이름에는 제조사를 붙이지 않는다.** 실측(2026-08-27, 코리안넷 이름 N=85~86 을
+ * 식약처에 실제로 던짐): 제조사를 붙인 질의는 **8.3%**, 뗀 질의는 **36.0%** 에서 결과가
+ * 나왔다. 식약처 `FOOD_NM_KR` 은 제품명만 보기 때문이다. 코리안넷 파서가 내주는 `name` 은
+ * 이미 제조사가 제거된 값이라 그대로 쓰면 된다.
+ *
+ * OFF·UPCitemdb 는 이름에 제조사가 섞여 있지 않아 브랜드가 검색을 좁혀준다.
+ * **그쪽은 이번에 측정하지 않았으므로 기존 동작을 유지한다** — 안 잰 것을 바꾸지 않는다.
+ */
+export function barcodeIdentitySearchQuery(identity) {
+  const name = typeof identity?.name === 'string' ? identity.name.trim() : '';
+  if (name === '') return '';
+  if (identity.provider === 'koreannet') return name;
+  const brand = typeof identity.brand === 'string' ? identity.brand.trim() : '';
+  return brand === '' ? name : `${brand} ${name}`;
+}

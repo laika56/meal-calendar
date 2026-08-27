@@ -58,9 +58,12 @@ export async function resolveBarcodeSources(barcode, { lookupMine, lookupShared,
   }
   try {
     const identity = await lookupIdentity(barcode);
+    // 이 자리는 UPCitemdb 전용이 아니다 — 서버가 코리안넷을 먼저 보고 그 결과를 준다.
+    // provider 를 그대로 쓰지 않으면 코리안넷 응답이 `upcitemdb` 로 기록돼 다음 사람이
+    // 어디서 온 이름인지 못 가린다.
     return {
       food: null, identity,
-      source: identity === null ? null : 'upcitemdb',
+      source: identity === null ? null : (identity.provider ?? 'upcitemdb'),
       sharedUnavailable, offUnavailable, upcUnavailable: false,
     };
   } catch {

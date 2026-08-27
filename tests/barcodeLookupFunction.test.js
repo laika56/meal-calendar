@@ -80,6 +80,9 @@ test('queries UPC identity only when explicitly requested after a shared miss', 
   const handler = createBarcodeFood({
     authenticate: async () => {},
     queryBarcodeCatalog: async () => null,
+    // **주입하지 않으면 실제 코리안넷을 친다.** 2026-08-27 에 이 테스트가 그래서
+    // 319ms 를 쓰고 실패했다 — 외부 조회가 성공해서 UPCitemdb 까지 가지 않았다.
+    lookupKoreannetIdentity: async () => null,
     lookupUpcIdentity: async (code) => {
       identityCalls += 1;
       return { barcode: `0${code}`, name: '제품명', provider: 'upcitemdb' };
@@ -96,7 +99,7 @@ test('queries UPC identity only when explicitly requested after a shared miss', 
   assert.equal(identityCalls, 1);
   assert.equal(enriched.body.item, null);
   assert.equal(enriched.body.identity.provider, 'upcitemdb');
-  assert.deepEqual(enriched.body.providers, { shared: 'miss', upcitemdb: 'hit' });
+  assert.deepEqual(enriched.body.providers, { shared: 'miss', koreannet: 'miss', upcitemdb: 'hit' });
 });
 
 test('hosting routes the exact barcode API without changing food search routing', async () => {
@@ -111,4 +114,66 @@ test('hosting routes the exact barcode API without changing food search routing'
       function: { functionId: 'barcodeFood', region: 'asia-northeast3' },
     },
   ]);
+});
+
+// ── 코리안넷을 UPCitemdb 앞에 둔다 (2026-08-27) ──────────────────────────────
+// 국내 바코드의 이름을 아는 곳이 코리안넷이다. 실측(실제 880 바코드 N=300):
+// 이름 있음 93.7% · 에러 0 · p50 233ms. UPCitemdb 는 국내 제품을 거의 모른다.
+
+test('prefers the koreannet identity over upcitemdb for a domestic barcode', async () => {
+  const calls = [];
+  const identity = {
+    barcode: '8809396600014',
+    name: '감동란',
+    brand: '(주)마루카네코리아',
+    provider: 'koreannet',
+    fullTitle: '(주)마루카네코리아 감동란 감동란 50G x 2EA',
+  };
+  const result = await runBarcodeLookup('8809396600014', {
+    queryBarcodeCatalog: async () => { calls.push('shared'); return null; },
+    lookupKoreannetIdentity: async () => { calls.push('koreannet'); return identity; },
+    lookupUpcIdentity: async () => { calls.push('upcitemdb'); return { provider: 'upcitemdb' }; },
+  }, { includeIdentity: true });
+
+  assert.deepEqual(calls, ['shared', 'koreannet']);
+  assert.deepEqual(result, {
+    item: null,
+    identity,
+    providers: { shared: 'miss', koreannet: 'hit' },
+  });
+});
+
+test('falls through to upcitemdb when koreannet has no record', async () => {
+  const calls = [];
+  const result = await runBarcodeLookup('036000291452', {
+    queryBarcodeCatalog: async () => { calls.push('shared'); return null; },
+    lookupKoreannetIdentity: async () => { calls.push('koreannet'); return null; },
+    lookupUpcIdentity: async () => { calls.push('upcitemdb'); return { provider: 'upcitemdb' }; },
+  }, { includeIdentity: true });
+
+  assert.deepEqual(calls, ['shared', 'koreannet', 'upcitemdb']);
+  assert.deepEqual(result.providers, { shared: 'miss', koreannet: 'miss', upcitemdb: 'hit' });
+});
+
+test('keeps looking when koreannet itself throws instead of failing the request', async () => {
+  // 조회 실패는 「제품 없음」이 아니다. 여기서 죽으면 되던 UPCitemdb 조회까지 못 한다.
+  const calls = [];
+  const result = await runBarcodeLookup('036000291452', {
+    queryBarcodeCatalog: async () => { calls.push('shared'); return null; },
+    lookupKoreannetIdentity: async () => { calls.push('koreannet'); throw new Error('gs1 timeout'); },
+    lookupUpcIdentity: async () => { calls.push('upcitemdb'); return { provider: 'upcitemdb' }; },
+  }, { includeIdentity: true });
+
+  assert.deepEqual(calls, ['shared', 'koreannet', 'upcitemdb']);
+  assert.deepEqual(result.providers, { shared: 'miss', koreannet: 'miss', upcitemdb: 'hit' });
+});
+
+test('does not touch koreannet when the caller did not ask for an identity', async () => {
+  const calls = [];
+  await runBarcodeLookup('8809396600014', {
+    queryBarcodeCatalog: async () => { calls.push('shared'); return null; },
+    lookupKoreannetIdentity: async () => { calls.push('koreannet'); return {}; },
+    lookupUpcIdentity: async () => { calls.push('upcitemdb'); return null; },
+  });
+  assert.deepEqual(calls, ['shared']);
 });
