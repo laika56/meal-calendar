@@ -177,3 +177,24 @@ test('does not touch koreannet when the caller did not ask for an identity', asy
   });
   assert.deepEqual(calls, ['shared']);
 });
+
+test('leaves a non-korean barcode to upcitemdb instead of asking koreannet', async () => {
+  // 배포본 실측(2026-08-27): 036000291452 에 코리안넷이 「한얼」을 줬고 그게
+  // UPCitemdb 를 가로챘다. 실제 조회 함수가 프리픽스를 보고 스스로 빠진다.
+  const { lookupKoreannetIdentity } = await import('../functions/koreannet.js');
+  let fetched = 0;
+  const result = await lookupKoreannetIdentity('036000291452', {
+    fetchImpl: async () => { fetched += 1; throw new Error('불려서는 안 된다'); },
+  });
+  assert.equal(result, null);
+  assert.equal(fetched, 0);
+});
+
+test('still asks koreannet for a korean barcode', async () => {
+  const { lookupKoreannetIdentity } = await import('../functions/koreannet.js');
+  let asked = null;
+  await lookupKoreannetIdentity('8809396600014', {
+    fetchImpl: async (url) => { asked = url; return { ok: false, status: 500 }; },
+  });
+  assert.match(asked, /gs1\.koreannet\.or\.kr\/pr\/8809396600014$/);
+});

@@ -128,3 +128,17 @@ export function parseKoreannetProduct(html, barcode) {
     fullTitle: title,
   };
 }
+
+/**
+ * 이 바코드를 코리안넷에 물어봐도 되나.
+ *
+ * **880·881(GS1 Korea) 13자리만 묻는다.** 커버리지 실측 N=300 이 전부 880 프리픽스였고,
+ * 그 밖은 재본 적이 없다. 잰 범위 밖으로 규칙을 늘렸다가 배포본에서 잡혔다 —
+ * 미국 바코드 `036000291452` 에 코리안넷이 「한얼」을 돌려줬고, 그 엉뚱한 값이
+ * UPCitemdb 를 가로채서 **원래 찾았을 미국 제품을 못 찾게** 만들었다.
+ *
+ * EAN-8 한국 코드는 880 으로 시작하지 않는다. 재보기 전에는 넣지 않는다.
+ */
+export function shouldAskKoreannet(code) {
+  return typeof code === 'string' && /^88[01]\d{10}$/.test(code.trim());
+}

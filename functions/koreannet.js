@@ -1,4 +1,4 @@
-import { parseKoreannetProduct } from './shared/koreannetProduct.js';
+import { parseKoreannetProduct, shouldAskKoreannet } from './shared/koreannetProduct.js';
 
 /**
  * 코리안넷 상품 페이지에서 바코드의 **제품명**을 가져온다.
@@ -17,7 +17,9 @@ const KOREANNET_URL = 'http://gs1.koreannet.or.kr/pr';
 const TIMEOUT_MS = 4000;
 
 export async function lookupKoreannetIdentity(code, { fetchImpl = fetch } = {}) {
-  if (typeof code !== 'string' || !/^\d{8,14}$/.test(code.trim())) return null;
+  // 잰 범위(880·881 13자리) 밖은 묻지 않는다. 미국 바코드에 엉뚱한 값을 돌려주고
+  // 그게 UPCitemdb 를 가로챈다 — 2026-08-27 배포본에서 실제로 잡혔다.
+  if (!shouldAskKoreannet(code)) return null;
   const barcode = code.trim();
 
   let response;

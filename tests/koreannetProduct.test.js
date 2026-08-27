@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { koreannetProductName, parseKoreannetProduct } from '../src/lib/koreannetProduct.js';
+import {
+  koreannetProductName,
+  parseKoreannetProduct,
+  shouldAskKoreannet,
+} from '../src/lib/koreannetProduct.js';
 
 const realPage = await readFile(
   new URL('./fixtures/koreannet-8809396600014.html', import.meta.url),
@@ -86,5 +90,29 @@ test('decodes the html entities the page ships inside product names', () => {
 test('rejects a non-string title rather than coercing it', () => {
   for (const value of [null, undefined, 42, {}]) {
     assert.equal(koreannetProductName(value), null);
+  }
+});
+
+// ── 어느 바코드에 물어볼지 (2026-08-27, 배포본 실측으로 발견) ────────────────
+// 프로덕션에서 미국 바코드 `036000291452` 를 물었더니 코리안넷이 「한얼」을 줬다.
+// 제품과 무관한 값인데 그게 UPCitemdb 를 가로채서, 미국 제품을 못 찾게 만든다.
+//
+// **N=300 실측은 전부 880 프리픽스였다.** 그 밖은 재본 적이 없다 —
+// 잰 범위 밖으로 규칙을 늘린 것이 이 버그의 원인이다.
+// 880·881 은 GS1 Korea 국가 코드다.
+
+test('asks koreannet only about the korean prefixes the measurement covered', () => {
+  for (const code of ['8809396600014', '8801043016049', '8811234567890']) {
+    assert.equal(shouldAskKoreannet(code), true, code);
+  }
+  for (const code of ['036000291452', '4901234567894', '5012345678900']) {
+    assert.equal(shouldAskKoreannet(code), false, code);
+  }
+});
+
+test('refuses anything that is not a 13-digit barcode string', () => {
+  // EAN-8 한국 코드는 880 프리픽스를 갖지 않는다 — 재보기 전에는 넣지 않는다.
+  for (const value of ['88012345', '880', '', '   ', null, undefined, 8809396600014]) {
+    assert.equal(shouldAskKoreannet(value), false, String(value));
   }
 });
