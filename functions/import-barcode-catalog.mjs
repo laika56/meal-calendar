@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,23 +5,12 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 import { validateBarcodeCatalog } from '../src/lib/barcodeCatalog.js';
+import { canonicalJson, canonicalJsonSha256 } from '../scripts/canonical-json.mjs';
 import { validateBarcodeArtifacts } from '../scripts/validate-barcode-catalog.mjs';
 
 const RUNS_PATH = 'barcodeCatalogRuns';
 const CURRENT_POINTER_PATH = 'barcodeCatalogState/current';
 const MAX_BATCH_WRITES = 400;
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function sha256(value) {
-  return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
-}
 
 function chunks(values) {
   const result = [];
@@ -44,7 +32,7 @@ export function buildBarcodeImportPlan(currentPointer, artifact, runId) {
   const resolvedRunId = runId ?? `barcode-catalog-${validated.manifest.materialSha256}`;
   if (typeof resolvedRunId !== 'string' || !resolvedRunId) throw new TypeError('runId must be a non-empty string');
   const documents = expectedDocuments(resolvedRunId, validated.records);
-  const payloadSha256 = sha256(documents);
+  const payloadSha256 = canonicalJsonSha256(documents);
   const preflightPointer = currentPointer === undefined ? null : structuredClone(currentPointer);
   const expectedPointer = {
     runId: resolvedRunId,
@@ -99,7 +87,7 @@ async function verifyStagedRun(firestore, plan) {
     data: document.data(),
   })).toSorted((left, right) => left.path.localeCompare(right.path));
   const expected = plan.documents.toSorted((left, right) => left.path.localeCompare(right.path));
-  if (actual.length !== expected.length || sha256(actual) !== plan.payloadSha256) {
+  if (actual.length !== expected.length || canonicalJsonSha256(actual) !== plan.payloadSha256) {
     throw new Error('staged barcode payload mismatch');
   }
 }
@@ -186,7 +174,7 @@ export function verifyBarcodeImportPlan(plan, artifact) {
   if (canonicalJson(plan.documents) !== canonicalJson(expected)) {
     throw new Error('artifact payload mismatch');
   }
-  if (plan.payloadSha256 !== sha256(expected)) throw new Error('plan payload hash mismatch');
+  if (plan.payloadSha256 !== canonicalJsonSha256(expected)) throw new Error('plan payload hash mismatch');
   if (canonicalJson(plan.batches) !== canonicalJson(chunks(expected))) {
     throw new Error('plan batches mismatch');
   }

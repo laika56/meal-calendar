@@ -212,14 +212,6 @@ export async function loadGoalFor(dateStr) {
   return latest;
 }
 
-/** 목표 전체를 최신순으로. 아직 쓰는 화면은 없지만 추이·이력에서 쓴다. */
-export async function loadAllGoals() {
-  const snapshot = await getDocs(collection(db, 'users', requireUid(), 'goals'));
-  return snapshot.docs
-    .map((entry) => entry.data())
-    .sort((a, b) => (a.effectiveFrom < b.effectiveFrom ? 1 : -1));
-}
-
 // ── 하루 기록 ─────────────────────────────────────────────────────────
 // users/{uid}/days/{YYYY-MM-DD}
 
@@ -329,15 +321,6 @@ export async function deletePreset(presetId) {
 export async function loadDislikes() {
   const snapshot = await getDoc(doc(db, 'users', requireUid()));
   return snapshot.exists() ? (snapshot.data().dislikes ?? []) : [];
-}
-
-/** foodKey 를 기피 목록에 넣는다. 이미 있으면 아무것도 안 한다. */
-export async function addDislike(foodKey) {
-  const current = await loadDislikes();
-  if (current.includes(foodKey)) return current;
-  const next = [...current, foodKey];
-  await setDoc(doc(db, 'users', requireUid()), { dislikes: next }, { merge: true });
-  return next;
 }
 
 // ── 최근 항목 ─────────────────────────────────────────────────────────

@@ -95,7 +95,7 @@ npm run icons     # 앱 아이콘 3종 생성 (python3, 의존성 없음)
 
 - 테스트는 `tests/*.test.js`. `node --test` 가 자동 탐색한다 — **디렉토리를 인자로 주면 실패한다** (Node 26)
 - 순수 로직은 `src/lib/` 에 둔다. DOM·네트워크·Firebase 를 import 하지 않는 곳이다
-- `tests/harness.test.js` 는 러너 동작 확인용 스캐폴드다. 실제 테스트가 들어오면 지워도 된다
+- 러너 동작 확인용 `tests/harness.test.js` 스캐폴드는 실제 테스트 도입 후 제거했다
 
 ---
 

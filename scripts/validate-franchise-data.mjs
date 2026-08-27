@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { normalizeCatalogText, validateCatalogRecord } from '../src/lib/franchiseCatalog.js';
+import { canonicalJsonSha256 } from './canonical-json.mjs';
 
 const SOURCE_TYPES = new Set(['official_brand', 'public_data', 'general_reference']);
 const SOURCE_KEYS = new Set(['id', 'type', 'name', 'url', 'licenseNote', 'checkedAt', 'active']);
@@ -259,14 +259,6 @@ export async function loadReviewedCatalogFiles(root) {
   };
 }
 
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
 export function catalogManifest(catalog) {
   assertPlainObject(catalog, 'catalog');
   if (!Array.isArray(catalog.sources) || !Array.isArray(catalog.brands) || !Array.isArray(catalog.records)) {
@@ -279,9 +271,11 @@ export function catalogManifest(catalog) {
     officialRecords: catalog.records.filter(({ sourceType }) => sourceType === 'official_brand').length,
     publicRecords: catalog.records.filter(({ sourceType }) => sourceType === 'public_data').length,
   };
-  const sha256 = createHash('sha256')
-    .update(canonicalJson({ sources: catalog.sources, brands: catalog.brands, records: catalog.records }), 'utf8')
-    .digest('hex');
+  const sha256 = canonicalJsonSha256({
+    sources: catalog.sources,
+    brands: catalog.brands,
+    records: catalog.records,
+  });
   return { counts, sha256 };
 }
 

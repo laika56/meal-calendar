@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import { parseMfdsFoodItem } from '../src/lib/mfdsParser.js';
 import { normalizeCatalogText } from '../src/lib/franchiseCatalog.js';
+import { canonicalJson } from './canonical-json.mjs';
 import { loadReviewedCatalogFiles } from './validate-franchise-data.mjs';
 
 const MFDS_ENDPOINT = 'https://apis.data.go.kr/1471000/FoodNtrCpntDbInfo02/getFoodNtrCpntDbInq02';
@@ -42,14 +43,6 @@ function assertNonEmptyString(value, label) {
   if (typeof value !== 'string' || value === '') {
     throw new TypeError(`${label} must be a non-empty string`);
   }
-}
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
 }
 
 export function publicBrandIdForMaker(maker) {

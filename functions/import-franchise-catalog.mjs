@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,23 +5,12 @@ import { getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 import { loadReviewedCatalogFiles, catalogManifest } from '../scripts/validate-franchise-data.mjs';
+import { canonicalJson, canonicalJsonSha256 } from '../scripts/canonical-json.mjs';
 import { validateCatalogRecord } from './shared/franchiseCatalog.js';
 
 const CURRENT_POINTER_PATH = 'franchiseCatalogState/current';
 const RUNS_PATH = 'franchiseCatalogRuns';
 const MAX_BATCH_WRITES = 400;
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function sha256(value) {
-  return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
-}
 
 function clone(value) {
   return structuredClone(value);
@@ -120,7 +108,7 @@ export function buildCatalogImportPlan(currentPointer, reviewedCatalog, runId) {
   }
 
   const documents = sortedDocuments(resolvedRunId, catalog);
-  const payloadSha256 = sha256([...documents].toSorted((left, right) => left.path.localeCompare(right.path, 'en')));
+  const payloadSha256 = canonicalJsonSha256([...documents].toSorted((left, right) => left.path.localeCompare(right.path, 'en')));
   const counts = {
     sources: sources.length,
     brands: brands.length,
@@ -186,7 +174,7 @@ async function verifyStagedRun(firestore, plan) {
   }
   const ordered = rereadDocuments.toSorted((left, right) => left.path.localeCompare(right.path, 'en'));
   const expected = plan.documents.toSorted((left, right) => left.path.localeCompare(right.path, 'en'));
-  if (ordered.length !== expected.length || sha256(ordered) !== plan.payloadSha256) {
+  if (ordered.length !== expected.length || canonicalJsonSha256(ordered) !== plan.payloadSha256) {
     throw new Error('staged payload hash mismatch');
   }
 }
