@@ -2,9 +2,55 @@
 
 **이 파일이 현재 상태의 단일 출처다.** 다른 곳에 진행 목록을 만들지 않는다.
 
-최종 갱신: 2026-08-26
+최종 갱신: 2026-08-27
 
 ## 지금 상태
+
+## ✅ OFF 가 「틀린 이름」을 줄 때 그걸로 검색하지 않는다 — Claude (2026-08-27, 배포됨)
+
+**증상:** `8809396600014` 스캔 → 「구르농닭 계란」으로 식약처 자동 검색.
+**GS1 코리아넷 등록은 「(주)마루카네코리아 감동란」이다.** OFF 레코드는 제3자 앱
+(`municorn-calorie-counter-app`)이 올렸고 **사진이 없다** — 아무도 실물 포장과 대조한 적이 없다.
+
+**원인은 전제였다.** 기존 `off-identity` 경로는 「이름은 맞고 영양값만 없다」를 전제로
+검색창을 자동 채우고 `requestSubmit()` 까지 했다. **이름 자체가 틀릴 수 있다는 경우를 안 봤다.**
+
+**판정 규칙: 사진 없음 AND `completeness` < 0.30 → 이름을 못 믿는다.**
+
+임계값은 실측 분포에서 나왔다. OFF v2 search `countries_tags=south-korea`,
+`page_size=100`, **page 1·2·3·5** (page 4 는 503 4회로 건너뜀). **N=400.**
+이 판정을 타는 것(이름 있고 kcal 없음)은 **39건(9.8%)**.
+
+| 후보 규칙 | 39건 중 거부 |
+|---|---|
+| 사진X 만 | 10 (25.6%) |
+| `completeness`<0.30 만 | 18 (46.2%) |
+| **사진X AND `completeness`<0.30** | **4 (10.3%)** |
+
+거부된 4건 전량: `정육` · `다보록` ×2 · `콘드로이친`. **전부 제품명이 아니라 분류·브랜드·
+성분 이름이고, 검색어로 쓰면 엉뚱한 결과가 나온다. 오탐 0건.**
+
+**신호가 없으면 거부하지 않는다.** `null`/`undefined` 는 「모른다」이지 「나쁘다」가 아니다
+(절대규칙 7). `quality` 를 안 넘기는 호출부는 그대로 돈다.
+
+- `src/lib/offParser.js` — `offProductQuality()` 신설. `completeness`·사진 유무만 읽는다
+- `src/lib/barcodeProduct.js` — `isTrustedOffIdentity()` 신설, `toBarcodeIdentity` 가 통과시킨다
+- `public/app.js` — `lookupOff` 가 `quality` 를 같이 넘긴다
+- `public/sw.js` — `SHELL_REVISION` 갱신
+
+**검증:** 631 tests · 630 pass · 0 fail · 1 skip. **변이 3종 전부 잡힘**(가드 제거 / 임계값
+0.3→0.1 / 없는 `completeness` 를 0 으로). 실서버 3건: 문제 제품 거부 · 서울우유(사진O·
+c=0.4625) 통과 · OFF 미등록(`8801056249052`) 기존 경로 유지.
+**배포본 바이트 대조 일치** — `/`·`/public/app.js`·`/public/index.html`·
+`/src/lib/{offParser,barcodeProduct}.js`·`/sw.js`.
+
+> **부수 발견 — 「OFF search 503」의 원인이 달랐다.** `offParser.js` 주석에 「2페이지부터
+> 503이라 N≥300 못 채웠다」고 적혀 있었는데, 실제 원인은 **User-Agent 에 연락처가 없어서
+> 차단된 것**이다. `meal-calendar-quality-probe/1.0 (연락처)` 로 넣으니 400건을 떴다.
+> **다음에 OFF 를 대량으로 뜰 때 이 UA 규칙을 먼저 적용한다.**
+
+**남은 것:** 실기기 미확인(위는 전부 Node + 실서버 API). 코리아넷 조회 경로 추가는 별개
+작업이고 **무료 공개 API 는 확인 못 했다** — `api.koreannet.or.kr` 서브도메인은 존재한다.
 
 ## ✅ 바코드 커버리지 실측 + 내 기록 우선 조회 — Claude (2026-08-26 오후)
 
