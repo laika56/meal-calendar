@@ -181,9 +181,47 @@ export function toBarcodeFood(parsed) {
   };
 }
 
-export function toBarcodeIdentity(parsed) {
+/** 사진 없는 OFF 레코드를 믿어주는 최소 채움도. 아래 실측 표에서 나온 값이다. */
+const OFF_PHOTOLESS_COMPLETENESS_FLOOR = 0.3;
+
+/**
+ * OFF 가 준 제품명을 검색어로 써도 되는지 판정한다.
+ *
+ * **임계값은 실측 분포에서 나왔다** (2026-08-27). OFF v2 search
+ * `countries_tags=south-korea`, `page_size=100`, page 1·2·3·5 — **page 4 는 503 이
+ * 4회 연속이라 건너뛰었다.** N=400. 그중 이 판정을 실제로 타는 것(이름 있고 kcal 없음)은
+ * 39건(9.8%)이다.
+ *
+ * | 후보 규칙 | 39건 중 거부 |
+ * |---|---|
+ * | 사진X 만 | 10 (25.6%) |
+ * | completeness<0.30 만 | 18 (46.2%) |
+ * | completeness<0.25 만 | 10 (25.6%) |
+ * | **사진X AND completeness<0.30** | **4 (10.3%)** |
+ *
+ * 마지막 규칙이 거부한 4건 전량: `정육` · `다보록` ×2 · `콘드로이친`.
+ * **전부 제품명이 아니라 분류·브랜드·성분 이름이고, 검색어로 쓰면 엉뚱한 결과가 나온다.
+ * 오탐 0건이다.** 문제의 `8809396600014`(「계란/구르농닭」, 사진X·c=0.2)도 여기 걸린다.
+ *
+ * 왜 `사진X 만`으로 안 자르나: 사진 없이도 이름이 멀쩡한 것이 10건 중 6건이었다.
+ * 왜 `completeness` 단독으로 안 자르나: 46.2% 를 버리는데 그중 대부분은 사진으로
+ * 뒷받침되는 이름이다.
+ *
+ * **신호가 없으면 거부하지 않는다.** `null`·`undefined` 는 「모른다」이지 「나쁘다」가
+ * 아니다(절대규칙 7). 모른다고 버리면 quality 를 안 넘기는 호출부가 전부 조용히 죽는다.
+ */
+export function isTrustedOffIdentity(quality) {
+  if (!quality || typeof quality !== 'object') return true;
+  if (quality.hasPhoto === true) return true;
+  const { completeness } = quality;
+  if (typeof completeness !== 'number' || !Number.isFinite(completeness)) return true;
+  return completeness >= OFF_PHOTOLESS_COMPLETENESS_FLOOR;
+}
+
+export function toBarcodeIdentity(parsed, quality) {
   if (!parsed || typeof parsed.code !== 'string' || !parsed.code.trim()) return null;
   if (typeof parsed.name !== 'string' || !parsed.name.trim()) return null;
+  if (!isTrustedOffIdentity(quality)) return null;
   return {
     barcode: parsed.code.trim(),
     name: parsed.name.trim(),

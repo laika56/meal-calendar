@@ -11,7 +11,7 @@ import {
   parseQuickFoodInput, splitQuickFoodInput, selectBestFood, hasNameMatch, SERVING_SOURCE_LABELS,
 } from '/src/lib/quickFoodInput.js';
 import { monthDashboardSummary, progressPercent, servingChoiceOptions } from '/src/lib/uiDashboard.js';
-import { parseOffProduct } from '/src/lib/offParser.js';
+import { offProductQuality, parseOffProduct } from '/src/lib/offParser.js';
 import {
   barcodeCapturePlan, barcodeDigitCropPlan, barcodeVideoConstraints, buildOpenFoodFactsUrl,
   configureBarcodeTrack,
@@ -1367,10 +1367,14 @@ async function resolveBarcodeProduct(barcode, session) {
     async lookupOff(code) {
       const response = await fetch(buildOpenFoodFactsUrl(code));
       if (!response.ok) throw new Error(`Open Food Facts HTTP ${response.status}`);
-      const parsed = parseOffProduct(await response.json());
+      const body = await response.json();
+      const parsed = parseOffProduct(body);
+      // OFF 는 **이름이 틀린** 레코드도 준다(8809396600014 = 코리아넷 등록 「마루카네코리아
+      // 감동란」인데 OFF 는 「계란/구르농닭」). 영양값 유무로는 못 거르므로 신뢰 신호를
+      // 같이 넘긴다 — 못 믿을 이름이면 identity 가 null 이 되고, 아래 조회가 이어진다.
       return parsed === null ? null : {
         food: toBarcodeFood(parsed),
-        identity: toBarcodeIdentity(parsed),
+        identity: toBarcodeIdentity(parsed, offProductQuality(body)),
       };
     },
     async lookupIdentity(code) {

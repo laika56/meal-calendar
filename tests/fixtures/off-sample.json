@@ -502,5 +502,40 @@
     "code": "8801043215488",
     "status": 0,
     "status_verbose": "product not found"
+  },
+  "identity_untrusted_no_photo": {
+    "code": "8809396600014",
+    "status": 1,
+    "product": {
+      "code": "8809396600014",
+      "product_name": "계란",
+      "brands": "구르농닭",
+      "completeness": 0.2,
+      "countries_tags": [
+        "en:united-states"
+      ],
+      "creator": "municorn-calorie-counter-app"
+    }
+  },
+  "identity_untrusted_generic_name": {
+    "code": "06798062",
+    "status": 1,
+    "product": {
+      "code": "06798062",
+      "product_name": "정육",
+      "completeness": 0.1,
+      "creator": "openfoodfacts-contributors"
+    }
+  },
+  "identity_trusted_with_photo": {
+    "code": "8801115114031",
+    "status": 1,
+    "product": {
+      "code": "8801115114031",
+      "product_name": "Milk (우유)",
+      "brands": "서울 우유",
+      "completeness": 0.4625,
+      "image_front_url": "https://images.openfoodfacts.org/images/products/880/111/511/4031/front_en.3.400.jpg"
+    }
   }
 }

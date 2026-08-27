@@ -11,6 +11,7 @@ import {
   normalizeRetailBarcode,
   sharedCatalogRecordToFood,
   toBarcodeFood,
+  isTrustedOffIdentity,
   toBarcodeIdentity,
   reviewedBarcodeIdentity,
 } from '../src/lib/barcodeProduct.js';
@@ -360,4 +361,65 @@ test('preserves missing macros as null when verified kcal and identity are prese
     per100: { ...complete.per100, fatG: null, carbG: null },
   }).per100g, { kcal: 210, proteinG: 12, fatG: null, carbG: null });
   assert.equal(toBarcodeFood({ ...complete, per100: { ...complete.per100, kcal: null } }), null);
+});
+
+// ── OFF identity 신뢰 판정 (2026-08-27) ─────────────────────────────────────
+// **실측 분포로 임계값을 정했다.** OFF v2 search `countries_tags=south-korea`,
+// page_size=100, page 1·2·3·5 (page 4 는 503 4회로 건너뜀), N=400.
+// 그중 지금 off-identity 경로를 타는 것(이름 있고 kcal 없음)은 39건(9.8%).
+//
+// | 후보 규칙 | 39건 중 거부 |
+// |---|---|
+// | 사진X 만 | 10 (25.6%) |
+// | completeness<0.30 만 | 18 (46.2%) |
+// | **사진X AND completeness<0.30** | **4 (10.3%)** |
+//
+// 거부된 4건 전량: `정육` · `다보록` ×2 · `콘드로이친`. **전부 검색어로 못 쓰는 이름이고,
+// 오탐 0건이다.** 8809396600014(「계란/구르농닭」, 사진X·c=0.2)도 이 규칙에 걸린다.
+//
+// 신호가 **없으면 거부하지 않는다** — 「모른다」를 「나쁘다」로 바꾸지 않는다(절대규칙 7).
+
+test('trusts an OFF identity that ships a front photo', () => {
+  assert.equal(isTrustedOffIdentity({ completeness: 0.4625, hasPhoto: true }), true);
+});
+
+test('rejects an OFF identity that has neither a photo nor half-filled data', () => {
+  assert.equal(isTrustedOffIdentity({ completeness: 0.2, hasPhoto: false }), false);
+});
+
+test('trusts a photoless OFF identity once completeness reaches the threshold', () => {
+  assert.equal(isTrustedOffIdentity({ completeness: 0.3, hasPhoto: false }), true);
+  assert.equal(isTrustedOffIdentity({ completeness: 0.2999, hasPhoto: false }), false);
+});
+
+test('trusts an OFF identity whose completeness is unknown', () => {
+  // 신호가 없는 것과 나쁜 신호는 다르다. 없는 것을 0 으로 읽으면 전부 거부된다.
+  assert.equal(isTrustedOffIdentity({ completeness: null, hasPhoto: false }), true);
+  assert.equal(isTrustedOffIdentity(null), true);
+  assert.equal(isTrustedOffIdentity(undefined), true);
+});
+
+test('drops an OFF identity that the quality signals say is not trustworthy', () => {
+  assert.equal(toBarcodeIdentity({
+    code: '8809396600014',
+    name: '계란',
+    brand: '구르농닭',
+    unit: null,
+    per100: null,
+  }, { completeness: 0.2, hasPhoto: false }), null);
+});
+
+test('keeps an OFF identity when the quality signals are acceptable', () => {
+  assert.deepEqual(toBarcodeIdentity({
+    code: '8801115114031',
+    name: 'Milk (우유)',
+    brand: '서울 우유',
+    unit: null,
+    per100: null,
+  }, { completeness: 0.4625, hasPhoto: true }), {
+    barcode: '8801115114031',
+    name: 'Milk (우유)',
+    brand: '서울 우유',
+    provider: 'off',
+  });
 });

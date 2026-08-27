@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { parseOffProduct } from '../src/lib/offParser.js';
+import { offProductQuality, parseOffProduct } from '../src/lib/offParser.js';
 
 const fixture = JSON.parse(
   await readFile(new URL('./fixtures/off-sample.json', import.meta.url), 'utf8'),
@@ -317,4 +317,42 @@ test('reports no serving when the nutrition basis itself is missing', () => {
   const parsed = parseOffProduct(payload);
   assert.equal(parsed.per100, null);
   assert.equal(parsed.serving, null);
+});
+
+// ── 제품 신뢰 신호 (2026-08-27) ─────────────────────────────────────────────
+// OFF 는 **이름 자체가 틀린** 레코드를 준다. 8809396600014 는 GS1 코리아넷 등록이
+// 「(주)마루카네코리아 감동란」인데 OFF 에는 「계란 / 구르농닭」으로 들어 있다.
+// 영양값 유무만으로는 이걸 못 거른다 — 그래서 별도 신호를 읽는다.
+
+test('reads the quality signals Open Food Facts ships alongside a product', () => {
+  assert.deepEqual(offProductQuality(fixture.identity_trusted_with_photo), {
+    completeness: 0.4625,
+    hasPhoto: true,
+  });
+});
+
+test('reports a missing front photo as an absent photo rather than an error', () => {
+  assert.deepEqual(offProductQuality(fixture.identity_untrusted_no_photo), {
+    completeness: 0.2,
+    hasPhoto: false,
+  });
+});
+
+test('treats a blank front photo url as no photo', () => {
+  const response = structuredClone(fixture.identity_trusted_with_photo);
+  response.product.image_front_url = '   ';
+  assert.equal(offProductQuality(response).hasPhoto, false);
+});
+
+test('reports an absent or unparseable completeness as unknown instead of zero', () => {
+  // 0 으로 채우면 「신호 없음」이 「최악의 신호」로 뒤바뀐다 — 절대규칙 7.
+  for (const value of [undefined, null, 'nope', Number.NaN]) {
+    const response = structuredClone(fixture.identity_trusted_with_photo);
+    response.product.completeness = value;
+    assert.equal(offProductQuality(response).completeness, null);
+  }
+});
+
+test('returns null quality for a response that has no product', () => {
+  assert.equal(offProductQuality(fixture.not_found), null);
 });

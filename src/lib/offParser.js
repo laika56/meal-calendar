@@ -76,6 +76,36 @@ function parseServing(product, basisUnit) {
   return { amount, unit, source: 'off-serving' };
 }
 
+/**
+ * OFF 레코드가 얼마나 검증된 것인지 알려주는 신호. **영양값과는 별개 축이다.**
+ *
+ * 왜 필요한가 (2026-08-27): OFF 는 **이름 자체가 틀린** 레코드를 준다.
+ * `8809396600014` 는 GS1 코리아넷 등록이 「(주)마루카네코리아 감동란」인데
+ * OFF 에는 「계란 / 구르농닭」으로 들어 있다 — 제3자 앱(`municorn-calorie-counter-app`)이
+ * 올린 값이고, 사진이 없어서 아무도 실물과 대조한 적이 없다.
+ * 영양값 유무만 보는 기존 경로는 이걸 「이름은 맞고 영양만 없는 제품」으로 취급해서
+ * 틀린 이름으로 식약처 검색을 자동 실행했다.
+ *
+ * **사진(`image_front_url`)이 핵심 신호다.** 사진이 있다는 건 누군가 실물 포장을
+ * 찍어 올렸다는 뜻이고, 그 이름은 최소한 한 번은 포장과 대조됐다.
+ *
+ * `completeness` 는 OFF 가 매기는 0~1 채움도다. **없으면 `null` 로 둔다** —
+ * 0 으로 채우면 「모른다」가 「최악」으로 뒤바뀐다(절대규칙 7).
+ *
+ * 판정 규칙과 그 임계값의 실측 근거는 `barcodeProduct.js` 의 `isTrustedOffIdentity`.
+ */
+export function offProductQuality(response) {
+  if (response?.status !== 1 || !response.product) return null;
+
+  const { product } = response;
+  const raw = Number(product.completeness);
+  return {
+    completeness: (typeof product.completeness === 'number' && Number.isFinite(raw)) ? raw : null,
+    hasPhoto: typeof product.image_front_url === 'string'
+      && product.image_front_url.trim() !== '',
+  };
+}
+
 export function parseOffProduct(response) {
   if (response.status !== 1 || !response.product) return null;
 
