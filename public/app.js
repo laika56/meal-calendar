@@ -39,7 +39,7 @@ import { sevenDayKeys, summarizeSevenDays } from '/src/lib/weeklySummary.js';
 import { buildExportEnvelope, serializeDaysCsv, serializeExportJson, validateExportEnvelope } from '/src/lib/dataTransfer.js';
 import { createDayPreset, createMealPreset, normalizePreset, planPresetApply } from '/src/lib/presetV2.js';
 import { resolveMultiCandidate } from '/src/lib/multiCandidate.js';
-import { removeRecentChip } from '/src/lib/recentEntries.js';
+import { persistRecentChipDeletion } from '/src/lib/recentEntries.js';
 
 // db.js 는 동적 import 로 부른다 — 정적으로 import 하면 그 안의 Firebase SDK(gstatic CDN)가
 // 전부 받아질 때까지 이 모듈 전체의 실행이 밀린다. 캘린더 그리드는 네트워크 없이 그릴 수 있는데
@@ -1017,12 +1017,17 @@ async function renderQuickPicks() {
         },
         onDelete: async (event) => {
           const button = event.currentTarget;
+          const chip = button.closest('.chip');
           button.disabled = true;
           try {
-            await db.deleteRecentEntry(item);
-            removeRecentChip(button.closest('.chip'), el.recentChips, el.quickRecent);
+            await persistRecentChipDeletion({
+              chip,
+              container: el.recentChips,
+              section: el.quickRecent,
+              persist: () => db.deleteRecentEntry(item),
+            });
           } catch (err) {
-            button.disabled = false;
+            renderQuickPicks();
             el.entryError.textContent = '최근 항목 삭제에 실패했습니다. 다시 시도해 주세요.';
             el.entryError.hidden = false;
             console.error('[meal-calendar] 최근 항목 삭제 실패', err);

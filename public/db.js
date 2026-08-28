@@ -21,7 +21,9 @@ import { firebaseConfig } from '/src/firebaseConfig.js';
 import { normalizeSearchFoodsResponse } from '/src/lib/searchFoodsResponse.js';
 import { planMergeRestore, validateExportEnvelope } from '/src/lib/dataTransfer.js';
 import { toMyBarcodeRecord, fromMyBarcodeRecord, myBarcodeDocId } from '/src/lib/myBarcodeCache.js';
-import { recentEntryRemovalUpdate, withoutRecentEntry } from '/src/lib/recentEntries.js';
+import {
+  createRecentMutationQueue, recentEntryRemovalUpdate, withoutRecentEntry,
+} from '/src/lib/recentEntries.js';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -330,6 +332,7 @@ export async function loadDislikes() {
 // 훨씬 싸고, days/ 전체를 스캔할 필요가 없다.
 
 const RECENT_ENTRIES_LIMIT = 10;
+const enqueueRecentMutation = createRecentMutationQueue();
 
 export async function loadRecentEntries() {
   const snapshot = await getDoc(doc(db, 'users', requireUid()));
@@ -337,19 +340,25 @@ export async function loadRecentEntries() {
 }
 
 export async function pushRecentEntry(entry) {
-  const current = await loadRecentEntries();
-  const deduped = withoutRecentEntry(current, entry.name);
-  const next = [entry, ...deduped].slice(0, RECENT_ENTRIES_LIMIT);
-  await setDoc(doc(db, 'users', requireUid()), { recentEntries: next }, { merge: true });
+  return enqueueRecentMutation(async () => {
+    const current = await loadRecentEntries();
+    const deduped = withoutRecentEntry(current, entry.name);
+    const next = [entry, ...deduped].slice(0, RECENT_ENTRIES_LIMIT);
+    await setDoc(doc(db, 'users', requireUid()), { recentEntries: next }, { merge: true });
+  });
 }
 
 export async function deleteRecentEntry(entry) {
-  const update = recentEntryRemovalUpdate(entry, arrayRemove);
-  await setDoc(doc(db, 'users', requireUid()), update, { merge: true });
+  return enqueueRecentMutation(async () => {
+    const update = recentEntryRemovalUpdate(entry, arrayRemove);
+    await setDoc(doc(db, 'users', requireUid()), update, { merge: true });
+  });
 }
 
 export async function clearRecentEntries() {
-  await setDoc(doc(db, 'users', requireUid()), { recentEntries: [] }, { merge: true });
+  return enqueueRecentMutation(async () => {
+    await setDoc(doc(db, 'users', requireUid()), { recentEntries: [] }, { merge: true });
+  });
 }
 
 const CACHED_FOODS_LIMIT = 200;

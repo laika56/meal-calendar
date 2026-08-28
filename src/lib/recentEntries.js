@@ -10,3 +10,18 @@ export function removeRecentChip(chip, container, section) {
   chip.remove();
   section.hidden = container.childElementCount === 0;
 }
+
+export function createRecentMutationQueue() {
+  let tail = Promise.resolve();
+
+  return function enqueue(operation) {
+    const result = tail.then(operation, operation);
+    tail = result.catch(() => {});
+    return result;
+  };
+}
+
+export async function persistRecentChipDeletion({ chip, container, section, persist }) {
+  removeRecentChip(chip, container, section);
+  await persist();
+}
