@@ -127,7 +127,8 @@ test('recent shortcuts expose individual and bulk removal controls', () => {
 
   assert.match(html, /id="recentClear"[^>]*>전체 삭제</);
   assert.match(app, /ariaLabel:\s*`\$\{item\.name\} 최근 항목 삭제`/);
-  assert.match(app, /db\.deleteRecentEntry\(item\.name\)/);
+  assert.match(app, /db\.deleteRecentEntry\(item\)/);
+  assert.match(app, /removeRecentChip\([^;]+\);/);
   assert.match(app, /db\.clearRecentEntries\(\)/);
 });
 

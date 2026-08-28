@@ -14,14 +14,14 @@ import {
 import {
   initializeFirestore, persistentLocalCache, persistentSingleTabManager,
   doc, getDoc, setDoc, deleteDoc, collection, query, where, getDocs, serverTimestamp,
-  limit, orderBy,
+  arrayRemove, limit, orderBy,
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js';
 
 import { firebaseConfig } from '/src/firebaseConfig.js';
 import { normalizeSearchFoodsResponse } from '/src/lib/searchFoodsResponse.js';
 import { planMergeRestore, validateExportEnvelope } from '/src/lib/dataTransfer.js';
 import { toMyBarcodeRecord, fromMyBarcodeRecord, myBarcodeDocId } from '/src/lib/myBarcodeCache.js';
-import { withoutRecentEntry } from '/src/lib/recentEntries.js';
+import { recentEntryRemovalUpdate, withoutRecentEntry } from '/src/lib/recentEntries.js';
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -343,10 +343,9 @@ export async function pushRecentEntry(entry) {
   await setDoc(doc(db, 'users', requireUid()), { recentEntries: next }, { merge: true });
 }
 
-export async function deleteRecentEntry(name) {
-  const current = await loadRecentEntries();
-  const next = withoutRecentEntry(current, name);
-  await setDoc(doc(db, 'users', requireUid()), { recentEntries: next }, { merge: true });
+export async function deleteRecentEntry(entry) {
+  const update = recentEntryRemovalUpdate(entry, arrayRemove);
+  await setDoc(doc(db, 'users', requireUid()), update, { merge: true });
 }
 
 export async function clearRecentEntries() {
