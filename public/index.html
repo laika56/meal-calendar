@@ -448,6 +448,14 @@
     -webkit-appearance: none; appearance: none; border: 0; background: none;
     color: var(--muted); font-size: 15px; line-height: 1; padding: 2px 4px;
   }
+  .chip.recent { max-width: 100%; }
+  .chip.recent .chip-add {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .chip.recent .chip-del {
+    flex: 0 0 auto; display: grid; place-items: center;
+    width: 28px; height: 28px; padding: 0; border-radius: 50%; background: var(--line);
+  }
   .form-error {
     color: var(--over); background: var(--over-bg); border: 1px solid var(--over);
     border-radius: 10px; padding: 10px 12px; font-size: 13px;

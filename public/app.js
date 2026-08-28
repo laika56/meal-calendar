@@ -1008,6 +1008,7 @@ async function renderQuickPicks() {
     for (const item of recent) {
       renderChip(el.recentChips, {
         text: `${item.name} · ${Math.round(item.kcal)}kcal`,
+        variant: 'recent',
         ariaLabel: `${item.name} 최근 항목 삭제`,
         onAdd: async () => {
           el.entrySheet.hidden = true;

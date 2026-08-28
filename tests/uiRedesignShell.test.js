@@ -131,6 +131,16 @@ test('recent shortcuts expose individual and bulk removal controls', () => {
   assert.match(app, /db\.clearRecentEntries\(\)/);
 });
 
+test('long recent shortcut names keep their delete control inside the mobile sheet', () => {
+  const html = read('public/index.html');
+  const app = read('public/app.js');
+
+  assert.match(app, /variant:\s*'recent'/);
+  assert.match(html, /\.chip\.recent\s*\{[^}]*max-width:\s*100%/s);
+  assert.match(html, /\.chip\.recent \.chip-add\s*\{[^}]*min-width:\s*0[^}]*text-overflow:\s*ellipsis/s);
+  assert.match(html, /\.chip\.recent \.chip-del\s*\{[^}]*flex:\s*0 0 auto/s);
+});
+
 test('entry shell includes the static barcode scanner controls and exact fallback copy', () => {
   const html = read('public/index.html');
 

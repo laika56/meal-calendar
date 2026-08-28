@@ -3,7 +3,7 @@
 // 이 값은 tests/shellFiles.test.js 가 SHELL_FILES 의 실제 bytes 전체와 대조한다.
 // 셸 파일을 바꾸고 이 digest를 갱신하지 않으면 테스트가 실패한다. 서비스워커 자체가
 // 바뀌어야 새 install이 실행되므로, 검색 UI 같은 새 배포가 구형 cache에 가리는 일을 막는다.
-const SHELL_REVISION = '3cf00756dc9014e94110e01300e19f82bc840d78175e6c0d8a3fbd5928c5cd11';
+const SHELL_REVISION = '7782946f4f0171901f83eee5d1a43d5b2d9485ffdbd3aeb0fdd8e098a1dc5ed5';
 const CACHE_NAME = `meal-calendar-shell-${SHELL_REVISION}`;
 
 // app.js / db.js 가 실제로 import 하는 것을 전부 적는다.
