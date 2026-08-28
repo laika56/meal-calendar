@@ -136,6 +136,7 @@ const el = {
   quickMeals: document.getElementById('quickMeals'),
   mealPresetChips: document.getElementById('mealPresetChips'),
   quickRecent: document.getElementById('quickRecent'),
+  recentClear: document.getElementById('recentClear'),
   recentChips: document.getElementById('recentChips'),
   copyYesterday: document.getElementById('copyYesterday'),
   entryChooser: document.getElementById('entryChooser'),
@@ -924,7 +925,9 @@ document.getElementById('closeDetail').addEventListener('click', () => {
 
 // ── 항목 추가 ─────────────────────────────────────────────────────────
 
-function renderChip(container, { text, onAdd, onDelete, variant = '' }) {
+function renderChip(container, {
+  text, onAdd, onDelete, ariaLabel = '프리셋 삭제', variant = '',
+}) {
   const chip = document.createElement('div');
   chip.className = `chip${variant ? ` ${variant}` : ''}`;
 
@@ -939,7 +942,7 @@ function renderChip(container, { text, onAdd, onDelete, variant = '' }) {
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
     delBtn.className = 'chip-del';
-    delBtn.setAttribute('aria-label', '프리셋 삭제');
+    delBtn.setAttribute('aria-label', ariaLabel);
     delBtn.textContent = '×';
     delBtn.addEventListener('click', onDelete);
     chip.appendChild(delBtn);
@@ -1005,9 +1008,14 @@ async function renderQuickPicks() {
     for (const item of recent) {
       renderChip(el.recentChips, {
         text: `${item.name} · ${Math.round(item.kcal)}kcal`,
+        ariaLabel: `${item.name} 최근 항목 삭제`,
         onAdd: async () => {
           el.entrySheet.hidden = true;
           await addEntryToSlot(state.pendingSlot, buildEntry({ ...item, addedBy: item.addedBy ?? 'manual' }));
+        },
+        onDelete: async () => {
+          await db.deleteRecentEntry(item.name);
+          renderQuickPicks();
         },
       });
     }
@@ -1015,6 +1023,13 @@ async function renderQuickPicks() {
     console.error('[meal-calendar] 최근 항목 조회 실패', err);
   }
 }
+
+el.recentClear.addEventListener('click', async () => {
+  const accepted = window.confirm('최근 항목을 모두 삭제할까요? 식단 기록은 지워지지 않습니다.');
+  if (!accepted) return;
+  await db.clearRecentEntries();
+  renderQuickPicks();
+});
 
 function openEntryForm(slotKey, slotLabel) {
   stopBarcodeScanner();

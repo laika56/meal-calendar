@@ -121,6 +121,16 @@ test('entry shell keeps the approved quick-add wording and preset groups', () =>
   assert.match(html, /name="saveAsPreset" type="checkbox" checked/);
 });
 
+test('recent shortcuts expose individual and bulk removal controls', () => {
+  const html = read('public/index.html');
+  const app = read('public/app.js');
+
+  assert.match(html, /id="recentClear"[^>]*>전체 삭제</);
+  assert.match(app, /ariaLabel:\s*`\$\{item\.name\} 최근 항목 삭제`/);
+  assert.match(app, /db\.deleteRecentEntry\(item\.name\)/);
+  assert.match(app, /db\.clearRecentEntries\(\)/);
+});
+
 test('entry shell includes the static barcode scanner controls and exact fallback copy', () => {
   const html = read('public/index.html');
 

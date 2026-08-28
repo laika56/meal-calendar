@@ -350,6 +350,15 @@
   }
   .quick-section { margin-bottom: 16px; }
   .quick-section h3 { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+  .quick-section-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-bottom: 8px;
+  }
+  .quick-section-head h3 { margin: 0; }
+  .quick-clear {
+    -webkit-appearance: none; appearance: none; border: 0; background: none;
+    color: var(--muted); font: inherit; font-size: 12px; padding: 4px 0;
+  }
   .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
   /* 즐겨찾기 저장 버튼 — 슬롯 헤더 */
   .slot-save {
@@ -929,7 +938,10 @@
       <div id="mealPresetChips" class="meal-preset-list"></div>
     </div>
     <div id="quickRecent" class="quick-section" hidden>
-      <h3>최근 항목</h3>
+      <div class="quick-section-head">
+        <h3>최근 항목</h3>
+        <button id="recentClear" class="quick-clear" type="button">전체 삭제</button>
+      </div>
       <div id="recentChips" class="chip-row"></div>
     </div>
 
