@@ -557,7 +557,7 @@ standalone에서 실제 포장 바코드 판독 속도·초점·권한 재요청
 
 | 대상 | 잡은 쪽 | 상태 |
 |---|---|---|
-| `public/db.js`, `public/app.js`, `public/index.html`, `src/lib/recentEntries.js` 최근 항목 개별·전체 삭제 | **Codex** | **완료·배포 대기 (2026-08-28)** — 657 통과·1 스킵, 바코드 캐시·날짜 기록 불변 |
+| `public/db.js`, `public/app.js`, `public/index.html`, `src/lib/recentEntries.js` 최근 항목 개별·전체 삭제 | **Codex** | **완료·배포 (2026-08-28)** — `9440576`, 657 통과·1 스킵, 운영 파일 5/5 일치, 바코드 캐시·날짜 기록 불변 |
 | `public/app.js`, `src/lib/multiCandidate.js`, `tests/multiCandidate.test.js` 다중입력 후보 판정 추출 | **Codex** | **완료·커밋 (2026-08-21)** — `orders/31`, 기존 동작 그대로 순수 함수 추출. 타깃 14/14, 전체 563개 중 560 pass·예상된 서비스워커 2 fail·에뮬레이터 1 skip |
 | `src/lib/pinnedDeps.js`, `tests/pinnedDeps.test.js` CDN 고정 버전 가드 | **Codex** | **완료 (2026-08-21)** — 발주33. 타깃 12/12, 전체 560 pass·0 fail·1 skip. `tesseract.js@7` 변조 시 `unpinned`/`version: 7`로 실패 후 원복 확인 |
 | 공용 국내 바코드 카탈로그(C005/I2570·식품이력추적·FoodQR) | **Codex** | **설계 명세 작성·사용자 검토 대기 (2026-08-19)** — 개인 학습 DB 없이 벌크 공용 카탈로그 우선 + OFF fallback. 인증키 비저장, 실데이터 분포·license gate 후 TDD |
